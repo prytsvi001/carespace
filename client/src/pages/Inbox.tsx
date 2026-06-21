@@ -1,0 +1,310 @@
+// client/src/pages/Inbox.tsx
+import React, { useEffect, useState } from 'react';
+import { Mail, MailOpen, Send, X } from 'lucide-react';
+import { format } from 'date-fns';
+import { getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage } from '../api';
+import { InboxMessage } from '../types';
+import { useAuth } from '../context/AuthContext';
+
+type InboxUser = { id: string; name: string; role: string };
+
+const TYPE_META: Record<string, { label: string; cls: string }> = {
+  task_assignment: { label: 'Task',       cls: 'bg-blue-50 text-blue-600' },
+  qa_report:       { label: 'QA Report',  cls: 'bg-amber-50 text-amber-700' },
+  salary_message:  { label: 'Salary',     cls: 'bg-emerald-50 text-emerald-700' },
+  general:         { label: 'Message',    cls: 'bg-slate-100 text-slate-600' },
+};
+
+const ROLE_TYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  head: [
+    { value: 'task_assignment', label: 'Task Assignment' },
+    { value: 'salary_message',  label: 'Salary Note' },
+    { value: 'general',         label: 'General Message' },
+  ],
+  lead: [
+    { value: 'task_assignment', label: 'Task Assignment' },
+    { value: 'general',         label: 'General Message' },
+  ],
+  agent: [
+    { value: 'general', label: 'General Message' },
+  ],
+};
+
+interface InboxProps {
+  onRead?: () => void;
+}
+
+export default function Inbox({ onRead }: InboxProps) {
+  const { user } = useAuth();
+  const role = user?.role ?? 'agent';
+  const typeOptions = ROLE_TYPE_OPTIONS[role] ?? ROLE_TYPE_OPTIONS.agent;
+
+  const [view, setView] = useState<'received' | 'sent'>('received');
+  const [messages, setMessages] = useState<InboxMessage[]>([]);
+  const [sentMessages, setSentMessages] = useState<InboxMessage[]>([]);
+  const [users, setUsers] = useState<InboxUser[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Compose state
+  const [composing, setComposing] = useState(false);
+  const [recipientId, setRecipientId] = useState('');
+  const [msgType, setMsgType] = useState(typeOptions[0]?.value ?? 'general');
+  const [content, setContent] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
+
+  useEffect(() => {
+    Promise.all([getInbox(), getSentMessages(), getInboxUsers()])
+      .then(([inbox, sent, userList]) => {
+        setMessages(inbox);
+        setSentMessages(sent);
+        setUsers(userList);
+        if (userList.length > 0) setRecipientId(userList[0].id);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const openCompose = () => {
+    setComposing(true);
+    setSendError('');
+    setContent('');
+    setMsgType(typeOptions[0]?.value ?? 'general');
+    if (users.length > 0) setRecipientId(users[0].id);
+  };
+
+  const handleSend = async () => {
+    if (!recipientId || !content.trim()) {
+      setSendError('Please select a recipient and write a message.');
+      return;
+    }
+    setSending(true);
+    setSendError('');
+    try {
+      const msg: InboxMessage = await sendMessage({ recipientId, type: msgType, content: content.trim() });
+      setSentMessages((prev) => [msg, ...prev]);
+      setComposing(false);
+      setContent('');
+    } catch (e: any) {
+      setSendError(e?.response?.data?.error ?? 'Failed to send. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleMarkRead = async (id: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, read: true } : m)));
+    try {
+      await markMessageRead(id);
+      onRead?.();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const unreadCount = messages.filter((m) => !m.read).length;
+  const displayed = view === 'received' ? messages : sentMessages;
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            Inbox
+            {unreadCount > 0 && (
+              <span
+                className="text-sm font-semibold px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+              >
+                {unreadCount}
+              </span>
+            )}
+          </h2>
+          <p className="text-sm text-slate-400">
+            {view === 'received' ? 'Messages sent to you' : 'Messages you sent'}
+          </p>
+        </div>
+
+        <button
+          onClick={composing ? () => setComposing(false) : openCompose}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all shrink-0"
+          style={
+            composing
+              ? { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.50)' }
+              : { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+          }
+        >
+          {composing
+            ? <><X size={13} strokeWidth={2} /> Cancel</>
+            : <><Send size={13} strokeWidth={1.8} /> New Message</>
+          }
+        </button>
+      </div>
+
+      {/* Compose panel */}
+      {composing && (
+        <div className="card space-y-3">
+          <p className="text-sm font-semibold text-slate-700">Compose Message</p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">To</label>
+              <select
+                value={recipientId}
+                onChange={(e) => setRecipientId(e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
+              >
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Type</label>
+              <select
+                value={msgType}
+                onChange={(e) => setMsgType(e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
+              >
+                {typeOptions.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Message</label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={4}
+              placeholder="Write your message…"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700 resize-none"
+            />
+          </div>
+
+          {sendError && (
+            <p className="text-xs text-red-500">{sendError}</p>
+          )}
+
+          <div className="flex justify-end">
+            <button
+              onClick={handleSend}
+              disabled={sending}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+              style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+            >
+              <Send size={13} strokeWidth={1.8} />
+              {sending ? 'Sending…' : 'Send'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Received / Sent filter */}
+      <div className="flex gap-1">
+        {(['received', 'sent'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium transition-all capitalize"
+            style={
+              view === v
+                ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+                : { color: 'rgba(14,14,14,0.45)' }
+            }
+          >
+            {v === 'received' ? 'Received' : 'Sent'}
+            {v === 'received' && unreadCount > 0 && (
+              <span
+                className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
+                style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+              >
+                {unreadCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Message list */}
+      {loading ? (
+        <div className="py-10 text-center text-sm text-slate-400">Loading…</div>
+      ) : displayed.length === 0 ? (
+        <div className="py-14 text-center">
+          <MailOpen size={40} strokeWidth={1} className="mx-auto mb-3 text-slate-300" />
+          <p className="text-sm text-slate-400">
+            {view === 'received' ? 'Your inbox is empty' : 'No sent messages'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {displayed.map((msg) => {
+            const meta = TYPE_META[msg.type] ?? TYPE_META.general;
+            const isSent = view === 'sent';
+            return (
+              <div
+                key={msg.id}
+                className="card transition-all"
+                style={!isSent && !msg.read ? { borderLeft: '3px solid #A1F96E' } : {}}
+              >
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${meta.cls}`}>
+                      {meta.label}
+                    </span>
+                    {isSent ? (
+                      <>
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">
+                          Sent
+                        </span>
+                        <span className="text-sm font-medium text-slate-700">
+                          to {msg.receiver?.name ?? '—'}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm font-medium text-slate-700">
+                          from {msg.sender.name}
+                        </span>
+                        {!msg.read && (
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: '#A1F96E' }}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <span className="text-xs text-slate-400 shrink-0">
+                    {format(new Date(msg.createdAt), 'dd MMM yyyy')}
+                  </span>
+                </div>
+
+                {msg.subject && (
+                  <p className="text-sm font-semibold text-slate-700 mb-1">{msg.subject}</p>
+                )}
+                <p className="text-sm text-slate-600 leading-relaxed">{msg.content}</p>
+
+                {!isSent && !msg.read && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={() => handleMarkRead(msg.id)}
+                      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      <Mail size={12} strokeWidth={1.5} />
+                      Mark as read
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

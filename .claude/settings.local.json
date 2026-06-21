@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Victoria\\\\Downloads\\\\teamspace \\(1\\)\\\\client\\\\src\\\\pages\" -Force 2>&1 | Select-Object Name, @{Name='Type';Expression={if\\($_.PSIsContainer\\){'Directory'}else{'File'}}})",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Victoria\\\\Downloads\\\\teamspace \\(1\\)\\\\client\\\\src\\\\components\" -Force 2>&1 | Select-Object Name, @{Name='Type';Expression={if\\($_.PSIsContainer\\){'Directory'}else{'File'}}})",
+      "Artifact",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Victoria\\\\Downloads\\\\teamspace \\(1\\)\" -Force | Select-Object Name, FullName | Where-Object {$_.Name -match \"docker|\\\\.env|tsconfig|\\\\.gitignore|README\"})",
+      "PowerShell(head *)",
+      "PowerShell(New-Item *)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Get-ChildItem *)"
+    ]
+  }
+}

@@ -1,0 +1,282 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Agent {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  archived  Boolean  @default(false)
+
+  shiftLogs      ShiftLog[]
+  calendarEvents CalendarEvent[]
+  peakRequests   PeakRequest[]
+  user           User?
+  qaIssues       QAIssue[]
+  qaAgentReports QAAgentReport[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      String   // "head" | "lead" | "agent"
+  googleId  String?  @unique
+  agentId   String?  @unique
+  agent     Agent?   @relation(fields: [agentId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plans            Plan[]
+  sentMessages     InboxMessage[] @relation("SentMessages")
+  receivedMessages InboxMessage[] @relation("ReceivedMessages")
+  reviews          ClientReview[]
+  pdpPlan          PdpPlan?
+}
+
+model Plan {
+  id                   String   @id @default(cuid())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                String
+  completed            Boolean  @default(false)
+  type                 String   // "daily" | "monthly"
+  date                 String?  // "YYYY-MM-DD" for both daily and monthly
+  priority             String   @default("medium") // "high" | "medium" | "low"
+  category             String   @default("work")   // "work" | "learning" | "personal"
+  dueTime              String?                     // "HH:MM" optional
+  carriedOver          Boolean  @default(false)
+  carriedOverDismissed Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([userId])
+  @@index([type, date])
+}
+
+model InboxMessage {
+  id         String   @id @default(cuid())
+  senderId   String
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
+  receiverId String
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  type       String   // "task_assignment" | "qa_report" | "salary_message" | "general"
+  subject    String?
+  content    String
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([receiverId])
+  @@index([senderId])
+}
+
+model ShiftLog {
+  id        String    @id @default(cuid())
+  agentId   String
+  agent     Agent     @relation(fields: [agentId], references: [id])
+  shiftType String
+  shiftDate DateTime  // UTC date of shift start
+  hoursWorked Float   // 11 for morning, 8 for night
+
+  // Metrics
+  chatsCount         Int @default(0)
+  ticketsCount       Int @default(0)
+  callsCount         Int @default(0)
+  refundRequestsCount Int @default(0)
+
+  comments  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  archived  Boolean  @default(false)
+
+  @@index([agentId])
+  @@index([shiftDate])
+}
+
+model CalendarEvent {
+  id           String    @id @default(cuid())
+  agentId      String
+  agent        Agent     @relation(fields: [agentId], references: [id])
+  eventDate    DateTime  // UTC
+  leaveType    String
+  shiftType    String?
+  isExtraShift Boolean   @default(false)
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  archived     Boolean   @default(false)
+
+  @@index([agentId])
+  @@index([eventDate])
+}
+
+model AIChatQA {
+  id        String   @id @default(cuid())
+  channel   String
+  status    String   @default("OPEN")
+  chatText  String
+  issueDate DateTime // UTC date of the chat
+  comment   String   // what's wrong
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  archived  Boolean  @default(false)
+
+  @@index([channel])
+  @@index([issueDate])
+}
+
+model QAReport {
+  id           String          @id @default(cuid())
+  year         Int
+  month        Int
+  totalChats   Int?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  issues       QAIssue[]
+  agentReports QAAgentReport[]
+
+  @@unique([year, month])
+}
+
+model QAIssue {
+  id        String   @id @default(cuid())
+  reportId  String
+  report    QAReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id])
+  chatRef   String
+  issueType String   // "technical" | "communication" | "no_response"
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reportId])
+  @@index([agentId])
+}
+
+model QAAgentReport {
+  id        String    @id @default(cuid())
+  reportId  String
+  report    QAReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  agentId   String
+  agent     Agent     @relation(fields: [agentId], references: [id])
+  status    String    @default("draft")  // "draft" | "sent"
+  note      String?
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([reportId, agentId])
+  @@index([reportId])
+  @@index([agentId])
+}
+
+model ClientReview {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  url         String
+  clientName  String?
+  submittedAt DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  archived    Boolean  @default(false)
+
+  @@index([userId])
+  @@index([submittedAt])
+}
+
+model PdpPlan {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  periodStart String?   // "YYYY-MM-DD"
+  periodEnd   String?   // "YYYY-MM-DD"
+  status      String    @default("in_progress") // "in_progress" | "completed"
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  goals    PdpGoal[]
+  tasks    PdpTask[]
+  feedback PdpFeedback?
+}
+
+model PdpGoal {
+  id              String   @id @default(cuid())
+  planId          String
+  plan            PdpPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  goal            String
+  specificActions String?
+  progressPct     Int      @default(0)
+  status          String   @default("not_started") // "not_started" | "in_progress" | "done"
+  adminRating     Int?     // 1-5, editable by head/lead only
+  targetDate      String?  // "YYYY-MM-DD"
+  assignedByName  String?  // set when an admin creates this goal on an agent's plan
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tasks PdpTask[]
+
+  @@index([planId])
+}
+
+model PdpTask {
+  id             String   @id @default(cuid())
+  planId         String
+  plan           PdpPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  goalId         String?
+  goal           PdpGoal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  task           String
+  completed      Boolean  @default(false)
+  status         String   @default("not_started") // "not_started" | "in_progress" | "completed"
+  adminGrade     Int?     // 1-5, editable by head/lead only
+  comments       String   @default("[]") // JSON: [{authorId, authorName, text, createdAt}]
+  assignedByName String?  // set when an admin creates this task on an agent's plan
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([planId])
+  @@index([goalId])
+}
+
+model PdpFeedback {
+  id           String    @id @default(cuid())
+  planId       String    @unique
+  plan         PdpPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  mentorRating Int?      // 1-5 stars
+  mostHelpful  String?
+  improvements String?
+  achievements String?
+  nextFocus    String?
+  submittedAt  DateTime? // null until agent submits
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model PeakRequest {
+  id            String        @id @default(cuid())
+  agentId       String
+  agent         Agent         @relation(fields: [agentId], references: [id])
+  contactEmail     String?
+  profileNickname  String?
+  requestText      String
+  requestDate   DateTime      // UTC
+  status        String        @default("NEW")
+  comments      String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  archived      Boolean       @default(false)
+
+  @@index([agentId])
+  @@index([status])
+  @@index([requestDate])
+}

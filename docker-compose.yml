@@ -1,0 +1,49 @@
+services:
+  # ── PostgreSQL database ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: teamspace
+      POSTGRES_USER: teamspace
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teamspace"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Express API server ─────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      target: app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://teamspace:${POSTGRES_PASSWORD}@postgres:5432/teamspace
+      PORT: 3001
+      NODE_ENV: production
+      CLIENT_URL: ${CLIENT_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Nginx (React frontend + /api proxy) ────────────────────────────────────
+  nginx:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
