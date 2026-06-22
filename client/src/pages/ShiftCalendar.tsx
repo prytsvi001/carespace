@@ -78,7 +78,12 @@ function PencilIcon() {
   );
 }
 
-function EventChip({ event, onDelete, onEdit }: { event: CalendarEvent; onDelete: () => void; onEdit: () => void }) {
+function EventChip({ event, onDelete, onEdit, readOnly }: {
+  event: CalendarEvent;
+  onDelete: () => void;
+  onEdit: () => void;
+  readOnly?: boolean;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: event.id });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
 
@@ -86,52 +91,60 @@ function EventChip({ event, onDelete, onEdit }: { event: CalendarEvent; onDelete
     <div
       ref={setNodeRef}
       style={style}
-      {...listeners}
-      {...attributes}
-      onClick={(e) => { e.stopPropagation(); onEdit(); }}
-      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium select-none group cursor-pointer
-        ${getEventColor(event.leaveType, event.shiftType)} ${isDragging ? 'opacity-50' : ''}`}
+      {...(readOnly ? {} : listeners)}
+      {...(readOnly ? {} : attributes)}
+      onClick={readOnly ? undefined : (e) => { e.stopPropagation(); onEdit(); }}
+      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium select-none
+        ${getEventColor(event.leaveType, event.shiftType)}
+        ${isDragging ? 'opacity-50' : ''}
+        ${readOnly ? 'cursor-default' : 'group cursor-pointer'}`}
     >
       <EventIcon leaveType={event.leaveType} shiftType={event.shiftType} size={9} />
       <span className="truncate min-w-0 flex-1" title={event.agent.name.split(' ')[0]}>{event.agent.name.split(' ')[0]}</span>
       {event.isExtraShift && <span title="Extra shift" className="flex-shrink-0"><Star size={8} strokeWidth={2} className="text-amber-500" /></span>}
-      <span className="opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0 pointer-events-none">
-        <PencilIcon />
-      </span>
-      <button
-        onPointerDown={e => e.stopPropagation()}
-        onClick={e => { e.stopPropagation(); onDelete(); }}
-        className="flex-shrink-0 opacity-50 hover:opacity-100 hover:text-red-600 transition-all"
-        title="Delete entry"
-      >
-        <TrashIcon />
-      </button>
+      {!readOnly && (
+        <>
+          <span className="opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0 pointer-events-none">
+            <PencilIcon />
+          </span>
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); onDelete(); }}
+            className="flex-shrink-0 opacity-50 hover:opacity-100 hover:text-red-600 transition-all"
+            title="Delete entry"
+          >
+            <TrashIcon />
+          </button>
+        </>
+      )}
     </div>
   );
 }
 
-function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentMonth }: {
+function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentMonth, readOnly }: {
   date: Date;
   events: CalendarEvent[];
   onAdd: (date: Date) => void;
   onRequestDelete: (id: string) => void;
   onEditEvent: (ev: CalendarEvent) => void;
   isCurrentMonth: boolean;
+  readOnly?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: format(date, 'yyyy-MM-dd') });
 
   return (
     <div
       ref={setNodeRef}
-      onClick={() => onAdd(date)}
-      className={`min-h-[80px] sm:min-h-[100px] p-1.5 rounded-lg cursor-pointer transition-colors group
-        ${isOver ? 'ring-1 ring-inset ring-[#A1F96E]/70' : ''}
+      onClick={readOnly ? undefined : () => onAdd(date)}
+      className={`min-h-[80px] sm:min-h-[100px] p-1.5 rounded-lg transition-colors
+        ${readOnly ? 'cursor-default' : 'cursor-pointer group'}
+        ${isOver && !readOnly ? 'ring-1 ring-inset ring-[#A1F96E]/70' : ''}
         ${!isCurrentMonth ? 'opacity-35' : ''}
         ${isToday(date) ? 'ring-2 ring-inset ring-[#0E0E0E]/20' : ''}
       `}
       style={{
         border: '1px solid rgba(14,14,14,0.09)',
-        backgroundColor: isOver ? 'rgba(161,249,110,0.10)' : undefined,
+        backgroundColor: isOver && !readOnly ? 'rgba(161,249,110,0.10)' : undefined,
       }}
     >
       <div className="flex items-center justify-between mb-1">
@@ -139,13 +152,15 @@ function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentM
               style={!isToday(date) ? { color: 'rgba(14,14,14,0.45)' } : undefined}>
           {format(date, 'd')}
         </span>
-        <span className="text-[10px] transition-colors" style={{ color: 'rgba(14,14,14,0.15)' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'rgba(14,14,14,0.45)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(14,14,14,0.15)')}>+</span>
+        {!readOnly && (
+          <span className="text-[10px] transition-colors" style={{ color: 'rgba(14,14,14,0.15)' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(14,14,14,0.45)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(14,14,14,0.15)')}>+</span>
+        )}
       </div>
       <div className="flex flex-col gap-0.5">
         {events.slice(0, 3).map(ev => (
-          <EventChip key={ev.id} event={ev} onDelete={() => onRequestDelete(ev.id)} onEdit={() => onEditEvent(ev)} />
+          <EventChip key={ev.id} event={ev} onDelete={() => onRequestDelete(ev.id)} onEdit={() => onEditEvent(ev)} readOnly={readOnly} />
         ))}
         {events.length > 3 && (
           <span className="text-[10px] pl-1" style={{ color: 'rgba(14,14,14,0.38)' }}>+{events.length - 3} more</span>
@@ -155,7 +170,7 @@ function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentM
   );
 }
 
-export default function ShiftCalendar({ onDataChanged }: { onDataChanged?: () => void }) {
+export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChanged?: () => void; readOnly?: boolean }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [agents, setAgents] = useState<Agent[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -216,6 +231,7 @@ export default function ShiftCalendar({ onDataChanged }: { onDataChanged?: () =>
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveEvent(null);
+    if (readOnly) return;
     const { active, over } = event;
     if (!over || !active) return;
     const newDate = over.id as string;
@@ -315,7 +331,9 @@ export default function ShiftCalendar({ onDataChanged }: { onDataChanged?: () =>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-ink">Shift Calendar</h2>
-          <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>Drag & drop to reschedule</p>
+          <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>
+            {readOnly ? 'View-only mode' : 'Drag & drop to reschedule'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button className="btn-secondary px-3" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>‹</button>
@@ -360,6 +378,7 @@ export default function ShiftCalendar({ onDataChanged }: { onDataChanged?: () =>
                 onRequestDelete={setConfirmDeleteId}
                 onEditEvent={handleOpenEdit}
                 isCurrentMonth={isSameMonth(date, currentMonth)}
+                readOnly={readOnly}
               />
             ) : (
               <div key={`pad-${i}`} className="min-h-[80px] sm:min-h-[100px]" />

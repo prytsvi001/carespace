@@ -17,6 +17,8 @@ import inboxRouter from './routes/inbox';
 import reviewsRouter from './routes/reviews';
 import qaReportsRouter from './routes/qaReports';
 import pdpRouter from './routes/pdp';
+import quickLinksRouter from './routes/quickLinks';
+import kpiRouter from './routes/kpi';
 import { requireAuth } from './middleware/auth';
 
 const app = express();
@@ -63,7 +65,9 @@ app.use('/api/plans',   plansRouter);   // requireAuth applied inside router
 app.use('/api/inbox',   inboxRouter);   // requireAuth applied inside router
 app.use('/api/reviews',    reviewsRouter);    // requireAuth applied inside router
 app.use('/api/qa-reports', qaReportsRouter); // requireAuth applied inside router
-app.use('/api/pdp',        pdpRouter);       // requireAuth applied inside router
+app.use('/api/pdp',         pdpRouter);        // requireAuth applied inside router
+app.use('/api/quick-links', quickLinksRouter); // requireAuth applied inside router
+app.use('/api/kpi',         kpiRouter);        // requireAuth applied inside router
 
 app.listen(PORT, () => {
   console.log(`🚀 TeamSpace API running on http://localhost:${PORT}`);

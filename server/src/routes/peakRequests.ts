@@ -38,6 +38,19 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/peak-requests/new-count
+router.get('/new-count', async (req: Request, res: Response) => {
+  try {
+    const count = await prisma.peakRequest.count({
+      where: { archived: false, status: 'NEW' },
+    });
+    res.json({ count });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch new requests count' });
+  }
+});
+
 // POST /api/peak-requests
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -94,6 +107,33 @@ router.put('/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update peak request' });
+  }
+});
+
+// PATCH /api/peak-requests/:id/fields  — lightweight inline update (comments, tags)
+router.patch('/:id/fields', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { comments, tags } = req.body;
+
+    const data: Record<string, unknown> = {};
+    if (comments !== undefined) data.comments = comments || null;
+    if (tags !== undefined) data.tags = tags;
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const request = await prisma.peakRequest.update({
+      where: { id },
+      data,
+      include: { agent: true },
+    });
+
+    return res.json(request);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update fields' });
   }
 });
 

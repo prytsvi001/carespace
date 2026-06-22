@@ -14,11 +14,13 @@ const AGENTS = [
 ];
 
 const USERS: { name: string; email: string; role: string }[] = [
-  { name: 'Victoria Davis', email: 'victoria_pryts@struktura.io',         role: 'lead' },
-  { name: 'Sandra Moore',   email: 'oleksandra_kraichynska@struktura.io',  role: 'head' },
-  { name: 'Jonathan Lewis', email: 'yan_horlatyi@struktura.io',            role: 'agent' },
-  { name: 'Julia Manson',   email: 'tetiana_blazhievska@struktura.io',     role: 'agent' },
-  { name: 'Nicky Brown',    email: 'myroslava_horshchar@struktura.io',     role: 'agent' },
+  { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead' },
+  { name: 'Sandra Moore',      email: 'oleksandra_kraichynska@struktura.io', role: 'head' },
+  { name: 'Jonathan Lewis',    email: 'yan_horlatyi@struktura.io',           role: 'agent' },
+  { name: 'Julia Manson',      email: 'tetiana_blazhievska@struktura.io',    role: 'agent' },
+  { name: 'Nicky Brown',       email: 'myroslava_horshchar@struktura.io',    role: 'agent' },
+  { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler' },
+  { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler' },
 ];
 
 async function main() {

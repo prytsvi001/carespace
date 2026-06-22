@@ -117,6 +117,12 @@ export const updatePeakRequest = (id: string, data: {
 export const updatePeakRequestStatus = (id: string, status: string) =>
   api.patch(`/peak-requests/${id}/status`, { status }).then(r => r.data);
 
+export const patchPeakRequestFields = (id: string, fields: { comments?: string; tags?: string }) =>
+  api.patch(`/peak-requests/${id}/fields`, fields).then(r => r.data);
+
+export const getNewRequestsCount = () =>
+  api.get('/peak-requests/new-count').then(r => r.data as { count: number });
+
 export const archivePeakRequest = (id: string) =>
   api.delete(`/peak-requests/${id}`).then(r => r.data);
 export const deletePeakRequest = (id: string) =>
@@ -299,5 +305,22 @@ export const savePDPFeedback = (
 
 export const submitPDPFeedback = (planId: string) =>
   api.post(`/pdp/${planId}/feedback/submit`).then((r) => r.data);
+
+// ─── KPI Settings ──────────────────────────────────────────────────────────────
+export const getKpiSettings = () =>
+  api.get('/kpi').then((r) => r.data);
+
+export const updateKpiSettings = (data: unknown) =>
+  api.put('/kpi', data).then((r) => r.data);
+
+// ─── Quick Links ───────────────────────────────────────────────────────────────
+export const getQuickLinks = () =>
+  api.get('/quick-links').then((r) => r.data);
+
+export const createQuickLink = (data: { title: string; url: string; category?: string }) =>
+  api.post('/quick-links', data).then((r) => r.data);
+
+export const deleteQuickLink = (id: string) =>
+  api.delete(`/quick-links/${id}`).then((r) => r.data);
 
 export default api;

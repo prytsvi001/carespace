@@ -1,51 +1,164 @@
 // client/src/pages/PeakRequests.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ClipboardList, Copy, Check } from 'lucide-react';
 import { format } from 'date-fns';
-import { getAgents, getPeakRequests, createPeakRequest, updatePeakRequest, updatePeakRequestStatus, archivePeakRequest, deletePeakRequest } from '../api';
+import {
+  getAgents, getPeakRequests, createPeakRequest, updatePeakRequest,
+  updatePeakRequestStatus, archivePeakRequest, deletePeakRequest,
+  patchPeakRequestFields,
+} from '../api';
 import { Agent, PeakRequest, RequestStatus } from '../types';
-import { Modal, Spinner, EmptyState, StatusBadge, ConfirmDialog } from '../components/ui';
+import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+
+// ── Tag definitions ───────────────────────────────────────────────────────────
+
+const TAGS = [
+  {
+    key: 'blocked',
+    label: 'Blocked',
+    emoji: '🔴',
+    selected: 'bg-red-50 text-red-600 border-red-200',
+    ghost:    'border-slate-200 text-slate-300',
+  },
+  {
+    key: 'account_problem',
+    label: 'Account problem',
+    emoji: '🟡',
+    selected: 'bg-amber-50 text-amber-600 border-amber-200',
+    ghost:    'border-slate-200 text-slate-300',
+  },
+  {
+    key: 'lost_access',
+    label: 'Lost access',
+    emoji: '🔑',
+    selected: 'bg-slate-100 text-slate-500 border-slate-300',
+    ghost:    'border-slate-200 text-slate-300',
+  },
+] as const;
+
+type TagKey = typeof TAGS[number]['key'];
 
 const STATUS_COLS: { status: RequestStatus; label: string; icon: string; bg: string }[] = [
-  { status: 'NEW', label: 'New', icon: '🆕', bg: 'bg-blue-50' },
-  { status: 'IN_PROGRESS', label: 'In Progress', icon: '⚡', bg: 'bg-amber-50' },
-  { status: 'DONE', label: 'Done', icon: '✅', bg: 'bg-emerald-50' },
+  { status: 'NEW',         label: 'New',         icon: '🆕', bg: 'bg-blue-50' },
+  { status: 'IN_PROGRESS', label: 'In Progress',  icon: '⚡', bg: 'bg-amber-50' },
+  { status: 'DONE',        label: 'Done',          icon: '✅', bg: 'bg-emerald-50' },
 ];
 
-function RequestCard({ req, onEdit, onStatusChange, onArchive, onDelete }: {
+// ── RequestCard ───────────────────────────────────────────────────────────────
+
+function RequestCard({
+  req, onEdit, onStatusChange, onArchive, onDelete, onFieldsUpdated, highlightNew,
+}: {
   req: PeakRequest;
   onEdit: (req: PeakRequest) => void;
   onStatusChange: (id: string, status: RequestStatus) => void;
   onArchive: (id: string) => void;
   onDelete: (id: string) => void;
+  onFieldsUpdated: (id: string, fields: { comments?: string; tags?: string }) => void;
+  highlightNew?: boolean;
 }) {
-  const [confirm, setConfirm] = useState(false);
+  const [confirm, setConfirm]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [copiedField, setCopiedField] = useState<'email' | 'nickname' | null>(null);
-  const nextStatus: Record<RequestStatus, RequestStatus | null> = {
-    NEW: 'IN_PROGRESS',
-    IN_PROGRESS: 'DONE',
-    DONE: null,
-  };
-  const next = nextStatus[req.status];
+  const [copiedField, setCopiedField]     = useState<'email' | 'nickname' | null>(null);
+
+  // ── Inline note state ──────────────────────────────────────────────────────
+  const [noteText, setNoteText]       = useState(req.comments || '');
+  const [isEditingNote, setIsEditing] = useState(false);
+  const [noteSaved, setNoteSaved]     = useState(false);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Tags state ─────────────────────────────────────────────────────────────
+  const [activeTags, setActiveTags] = useState<TagKey[]>(() =>
+    (req.tags || '').split(',').filter(Boolean) as TagKey[]
+  );
+
+  // Sync when parent refreshes (e.g. after Edit modal save)
+  useEffect(() => {
+    if (!isEditingNote) setNoteText(req.comments || '');
+  }, [req.comments, isEditingNote]);
 
   useEffect(() => {
+    setActiveTags((req.tags || '').split(',').filter(Boolean) as TagKey[]);
+  }, [req.tags]);
+
+  // Focus textarea when entering edit mode
+  useEffect(() => {
+    if (isEditingNote && noteRef.current) {
+      const el = noteRef.current;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }, [isEditingNote]);
+
+  // Copy-to-clipboard timeout
+  useEffect(() => {
     if (!copiedField) return;
-    const timer = setTimeout(() => setCopiedField(null), 1500);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setCopiedField(null), 1500);
+    return () => clearTimeout(t);
   }, [copiedField]);
 
   const handleCopy = async (text: string, field: 'email' | 'nickname') => {
+    try { await navigator.clipboard.writeText(text); setCopiedField(field); }
+    catch (e) { console.error('copy failed', e); }
+  };
+
+  // ── Note save ──────────────────────────────────────────────────────────────
+  const saveNote = async (value: string) => {
+    setIsEditing(false);
+    if (value === (req.comments || '')) return;
     try {
-      await navigator.clipboard.writeText(text);
-      setCopiedField(field);
-    } catch (error) {
-      console.error('Failed to copy', error);
+      await patchPeakRequestFields(req.id, { comments: value });
+      onFieldsUpdated(req.id, { comments: value });
+      setNoteSaved(true);
+      setTimeout(() => setNoteSaved(false), 1500);
+    } catch (e) {
+      console.error(e);
+      setNoteText(req.comments || '');
     }
   };
 
+  const handleNoteKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      saveNote(noteText);
+    }
+  };
+
+  // ── Tag toggle ─────────────────────────────────────────────────────────────
+  const handleTagToggle = async (key: TagKey) => {
+    const next: TagKey[] = activeTags.includes(key)
+      ? activeTags.filter(t => t !== key)
+      : [...activeTags, key];
+    setActiveTags(next);
+    const tagsStr = next.join(',');
+    try {
+      await patchPeakRequestFields(req.id, { tags: tagsStr });
+      onFieldsUpdated(req.id, { tags: tagsStr });
+    } catch (e) {
+      console.error(e);
+      setActiveTags(activeTags);
+    }
+  };
+
+  const nextStatus: Record<RequestStatus, RequestStatus | null> = {
+    NEW: 'IN_PROGRESS', IN_PROGRESS: 'DONE', DONE: null,
+  };
+  const next = nextStatus[req.status];
+
   return (
-    <div className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm hover:shadow-md transition-shadow">
+    <div className={`bg-white rounded-xl border p-3 shadow-sm hover:shadow-md transition-shadow
+      ${highlightNew ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-100'}`}>
+
+      {/* peek_handler new indicator */}
+      {highlightNew && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse inline-block" />
+          <span className="text-[10px] text-blue-400 font-semibold uppercase tracking-wide">New</span>
+        </div>
+      )}
+
+      {/* Header: agent + actions */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <span className="text-xs font-medium text-slate-500">{req.agent.name}</span>
         <div className="flex items-center gap-2">
@@ -54,20 +167,22 @@ function RequestCard({ req, onEdit, onStatusChange, onArchive, onDelete }: {
           <button onClick={() => setConfirmDelete(true)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
         </div>
       </div>
+
+      {/* Request body */}
       <p className="text-sm text-slate-700 leading-relaxed mb-3">{req.requestText}</p>
+
+      {/* Contact info */}
       {(req.contactEmail || req.profileNickname) && (
         <div className="flex flex-col gap-0.5 mb-2">
           {req.contactEmail && (
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className="shrink-0">📧</span>
               <span className="flex-1 truncate">{req.contactEmail}</span>
-              <button
-                type="button"
-                onClick={() => handleCopy(req.contactEmail!, 'email')}
-                className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors"
-                title="Copy email"
-              >
-                {copiedField === 'email' ? <Check size={12} strokeWidth={2} className="text-emerald-500" /> : <Copy size={12} strokeWidth={1.5} />}
+              <button type="button" onClick={() => handleCopy(req.contactEmail!, 'email')}
+                className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors" title="Copy email">
+                {copiedField === 'email'
+                  ? <Check size={12} strokeWidth={2} className="text-emerald-500" />
+                  : <Copy size={12} strokeWidth={1.5} />}
               </button>
             </div>
           )}
@@ -75,19 +190,18 @@ function RequestCard({ req, onEdit, onStatusChange, onArchive, onDelete }: {
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className="shrink-0">👤</span>
               <span className="flex-1 truncate">{req.profileNickname}</span>
-              <button
-                type="button"
-                onClick={() => handleCopy(req.profileNickname!, 'nickname')}
-                className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors"
-                title="Copy nickname"
-              >
-                {copiedField === 'nickname' ? <Check size={12} strokeWidth={2} className="text-emerald-500" /> : <Copy size={12} strokeWidth={1.5} />}
+              <button type="button" onClick={() => handleCopy(req.profileNickname!, 'nickname')}
+                className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors" title="Copy nickname">
+                {copiedField === 'nickname'
+                  ? <Check size={12} strokeWidth={2} className="text-emerald-500" />
+                  : <Copy size={12} strokeWidth={1.5} />}
               </button>
             </div>
           )}
         </div>
       )}
-      {req.comments && <p className="text-xs text-slate-500 mb-2">📝 {req.comments}</p>}
+
+      {/* Date + status transition */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-slate-400">{format(new Date(req.requestDate), 'dd MMM yyyy')}</span>
         {next && (
@@ -99,32 +213,87 @@ function RequestCard({ req, onEdit, onStatusChange, onArchive, onDelete }: {
           </button>
         )}
       </div>
-      <ConfirmDialog
-        open={confirm}
-        message="Archive this request?"
+
+      {/* ── Inline tags + note ──────────────────────────────────────────────── */}
+      <div className="mt-2.5 pt-2.5 space-y-2" style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }}>
+
+        {/* Tags */}
+        <div className="flex flex-wrap gap-1">
+          {TAGS.map(tag => {
+            const isActive = activeTags.includes(tag.key);
+            return (
+              <button
+                key={tag.key}
+                type="button"
+                onClick={() => handleTagToggle(tag.key)}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border transition-all
+                  ${isActive ? tag.selected : tag.ghost}`}
+              >
+                <span>{tag.emoji}</span>
+                <span>{tag.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Inline note */}
+        <div>
+          {isEditingNote || !noteText ? (
+            <textarea
+              ref={noteRef}
+              value={noteText}
+              rows={2}
+              placeholder="Add a note…"
+              className="w-full resize-none rounded-lg px-2 py-1.5 text-xs outline-none transition-colors"
+              style={{
+                border: '1px solid rgba(14,14,14,0.10)',
+                color: 'rgba(14,14,14,0.60)',
+                backgroundColor: 'rgba(14,14,14,0.025)',
+              }}
+              onChange={e => setNoteText(e.target.value)}
+              onFocus={() => setIsEditing(true)}
+              onBlur={() => saveNote(noteText)}
+              onKeyDown={handleNoteKeyDown}
+            />
+          ) : (
+            <p
+              onClick={() => setIsEditing(true)}
+              className="text-xs rounded-lg px-2 py-1.5 cursor-text leading-relaxed transition-colors hover:bg-slate-50"
+              style={{ color: 'rgba(14,14,14,0.55)' }}
+            >
+              {noteText}
+            </p>
+          )}
+          {noteSaved && (
+            <span className="block text-[10px] text-emerald-500 mt-0.5 px-2">Saved ✓</span>
+          )}
+        </div>
+      </div>
+
+      <ConfirmDialog open={confirm} message="Archive this request?"
         onConfirm={() => { onArchive(req.id); setConfirm(false); }}
-        onCancel={() => setConfirm(false)}
-      />
-      <ConfirmDialog
-        open={confirmDelete}
-        message="Delete this request permanently?"
+        onCancel={() => setConfirm(false)} />
+      <ConfirmDialog open={confirmDelete} message="Delete this request permanently?"
         onConfirm={() => { onDelete(req.id); setConfirmDelete(false); }}
-        onCancel={() => setConfirmDelete(false)}
-      />
+        onCancel={() => setConfirmDelete(false)} />
     </div>
   );
 }
 
-export default function PeakRequests() {
-  const [agents, setAgents] = useState<Agent[]>([]);
+// ── PeakRequests page ─────────────────────────────────────────────────────────
+
+export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => void }) {
+  const { user } = useAuth();
+  const isPeekHandler = user?.role === 'peek_handler';
+  const [agents, setAgents]     = useState<Agent[]>([]);
   const [requests, setRequests] = useState<PeakRequest[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [filterStatus, setFilterStatus] = useState('');
-  const [filterAgent, setFilterAgent] = useState('');
-  const [search, setSearch] = useState('');
+  const [filterAgent, setFilterAgent]   = useState('');
+  const [search, setSearch]             = useState('');
   const [showArchived, setShowArchived] = useState(false);
 
   const [form, setForm] = useState({
@@ -141,7 +310,13 @@ export default function PeakRequests() {
     try {
       const [agentData, reqData] = await Promise.all([
         getAgents(),
-        getPeakRequests({ status: filterStatus || undefined, agentId: filterAgent || undefined, search: search || undefined, limit: 200, includeArchived: showArchived }),
+        getPeakRequests({
+          status: filterStatus || undefined,
+          agentId: filterAgent || undefined,
+          search: search || undefined,
+          limit: 200,
+          includeArchived: showArchived,
+        }),
       ]);
       setAgents(agentData);
       setRequests(reqData.requests);
@@ -167,6 +342,7 @@ export default function PeakRequests() {
       setEditingId(null);
       setForm({ agentId: '', contactEmail: '', profileNickname: '', requestText: '', requestDate: format(new Date(), 'yyyy-MM-dd'), comments: '' });
       await loadData();
+      onDataChanged?.();
     } catch (e) {
       console.error(e);
     } finally {
@@ -178,6 +354,7 @@ export default function PeakRequests() {
     setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
     try {
       await updatePeakRequestStatus(id, status);
+      onDataChanged?.();
     } catch {
       await loadData();
     }
@@ -186,10 +363,18 @@ export default function PeakRequests() {
   const handleArchive = async (id: string) => {
     setRequests(prev => prev.filter(r => r.id !== id));
     await archivePeakRequest(id);
+    onDataChanged?.();
   };
+
   const handleDelete = async (id: string) => {
     setRequests(prev => prev.filter(r => r.id !== id));
     await deletePeakRequest(id);
+    onDataChanged?.();
+  };
+
+  // Inline field updates — no reload needed
+  const handleFieldsUpdated = (id: string, fields: { comments?: string; tags?: string }) => {
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, ...fields } : r));
   };
 
   const byStatus = (status: RequestStatus) => requests.filter(r => r.status === status);
@@ -203,14 +388,17 @@ export default function PeakRequests() {
           <p className="text-sm text-slate-400">Peekviewer Client Requests</p>
         </div>
         <div className="flex gap-2">
-          <button className="btn-secondary whitespace-nowrap" onClick={() => setShowArchived(v => !v)}>{showArchived ? 'Hide Archive' : 'Show Archive'}</button>
+          <button className="btn-secondary whitespace-nowrap" onClick={() => setShowArchived(v => !v)}>
+            {showArchived ? 'Hide Archive' : 'Show Archive'}
+          </button>
           <button className="btn-accent whitespace-nowrap" onClick={() => setShowForm(true)}>+ New Request</button>
         </div>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        <input className="input w-auto text-sm" placeholder="Search email or words" value={search} onChange={e => setSearch(e.target.value)} />
+        <input className="input w-auto text-sm" placeholder="Search email or words"
+          value={search} onChange={e => setSearch(e.target.value)} />
         <div className="flex gap-1">
           {['', ...STATUS_COLS.map(s => s.status)].map(s => (
             <button
@@ -256,6 +444,7 @@ export default function PeakRequests() {
                     <RequestCard
                       key={req.id}
                       req={req}
+                      highlightNew={isPeekHandler && col.status === 'NEW'}
                       onEdit={(item) => {
                         setEditingId(item.id);
                         setForm({
@@ -271,6 +460,7 @@ export default function PeakRequests() {
                       onStatusChange={handleStatusChange}
                       onArchive={handleArchive}
                       onDelete={handleDelete}
+                      onFieldsUpdated={handleFieldsUpdated}
                     />
                   ))}
                 </div>
@@ -281,7 +471,8 @@ export default function PeakRequests() {
       )}
 
       {/* Add / Edit Request Modal */}
-      <Modal open={showForm} onClose={() => { setShowForm(false); setEditingId(null); }} title={editingId ? 'Edit Peak Request' : 'New Peak Request'}>
+      <Modal open={showForm} onClose={() => { setShowForm(false); setEditingId(null); }}
+        title={editingId ? 'Edit Peak Request' : 'New Peak Request'}>
         <div className="space-y-4">
           <div>
             <label className="label">Agent *</label>
@@ -290,22 +481,23 @@ export default function PeakRequests() {
               {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
-
           <div>
             <label className="label">Date *</label>
-            <input type="date" className="input" value={form.requestDate} onChange={e => setForm(f => ({ ...f, requestDate: e.target.value }))} />
+            <input type="date" className="input" value={form.requestDate}
+              onChange={e => setForm(f => ({ ...f, requestDate: e.target.value }))} />
           </div>
-
           <div>
             <label className="label">Customer Email</label>
-            <input className="input" value={form.contactEmail || ''} onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))} placeholder="support@example.com" />
+            <input className="input" value={form.contactEmail || ''}
+              onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))}
+              placeholder="support@example.com" />
           </div>
-
           <div>
             <label className="label">Profile nickname (issue)</label>
-            <input className="input" value={form.profileNickname || ''} onChange={e => setForm(f => ({ ...f, profileNickname: e.target.value }))} placeholder="Enter the profile nickname..." />
+            <input className="input" value={form.profileNickname || ''}
+              onChange={e => setForm(f => ({ ...f, profileNickname: e.target.value }))}
+              placeholder="Enter the profile nickname..." />
           </div>
-
           <div>
             <label className="label">Request *</label>
             <textarea
@@ -316,12 +508,12 @@ export default function PeakRequests() {
               onChange={e => setForm(f => ({ ...f, requestText: e.target.value }))}
             />
           </div>
-
           <div>
             <label className="label">Comments / Notes</label>
-            <textarea className="input resize-none" rows={3} value={form.comments} onChange={e => setForm(f => ({ ...f, comments: e.target.value }))} placeholder="Any notes for the handler..." />
+            <textarea className="input resize-none" rows={3} value={form.comments}
+              onChange={e => setForm(f => ({ ...f, comments: e.target.value }))}
+              placeholder="Any notes for the handler..." />
           </div>
-
           <div className="flex gap-3 pt-2">
             <button className="btn-secondary flex-1" onClick={() => { setShowForm(false); setEditingId(null); }}>Cancel</button>
             <button

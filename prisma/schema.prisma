@@ -27,7 +27,7 @@ model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String
-  role      String   // "head" | "lead" | "agent"
+  role      String   // "head" | "lead" | "agent" | "peek_handler"
   googleId  String?  @unique
   agentId   String?  @unique
   agent     Agent?   @relation(fields: [agentId], references: [id])
@@ -35,6 +35,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   plans            Plan[]
+  quickLinks       QuickLink[]
   sentMessages     InboxMessage[] @relation("SentMessages")
   receivedMessages InboxMessage[] @relation("ReceivedMessages")
   reviews          ClientReview[]
@@ -262,6 +263,26 @@ model PdpFeedback {
   updatedAt    DateTime  @updatedAt
 }
 
+model KpiSettings {
+  id        String   @id @default("global")
+  data      String   @default("{}")  // JSON blob — one global row for all agents
+  updatedAt DateTime @updatedAt
+  updatedBy String?  // userId of last admin who saved
+}
+
+model QuickLink {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  url       String
+  category  String   @default("")   // "" | "sheets" | "docs" | "tools" | "jira" | "other"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
 model PeakRequest {
   id            String        @id @default(cuid())
   agentId       String
@@ -272,6 +293,7 @@ model PeakRequest {
   requestDate   DateTime      // UTC
   status        String        @default("NEW")
   comments      String?
+  tags          String        @default("")
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   archived      Boolean       @default(false)

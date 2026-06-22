@@ -67,6 +67,7 @@ export interface PeakRequest {
   requestDate: string;
   status: RequestStatus;
   comments?: string | null;
+  tags: string;
   createdAt: string;
   updatedAt: string;
   archived: boolean;
@@ -85,7 +86,7 @@ export interface AgentStats {
   totalRefunds: number;
 }
 
-export type UserRole = 'head' | 'lead' | 'agent';
+export type UserRole = 'head' | 'lead' | 'agent' | 'peek_handler';
 
 export interface AuthUser {
   id: string;
@@ -240,6 +241,16 @@ export interface PdpSummaryItem {
   pdpStatus: 'none' | 'in_progress' | 'completed';
   totalGoals: number;
   doneGoals: number;
+}
+
+export interface QuickLink {
+  id: string;
+  userId: string;
+  title: string;
+  url: string;
+  category: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MonthlyStats {

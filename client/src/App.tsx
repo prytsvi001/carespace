@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ClipboardList, CalendarDays, Lightbulb, Bot, ChartBar,
   ListTodo, Star, TrendingUp, FileText, LogOut, User,
-  ChevronDown, Bell,
+  ChevronDown, Bell, BarChart3,
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -18,12 +18,13 @@ import Inbox from './pages/Inbox';
 import Reviews from './pages/Reviews';
 import PDP from './pages/PDP';
 import QAReports from './pages/QAReports';
-import { getUnreadCount } from './api';
+import MyKPI from './pages/MyKPI';
+import { getUnreadCount, getNewRequestsCount } from './api';
 
 // ── Tab types ────────────────────────────────────────────────────────────────
 
 type SharedTab = 'daily' | 'calendar' | 'requests' | 'qa' | 'stats';
-type SpaceTab  = 'plans' | 'inbox' | 'reviews' | 'pdp' | 'qa-reports';
+type SpaceTab  = 'plans' | 'inbox' | 'reviews' | 'pdp' | 'qa-reports' | 'kpi';
 type Tab = SharedTab | SpaceTab;
 
 const SHARED_TAB_IDS = new Set<Tab>(['daily', 'calendar', 'requests', 'qa', 'stats', 'inbox']);
@@ -42,24 +43,52 @@ const ALL_SPACE_TABS: { id: SpaceTab; label: string; shortLabel: string; Icon: R
   { id: 'reviews',    label: 'Reviews',    shortLabel: 'Reviews', Icon: Star,       roles: ['head', 'lead', 'agent'] },
   { id: 'pdp',        label: 'PDP',        shortLabel: 'PDP',     Icon: TrendingUp, roles: ['head', 'lead', 'agent'] },
   { id: 'qa-reports', label: 'QA Reports', shortLabel: 'Reports', Icon: FileText,   roles: ['head', 'lead'] },
+  { id: 'kpi',        label: 'My KPI',     shortLabel: 'KPI',     Icon: BarChart3,  roles: ['head', 'lead', 'agent'] },
 ];
+
+// Tabs accessible to peek_handler role
+const PEEK_HANDLER_TABS = new Set<SharedTab>(['requests', 'calendar']);
 
 // ── Main authenticated app ───────────────────────────────────────────────────
 
 function MainApp() {
   const { user, logout } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<Tab>('daily');
+  const userRole = user?.role ?? 'agent';
+  const isPeekHandler = userRole === 'peek_handler';
+
+  const [activeTab, setActiveTab] = useState<Tab>(isPeekHandler ? 'requests' : 'daily');
   const [statsYear, setStatsYear] = useState(new Date().getFullYear());
   const [statsMonth, setStatsMonth] = useState(new Date().getMonth() + 1);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSpaceMenu, setShowSpaceMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [newRequestsCount, setNewRequestsCount] = useState(0);
+  const [dismissedRequestsCount, setDismissedRequestsCount] = useState<number>(() => {
+    if (!user?.id) return 0;
+    const stored = localStorage.getItem(`peek_dismissed_${user.id}`);
+    return stored ? parseInt(stored, 10) : 0;
+  });
+
+  const newRequestsBadge = Math.max(0, newRequestsCount - dismissedRequestsCount);
 
   const inSpace = !SHARED_TAB_IDS.has(activeTab);
-  const userRole = user?.role ?? 'agent';
   const spaceTabsForRole = ALL_SPACE_TABS.filter((t) => t.roles.includes(userRole));
+  const visibleSharedTabs = isPeekHandler
+    ? SHARED_TABS.filter((t) => PEEK_HANDLER_TABS.has(t.id))
+    : SHARED_TABS;
+
+  // Keep dismissedCount in sync when newRequestsCount drops below it
+  // (e.g. a request was processed), so the next new request shows a badge
+  useEffect(() => {
+    if (newRequestsCount < dismissedRequestsCount) {
+      setDismissedRequestsCount(newRequestsCount);
+      if (user?.id) {
+        localStorage.setItem(`peek_dismissed_${user.id}`, String(newRequestsCount));
+      }
+    }
+  }, [newRequestsCount, dismissedRequestsCount, user?.id]);
 
   const fetchUnreadCount = useCallback(async () => {
     try {
@@ -70,7 +99,30 @@ function MainApp() {
     }
   }, []);
 
+  const fetchNewRequestsCount = useCallback(async () => {
+    try {
+      const data = await getNewRequestsCount();
+      setNewRequestsCount(data.count);
+    } catch {
+      // ignore network errors silently
+    }
+  }, []);
+
   useEffect(() => { fetchUnreadCount(); }, [fetchUnreadCount]);
+
+  useEffect(() => {
+    fetchNewRequestsCount();
+    const id = setInterval(fetchNewRequestsCount, 30_000);
+    return () => clearInterval(id);
+  }, [fetchNewRequestsCount]);
+
+  const handleRequestsTabClick = useCallback(() => {
+    setActiveTab('requests');
+    setDismissedRequestsCount(newRequestsCount);
+    if (user?.id) {
+      localStorage.setItem(`peek_dismissed_${user.id}`, String(newRequestsCount));
+    }
+  }, [newRequestsCount, user?.id]);
 
   const syncStatsMonth = useCallback((year: number, month: number) => {
     setStatsYear(year); setStatsMonth(month);
@@ -100,11 +152,11 @@ function MainApp() {
 
             {/* Desktop nav */}
             <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
-              {SHARED_TABS.map((tab) => (
+              {visibleSharedTabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all"
+                  onClick={() => tab.id === 'requests' ? handleRequestsTabClick() : setActiveTab(tab.id)}
+                  className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all"
                   style={
                     activeTab === tab.id
                       ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
@@ -113,66 +165,78 @@ function MainApp() {
                 >
                   <tab.Icon size={14} strokeWidth={1.6} />
                   <span>{tab.label}</span>
+                  {tab.id === 'requests' && newRequestsBadge > 0 && (
+                    <span
+                      className="flex items-center justify-center min-w-[16px] h-4 px-1 text-[9px] font-bold rounded-full"
+                      style={{ backgroundColor: '#ef4444', color: '#fff' }}
+                    >
+                      {newRequestsBadge > 99 ? '99+' : newRequestsBadge}
+                    </span>
+                  )}
                 </button>
               ))}
 
-              {/* My Space dropdown */}
-              <div className="relative ml-1">
-                <button
-                  onClick={() => { setShowSpaceMenu((v) => !v); setShowUserMenu(false); }}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all"
-                  style={
-                    inSpace || showSpaceMenu
-                      ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
-                      : { color: 'rgba(14,14,14,0.40)' }
-                  }
-                >
-                  <User size={14} strokeWidth={1.6} />
-                  <span>My Space</span>
-                  <ChevronDown size={12} strokeWidth={1.8} />
-                </button>
+              {/* My Space dropdown — hidden for peek_handler */}
+              {!isPeekHandler && (
+                <div className="relative ml-1">
+                  <button
+                    onClick={() => { setShowSpaceMenu((v) => !v); setShowUserMenu(false); }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all"
+                    style={
+                      inSpace || showSpaceMenu
+                        ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+                        : { color: 'rgba(14,14,14,0.40)' }
+                    }
+                  >
+                    <User size={14} strokeWidth={1.6} />
+                    <span>My Space</span>
+                    <ChevronDown size={12} strokeWidth={1.8} />
+                  </button>
 
-                {showSpaceMenu && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowSpaceMenu(false)} />
-                    <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 w-44 z-50">
-                      {spaceTabsForRole.map((tab) => (
-                        <button
-                          key={tab.id}
-                          onClick={() => { setActiveTab(tab.id); setShowSpaceMenu(false); }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
-                          style={{
-                            color: activeTab === tab.id ? '#0E0E0E' : 'rgba(14,14,14,0.60)',
-                            fontWeight: activeTab === tab.id ? 600 : 400,
-                          }}
-                        >
-                          <tab.Icon size={14} strokeWidth={1.6} />
-                          <span>{tab.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+                  {showSpaceMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowSpaceMenu(false)} />
+                      <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 w-44 z-50">
+                        {spaceTabsForRole.map((tab) => (
+                          <button
+                            key={tab.id}
+                            onClick={() => { setActiveTab(tab.id); setShowSpaceMenu(false); }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
+                            style={{
+                              color: activeTab === tab.id ? '#0E0E0E' : 'rgba(14,14,14,0.60)',
+                              fontWeight: activeTab === tab.id ? 600 : 400,
+                            }}
+                          >
+                            <tab.Icon size={14} strokeWidth={1.6} />
+                            <span>{tab.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </nav>
 
-            {/* Bell / Inbox */}
-            <button
-              onClick={() => { setActiveTab('inbox'); setShowSpaceMenu(false); setShowUserMenu(false); }}
-              className="relative shrink-0 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
-              style={{ color: activeTab === 'inbox' ? '#0E0E0E' : 'rgba(14,14,14,0.40)' }}
-              aria-label="Inbox"
-            >
-              <Bell size={18} strokeWidth={1.6} />
-              {unreadCount > 0 && (
-                <span
-                  className="absolute top-0 right-0 flex items-center justify-center min-w-[16px] h-4 px-1 text-[9px] font-bold rounded-full"
-                  style={{ backgroundColor: '#ef4444', color: '#fff', transform: 'translate(30%,-30%)' }}
-                >
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </button>
+            {/* Bell / Inbox — hidden for peek_handler */}
+            {!isPeekHandler && (
+              <button
+                onClick={() => { setActiveTab('inbox'); setShowSpaceMenu(false); setShowUserMenu(false); }}
+                className="relative shrink-0 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                style={{ color: activeTab === 'inbox' ? '#0E0E0E' : 'rgba(14,14,14,0.40)' }}
+                aria-label="Inbox"
+              >
+                <Bell size={18} strokeWidth={1.6} />
+                {unreadCount > 0 && (
+                  <span
+                    className="absolute top-0 right-0 flex items-center justify-center min-w-[16px] h-4 px-1 text-[9px] font-bold rounded-full"
+                    style={{ backgroundColor: '#ef4444', color: '#fff', transform: 'translate(30%,-30%)' }}
+                  >
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* User menu */}
             <div className="relative shrink-0">
@@ -250,14 +314,15 @@ function MainApp() {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-5 pb-24 md:pb-5">
         {activeTab === 'daily'      && <DailyLog onSyncStats={syncStatsMonth} onDataChanged={notifyStatsRefresh} />}
         {activeTab === 'stats'      && <Statistics year={statsYear} month={statsMonth} onYearChange={setStatsYear} onMonthChange={setStatsMonth} refreshKey={statsRefreshKey} />}
-        {activeTab === 'calendar'   && <ShiftCalendar onDataChanged={notifyStatsRefresh} />}
+        {activeTab === 'calendar'   && <ShiftCalendar onDataChanged={notifyStatsRefresh} readOnly={isPeekHandler} />}
         {activeTab === 'qa'         && <AIChatQA />}
-        {activeTab === 'requests'   && <PeakRequests />}
+        {activeTab === 'requests'   && <PeakRequests onDataChanged={fetchNewRequestsCount} />}
         {activeTab === 'plans'      && <MyPlans />}
         {activeTab === 'inbox'      && <Inbox onRead={fetchUnreadCount} />}
         {activeTab === 'reviews'    && <Reviews />}
         {activeTab === 'pdp'        && <PDP />}
         {activeTab === 'qa-reports' && <QAReports />}
+        {activeTab === 'kpi'        && <MyKPI />}
       </main>
 
       {/* ── Mobile bottom nav ── */}
@@ -266,36 +331,48 @@ function MainApp() {
         style={{ borderTop: '1px solid rgba(14,14,14,0.09)' }}
       >
         <div className="flex">
-          {SHARED_TABS.map((tab) => (
+          {visibleSharedTabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => tab.id === 'requests' ? handleRequestsTabClick() : setActiveTab(tab.id)}
               className="flex-1 flex flex-col items-center py-2 gap-0.5 text-[10px] font-medium transition-colors"
               style={{ color: activeTab === tab.id ? '#0E0E0E' : 'rgba(14,14,14,0.35)' }}
             >
-              <tab.Icon size={18} strokeWidth={1.6} />
+              <div className="relative">
+                <tab.Icon size={18} strokeWidth={1.6} />
+                {tab.id === 'requests' && newRequestsBadge > 0 && (
+                  <span
+                    className="absolute -top-1 -right-1.5 flex items-center justify-center min-w-[14px] h-3.5 px-0.5 text-[8px] font-bold rounded-full"
+                    style={{ backgroundColor: '#ef4444', color: '#fff' }}
+                  >
+                    {newRequestsBadge > 9 ? '9+' : newRequestsBadge}
+                  </span>
+                )}
+              </div>
               <span>{tab.shortLabel}</span>
             </button>
           ))}
-          {/* My Space entry on mobile — taps into first available space tab */}
-          <button
-            onClick={() => setActiveTab(inSpace ? activeTab : (spaceTabsForRole[0]?.id ?? 'plans'))}
-            className="flex-1 flex flex-col items-center py-2 gap-0.5 text-[10px] font-medium transition-colors"
-            style={{ color: inSpace ? '#0E0E0E' : 'rgba(14,14,14,0.35)' }}
-          >
-            <div className="relative">
-              <User size={18} strokeWidth={1.6} />
-              {unreadCount > 0 && (
-                <span
-                  className="absolute -top-1 -right-1.5 flex items-center justify-center min-w-[14px] h-3.5 px-0.5 text-[8px] font-bold rounded-full"
-                  style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
-                >
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </div>
-            <span>Space</span>
-          </button>
+          {/* My Space entry on mobile — hidden for peek_handler */}
+          {!isPeekHandler && (
+            <button
+              onClick={() => setActiveTab(inSpace ? activeTab : (spaceTabsForRole[0]?.id ?? 'plans'))}
+              className="flex-1 flex flex-col items-center py-2 gap-0.5 text-[10px] font-medium transition-colors"
+              style={{ color: inSpace ? '#0E0E0E' : 'rgba(14,14,14,0.35)' }}
+            >
+              <div className="relative">
+                <User size={18} strokeWidth={1.6} />
+                {unreadCount > 0 && (
+                  <span
+                    className="absolute -top-1 -right-1.5 flex items-center justify-center min-w-[14px] h-3.5 px-0.5 text-[8px] font-bold rounded-full"
+                    style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+                  >
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </div>
+              <span>Space</span>
+            </button>
+          )}
         </div>
       </nav>
     </div>

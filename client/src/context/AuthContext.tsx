@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import api from '../api';
 
-export type UserRole = 'head' | 'lead' | 'agent';
+export type UserRole = 'head' | 'lead' | 'agent' | 'peek_handler';
 
 export interface AuthUser {
   id: string;
