@@ -7,9 +7,9 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
-  getAgents, getQAReport, updateQAReportTotal,
+  getAgents, getQAReport,
   createQAIssue, updateQAIssue, deleteQAIssue,
-  getQAAgentReports, saveQAAgentReportDraft, sendQAAgentReport,
+  getQAAgentReports, saveQAAgentReportDraft, sendQAAgentReport, updateQAAgentReportTotal,
 } from '../api';
 import { Agent, QAReport, QAIssue, QAAgentReport } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -188,6 +188,100 @@ function TotalChatsField({
   );
 }
 
+// ─── Per-agent stats ──────────────────────────────────────────────────────────
+
+function agentStats(issues: QAIssue[], agentId: string, totalChats: number | null) {
+  const agentIssues  = issues.filter((i) => i.agentId === agentId);
+  const issueCount   = agentIssues.length;
+  const problemRate  = totalChats ? (issueCount / totalChats) * 100 : null;
+  const successRate  = problemRate !== null ? 100 - problemRate : null;
+  const typeCounts   = ISSUE_TYPES.map((t) => ({
+    ...t,
+    count: agentIssues.filter((i) => i.issueType === t.value).length,
+  }));
+  return { issueCount, problemRate, successRate, typeCounts };
+}
+
+function AgentStatsGrid({
+  totalChats,
+  canEdit,
+  onSaveTotalChats,
+  issueCount,
+  problemRate,
+  successRate,
+  typeCounts,
+}: {
+  totalChats: number | null;
+  canEdit: boolean;
+  onSaveTotalChats: (n: number | null) => Promise<void>;
+  issueCount: number;
+  problemRate: number | null;
+  successRate: number | null;
+  typeCounts: ReturnType<typeof agentStats>['typeCounts'];
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div>
+          <p className="text-[11px] text-slate-400 mb-1">Total Chats</p>
+          <TotalChatsField value={totalChats} canEdit={canEdit} onSave={onSaveTotalChats} />
+        </div>
+
+        <div>
+          <p className="text-[11px] text-slate-400 mb-1">Issues Logged</p>
+          <p className="text-2xl font-bold text-slate-800">{issueCount}</p>
+        </div>
+
+        <div>
+          <p className="text-[11px] text-slate-400 mb-1">Problem Rate</p>
+          {problemRate !== null ? (
+            <p className="text-2xl font-bold" style={{ color: successColor(100 - problemRate) }}>
+              {fmt(problemRate)}%
+            </p>
+          ) : (
+            <p className="text-2xl font-bold text-slate-300">—</p>
+          )}
+        </div>
+
+        <div>
+          <p className="text-[11px] text-slate-400 mb-1">Success Rate</p>
+          {successRate !== null ? (
+            <p className="text-2xl font-bold" style={{ color: successColor(successRate) }}>
+              {fmt(successRate)}%
+            </p>
+          ) : (
+            <p className="text-2xl font-bold text-slate-300">—</p>
+          )}
+        </div>
+      </div>
+
+      {issueCount > 0 && (
+        <div style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }} className="pt-2.5">
+          <p className="text-[11px] text-slate-400 mb-2">Issue breakdown</p>
+          <div className="flex flex-wrap gap-1.5">
+            {typeCounts.map((t) => (
+              <div
+                key={t.value}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg ${t.count === 0 ? 'opacity-40' : ''}`}
+                style={{ backgroundColor: 'rgba(14,14,14,0.04)' }}
+              >
+                <t.Icon size={11} strokeWidth={2} className={t.iconCls} />
+                <span className="text-[11px] font-medium text-slate-600">{t.shortLabel}</span>
+                <span
+                  className="text-[11px] font-bold px-1.5 rounded-full ml-0.5"
+                  style={{ backgroundColor: 'rgba(14,14,14,0.08)', color: '#0E0E0E' }}
+                >
+                  {t.count}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 const EMPTY_FORM = { chatRef: '', issueType: 'technical' as IssueTypeValue, notes: '', agentId: '' };
@@ -256,11 +350,16 @@ export default function QAReports() {
     else setMonth((m) => m + 1);
   };
 
-  // ── Total chats ───────────────────────────────────────────────────────────
+  // ── Per-agent total chats ─────────────────────────────────────────────────
 
-  const handleSaveTotal = async (totalChats: number | null) => {
-    const updated = await updateQAReportTotal({ year, month }, totalChats);
-    setReport(updated);
+  const handleSaveAgentTotal = async (agentId: string, totalChats: number | null) => {
+    const updated = await updateQAAgentReportTotal({ year, month, agentId }, totalChats);
+    setAgentReports((prev) => {
+      const exists = prev.find((ar) => ar.agentId === agentId);
+      return exists
+        ? prev.map((ar) => (ar.agentId === agentId ? updated : ar))
+        : [...prev, updated];
+    });
   };
 
   // ── Issue CRUD ────────────────────────────────────────────────────────────
@@ -376,18 +475,11 @@ export default function QAReports() {
     ? allIssues.filter((i) => i.agentId === filterAgentId)
     : allIssues;
   const issueCount    = allIssues.length;
-  const totalChats    = report?.totalChats ?? null;
-  const problemRate   = totalChats ? (issueCount / totalChats) * 100 : null;
-  const successRate   = problemRate !== null ? 100 - problemRate : null;
 
-  const typeCounts = ISSUE_TYPES.map((t) => ({
-    ...t,
-    count: allIssues.filter((i) => i.issueType === t.value).length,
-  }));
-
-  // Unique agents that have issues this month
+  // All active agents, plus anyone (e.g. now-archived) with issues/report data this month
   const agentsInReport = useMemo(() => {
     const map = new Map<string, { id: string; name: string }>();
+    for (const a of agents) map.set(a.id, { id: a.id, name: a.name });
     for (const issue of allIssues) {
       if (!map.has(issue.agentId)) map.set(issue.agentId, issue.agent);
     }
@@ -395,10 +487,14 @@ export default function QAReports() {
       if (!map.has(ar.agentId)) map.set(ar.agentId, ar.agent);
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [allIssues, agentReports]);
+  }, [agents, allIssues, agentReports]);
 
   const composeAgent = composeAgentId ? agents.find((a) => a.id === composeAgentId) ?? agentsInReport.find((a) => a.id === composeAgentId) : null;
   const composeIssues = composeAgentId ? allIssues.filter((i) => i.agentId === composeAgentId) : [];
+  const composeAgentReport = composeAgentId ? agentReports.find((ar) => ar.agentId === composeAgentId) : null;
+  const composeStats = composeAgentId
+    ? agentStats(allIssues, composeAgentId, composeAgentReport?.totalChats ?? null)
+    : null;
 
   const monthLabel = format(new Date(year, month - 1, 1), 'MMMM yyyy');
 
@@ -440,118 +536,6 @@ export default function QAReports() {
         <div className="flex justify-center py-12"><Spinner size="lg" /></div>
       ) : (
         <>
-          {/* ── Stats card ───────────────────────────────────────────────── */}
-          <div className="card space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-
-              {/* Total chats */}
-              <div>
-                <p className="text-xs text-slate-400 mb-1.5">Total Chats</p>
-                <TotalChatsField
-                  value={totalChats}
-                  canEdit={canEdit}
-                  onSave={handleSaveTotal}
-                />
-                {canEdit && totalChats === null && (
-                  <p className="text-[11px] text-slate-400 mt-1">Click ✎ to set</p>
-                )}
-              </div>
-
-              {/* Issues logged */}
-              <div>
-                <p className="text-xs text-slate-400 mb-1.5">Issues Logged</p>
-                <p className="text-2xl font-bold text-slate-800">{issueCount}</p>
-                <p className="text-[11px] text-slate-400 mt-1">problematic chats</p>
-              </div>
-
-              {/* Problem rate */}
-              <div>
-                <p className="text-xs text-slate-400 mb-1.5">Problem Rate</p>
-                {problemRate !== null ? (
-                  <>
-                    <p className="text-2xl font-bold" style={{ color: successColor(100 - problemRate) }}>
-                      {fmt(problemRate)}%
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-1">of total chats</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-300">—</p>
-                    <p className="text-[11px] text-slate-400 mt-1">set total chats first</p>
-                  </>
-                )}
-              </div>
-
-              {/* Success rate */}
-              <div>
-                <p className="text-xs text-slate-400 mb-1.5">Success Rate</p>
-                {successRate !== null ? (
-                  <>
-                    <p className="text-2xl font-bold" style={{ color: successColor(successRate) }}>
-                      {fmt(successRate)}%
-                    </p>
-                    <p className="text-[11px] mt-1" style={{ color: successColor(successRate) }}>
-                      {successRate >= 99 ? 'Excellent ✓' : successRate >= 97 ? 'Acceptable' : 'Needs attention'}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-300">—</p>
-                    <p className="text-[11px] text-slate-400 mt-1">set total chats first</p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Issue type breakdown */}
-            {issueCount > 0 && (
-              <>
-                <div style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }} className="pt-3">
-                  <p className="text-xs text-slate-400 mb-2.5">Issue breakdown</p>
-                  <div className="flex flex-wrap gap-2">
-                    {typeCounts.map((t) => (
-                      <div
-                        key={t.value}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${t.count === 0 ? 'opacity-40' : ''}`}
-                        style={{ backgroundColor: 'rgba(14,14,14,0.04)' }}
-                      >
-                        <t.Icon size={12} strokeWidth={2} className={t.iconCls} />
-                        <span className="text-xs font-medium text-slate-600">{t.shortLabel}</span>
-                        <span
-                          className="text-xs font-bold px-1.5 py-0.5 rounded-full ml-0.5"
-                          style={{ backgroundColor: 'rgba(14,14,14,0.08)', color: '#0E0E0E' }}
-                        >
-                          {t.count}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Visual proportion bars */}
-                {typeCounts.some((t) => t.count > 0) && (
-                  <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
-                    {typeCounts.map((t) => {
-                      const pct = issueCount > 0 ? (t.count / issueCount) * 100 : 0;
-                      const colors: Record<string, string> = {
-                        technical:     '#fca5a5',
-                        communication: '#fcd34d',
-                        no_response:   '#cbd5e1',
-                      };
-                      return pct > 0 ? (
-                        <div
-                          key={t.value}
-                          style={{ width: `${pct}%`, backgroundColor: colors[t.value] }}
-                          title={`${t.shortLabel}: ${t.count}`}
-                        />
-                      ) : null;
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
           {/* ── Issues section ───────────────────────────────────────────── */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -697,13 +681,15 @@ export default function QAReports() {
               <div>
                 <h3 className="font-semibold text-slate-700">Agent Reports — {monthLabel}</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Send each agent their personal QA summary for the month
+                  Each agent's own chat totals, issue rate, and report status for the month
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {agentsInReport.map((a) => {
                   const ar = agentReports.find((r) => r.agentId === a.id);
-                  const agentIssueCount = allIssues.filter((i) => i.agentId === a.id).length;
+                  const agentTotalChats = ar?.totalChats ?? null;
+                  const { issueCount: agentIssueCount, problemRate, successRate, typeCounts } =
+                    agentStats(allIssues, a.id, agentTotalChats);
                   const isSent = ar?.status === 'sent';
                   return (
                     <div
@@ -736,14 +722,20 @@ export default function QAReports() {
                         )}
                       </div>
 
-                      <p className="text-xs text-slate-400">
-                        {agentIssueCount === 0
-                          ? 'No issues logged'
-                          : `${agentIssueCount} issue${agentIssueCount !== 1 ? 's' : ''} logged`}
-                      </p>
+                      <div style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }} className="pt-3">
+                        <AgentStatsGrid
+                          totalChats={agentTotalChats}
+                          canEdit={canEdit && !isSent}
+                          onSaveTotalChats={(n) => handleSaveAgentTotal(a.id, n)}
+                          issueCount={agentIssueCount}
+                          problemRate={problemRate}
+                          successRate={successRate}
+                          typeCounts={typeCounts}
+                        />
+                      </div>
 
                       {isSent && ar?.sentAt && (
-                        <p className="text-xs text-slate-400">
+                        <p className="text-xs text-slate-400" style={{ borderTop: '1px solid rgba(14,14,14,0.07)', paddingTop: '0.75rem' }}>
                           Sent {format(new Date(ar.sentAt), 'MMM d, yyyy')}
                           {ar.note && (
                             <span className="block mt-0.5 italic text-slate-400 line-clamp-2">
@@ -850,6 +842,27 @@ export default function QAReports() {
         title={`QA Report — ${composeAgent?.name ?? ''}`}
       >
         <div className="space-y-4">
+          {/* Personal stats */}
+          {composeStats && (
+            <div
+              className="rounded-lg p-4"
+              style={{ backgroundColor: 'rgba(14,14,14,0.03)', border: '1px solid rgba(14,14,14,0.08)' }}
+            >
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                {monthLabel} — {composeAgent?.name}'s stats
+              </p>
+              <AgentStatsGrid
+                totalChats={composeAgentReport?.totalChats ?? null}
+                canEdit={false}
+                onSaveTotalChats={async () => {}}
+                issueCount={composeStats.issueCount}
+                problemRate={composeStats.problemRate}
+                successRate={composeStats.successRate}
+                typeCounts={composeStats.typeCounts}
+              />
+            </div>
+          )}
+
           {/* Preview */}
           <div
             className="rounded-lg p-4 space-y-3"
@@ -857,7 +870,7 @@ export default function QAReports() {
           >
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                {monthLabel} — {composeAgent?.name}
+                Issues this month
               </p>
               <span
                 className="text-xs font-semibold px-2 py-0.5 rounded-full"

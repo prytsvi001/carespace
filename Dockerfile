@@ -7,7 +7,9 @@ WORKDIR /app
 COPY . .
 
 # Prisma schema uses SQLite for development; switch to PostgreSQL for production build
-RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
+RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma && \
+    grep -q 'provider = "postgresql"' prisma/schema.prisma || \
+    (echo "ERROR: failed to switch prisma datasource provider to postgresql" && exit 1)
 
 # Install all deps (devDeps needed for build tools: tsx, tsc, vite, prisma CLI)
 RUN npm ci

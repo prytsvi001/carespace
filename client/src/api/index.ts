@@ -232,8 +232,13 @@ export const saveQAAgentReportDraft = (data: {
   year: number; month: number; agentId: string; note: string;
 }) => api.patch('/qa-reports/agent-reports', data).then((r) => r.data);
 
+export const updateQAAgentReportTotal = (
+  params: { year: number; month: number; agentId: string },
+  totalChats: number | null,
+) => api.patch('/qa-reports/agent-reports', { ...params, totalChats }).then((r) => r.data);
+
 export const sendQAAgentReport = (data: {
-  year: number; month: number; agentId: string; note: string;
+  year: number; month: number; agentId: string; note: string; totalChats?: number | null;
 }) => api.post('/qa-reports/agent-reports/send', data).then((r) => r.data);
 
 // ─── PDP ──────────────────────────────────────────────────────────────────────

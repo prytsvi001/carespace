@@ -2,8 +2,12 @@ node_modules/
 dist/
 .env
 .env.production
+.env.supabase.local
+.envtest
 server/.env
 *.log
 .DS_Store
 prisma/migrations/
 prisma/*.db
+prisma/*.db-journal
+.vercel

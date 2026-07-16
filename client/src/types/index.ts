@@ -151,6 +151,7 @@ export interface QAAgentReport {
   agentId: string;
   agent: { id: string; name: string };
   status: 'draft' | 'sent';
+  totalChats: number | null;
   note: string | null;
   sentAt: string | null;
   createdAt: string;

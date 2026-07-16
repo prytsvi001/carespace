@@ -8,7 +8,8 @@
     "db:migrate": "npm run db:migrate --workspace=server",
     "db:seed": "npm run db:seed --workspace=server",
     "db:studio": "npm run db:studio --workspace=server",
-    "build": "npm run build --workspace=client && npm run build --workspace=server"
+    "build": "npm run build --workspace=client && npm run build --workspace=server",
+    "vercel-build": "node scripts/prepare-vercel-schema.js && npx prisma generate --schema=./prisma/schema.prisma && npm run build --workspace=client"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
