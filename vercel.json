@@ -1,7 +1,7 @@
 {
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "client/dist",
-  "installCommand": "npm install",
+  "installCommand": "npm install --include=dev",
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" }
   ],
