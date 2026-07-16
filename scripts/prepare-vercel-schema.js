@@ -4,18 +4,22 @@
 // development (see prisma/schema.prisma); this switches the datasource to
 // PostgreSQL + a directUrl before `prisma generate` runs, the same way
 // Dockerfile does it with `sed` for the Docker build.
+//
+// Idempotent — Vercel's build cache can carry an already-switched schema
+// into a later build, so this must be a no-op (not an error) if the
+// datasource is already postgresql.
 const fs = require('fs');
 const path = require('path');
 
 const schemaPath = path.join(__dirname, '..', 'prisma', 'schema.prisma');
 let schema = fs.readFileSync(schemaPath, 'utf8');
 
-if (!schema.includes('provider = "sqlite"')) {
-  console.error('ERROR: expected provider = "sqlite" in prisma/schema.prisma — nothing to switch');
+if (schema.includes('provider = "sqlite"')) {
+  schema = schema.replace('provider = "sqlite"', 'provider  = "postgresql"');
+} else if (!schema.includes('provider  = "postgresql"')) {
+  console.error('ERROR: prisma/schema.prisma has neither sqlite nor postgresql provider — check the datasource block');
   process.exit(1);
 }
-
-schema = schema.replace('provider = "sqlite"', 'provider  = "postgresql"');
 
 if (!schema.includes('directUrl')) {
   schema = schema.replace(
@@ -25,4 +29,4 @@ if (!schema.includes('directUrl')) {
 }
 
 fs.writeFileSync(schemaPath, schema);
-console.log('prisma/schema.prisma switched to postgresql for Vercel build');
+console.log('prisma/schema.prisma is set to postgresql for the Vercel build');
