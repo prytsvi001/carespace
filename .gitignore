@@ -4,6 +4,7 @@ dist/
 .env.production
 .env.supabase.local
 .envtest
+scripts/local-data-export.json
 server/.env
 *.log
 .DS_Store

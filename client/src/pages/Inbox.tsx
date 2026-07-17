@@ -1,5 +1,5 @@
 // client/src/pages/Inbox.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Mail, MailOpen, Send, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage } from '../api';
@@ -53,17 +53,27 @@ export default function Inbox({ onRead }: InboxProps) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
 
-  useEffect(() => {
-    Promise.all([getInbox(), getSentMessages(), getInboxUsers()])
-      .then(([inbox, sent, userList]) => {
-        setMessages(inbox);
-        setSentMessages(sent);
-        setUsers(userList);
-        if (userList.length > 0) setRecipientId(userList[0].id);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+  const loadInbox = useCallback(async () => {
+    try {
+      const [inbox, sent, userList] = await Promise.all([getInbox(), getSentMessages(), getInboxUsers()]);
+      setMessages(inbox);
+      setSentMessages(sent);
+      setUsers(userList);
+      // Only default the recipient once — don't clobber a selection already made in the compose form
+      setRecipientId((prev) => prev || userList[0]?.id || '');
+    } catch (e) {
+      console.error(e);
+    }
   }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    loadInbox().finally(() => setLoading(false));
+
+    // Poll so messages from other users show up without a manual refresh
+    const id = setInterval(loadInbox, 20_000);
+    return () => clearInterval(id);
+  }, [loadInbox]);
 
   const openCompose = () => {
     setComposing(true);

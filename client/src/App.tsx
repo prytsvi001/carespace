@@ -49,6 +49,25 @@ const ALL_SPACE_TABS: { id: SpaceTab; label: string; shortLabel: string; Icon: R
 // Tabs accessible to peek_handler role
 const PEEK_HANDLER_TABS = new Set<SharedTab>(['requests', 'calendar']);
 
+const ACTIVE_TAB_STORAGE_KEY = 'carespace_active_tab';
+
+// Restores the last tab from localStorage on refresh, falling back to the
+// default if there's nothing stored or the stored tab isn't valid for this role
+function getInitialTab(userRole: string): Tab {
+  const isPeekHandler = userRole === 'peek_handler';
+  const fallback: Tab = isPeekHandler ? 'requests' : 'daily';
+  const stored = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY) as Tab | null;
+  if (!stored) return fallback;
+
+  if (isPeekHandler) {
+    return PEEK_HANDLER_TABS.has(stored as SharedTab) ? stored : fallback;
+  }
+
+  const validSpaceTabIds = new Set(ALL_SPACE_TABS.filter((t) => t.roles.includes(userRole)).map((t) => t.id));
+  if (SHARED_TAB_IDS.has(stored) || validSpaceTabIds.has(stored as SpaceTab)) return stored;
+  return fallback;
+}
+
 // ── Main authenticated app ───────────────────────────────────────────────────
 
 function MainApp() {
@@ -57,7 +76,11 @@ function MainApp() {
   const userRole = user?.role ?? 'agent';
   const isPeekHandler = userRole === 'peek_handler';
 
-  const [activeTab, setActiveTab] = useState<Tab>(isPeekHandler ? 'requests' : 'daily');
+  const [activeTab, setActiveTab] = useState<Tab>(() => getInitialTab(userRole));
+
+  useEffect(() => {
+    localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
+  }, [activeTab]);
   const [statsYear, setStatsYear] = useState(new Date().getFullYear());
   const [statsMonth, setStatsMonth] = useState(new Date().getMonth() + 1);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);

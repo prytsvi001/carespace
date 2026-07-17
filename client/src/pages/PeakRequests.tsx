@@ -305,8 +305,8 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     comments: '',
   });
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     try {
       const [agentData, reqData] = await Promise.all([
         getAgents(),
@@ -323,11 +323,17 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     } catch (e) {
       console.error(e);
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   };
 
-  useEffect(() => { loadData(); }, [filterStatus, filterAgent, search, showArchived]);
+  useEffect(() => {
+    loadData(true);
+
+    // Poll so requests submitted by other agents show up without a manual refresh
+    const id = setInterval(() => loadData(false), 20_000);
+    return () => clearInterval(id);
+  }, [filterStatus, filterAgent, search, showArchived]);
 
   const handleSubmit = async () => {
     if (!form.agentId || !form.requestText) return;
