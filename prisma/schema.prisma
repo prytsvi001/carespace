@@ -73,6 +73,7 @@ model InboxMessage {
   subject    String?
   content    String
   metadata   String?  // JSON: { year, month, agentId, reportId, status } — only for type "qa_report"
+  replyToId  String?  // id of the InboxMessage this one is a reply to (loose reference, no relation)
   read       Boolean  @default(false)
   deletedBySender   Boolean @default(false)
   deletedByReceiver Boolean @default(false)

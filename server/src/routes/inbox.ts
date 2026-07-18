@@ -21,6 +21,29 @@ function formatMessage(msg: { metadata: string | null; [key: string]: unknown })
   return { ...msg, metadata: parseMetadata(msg.metadata) };
 }
 
+// Attaches a lightweight preview of the message being replied to (if any),
+// so the receiver can see exactly which message a reply is about.
+async function attachReplyPreviews<T extends { replyToId: string | null }>(messages: T[]) {
+  const ids = [...new Set(messages.map((m) => m.replyToId).filter((id): id is string => !!id))];
+  if (ids.length === 0) return messages.map((m) => ({ ...m, replyTo: null }));
+
+  const originals = await prisma.inboxMessage.findMany({
+    where: { id: { in: ids } },
+    include: { sender: { select: { name: true } } },
+  });
+  const byId = new Map(originals.map((o) => [o.id, o]));
+
+  return messages.map((m) => {
+    const original = m.replyToId ? byId.get(m.replyToId) : undefined;
+    return {
+      ...m,
+      replyTo: original
+        ? { id: original.id, subject: original.subject, content: original.content, senderName: original.sender.name }
+        : null,
+    };
+  });
+}
+
 // GET /api/inbox — received messages for current user, newest first
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -34,7 +57,8 @@ router.get('/', async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json(messages.map(formatMessage));
+    const withReplies = await attachReplyPreviews(messages);
+    res.json(withReplies.map(formatMessage));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch inbox' });
@@ -68,7 +92,8 @@ router.get('/sent', async (req: Request, res: Response) => {
       },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(messages.map(formatMessage));
+    const withReplies = await attachReplyPreviews(messages);
+    res.json(withReplies.map(formatMessage));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch sent messages' });
@@ -94,10 +119,11 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const senderId = (req.user as Express.User).id;
     const senderRole = (req.user as Express.User).role;
-    const { recipientId, type, content } = req.body as {
+    const { recipientId, type, content, replyToId } = req.body as {
       recipientId?: string;
       type?: string;
       content?: string;
+      replyToId?: string;
     };
 
     if (!recipientId || !type || !content?.trim()) {
@@ -114,15 +140,25 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Recipient not found' });
     }
 
+    // Only accept replyToId if the sender was actually a party to that message
+    let validReplyToId: string | undefined;
+    if (replyToId) {
+      const original = await prisma.inboxMessage.findUnique({ where: { id: replyToId } });
+      if (original && (original.senderId === senderId || original.receiverId === senderId)) {
+        validReplyToId = original.id;
+      }
+    }
+
     const message = await prisma.inboxMessage.create({
-      data: { senderId, receiverId: recipientId, type, content: content.trim() },
+      data: { senderId, receiverId: recipientId, type, content: content.trim(), replyToId: validReplyToId },
       include: {
         sender:   { select: { id: true, name: true, role: true } },
         receiver: { select: { id: true, name: true, role: true } },
       },
     });
 
-    return res.status(201).json(message);
+    const [withReply] = await attachReplyPreviews([message]);
+    return res.status(201).json(formatMessage(withReply));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to send message' });

@@ -114,7 +114,10 @@ export default function Inbox({ onRead }: InboxProps) {
     setSending(true);
     setSendError('');
     try {
-      const msg: InboxMessage = await sendMessage({ recipientId, type: msgType, content: content.trim() });
+      const msg: InboxMessage = await sendMessage({
+        recipientId, type: msgType, content: content.trim(),
+        replyToId: replyingTo?.id,
+      });
       setSentMessages((prev) => [msg, ...prev]);
       setComposing(false);
       setContent('');
@@ -357,6 +360,19 @@ export default function Inbox({ onRead }: InboxProps) {
                     {format(new Date(msg.createdAt), 'dd MMM yyyy')}
                   </span>
                 </div>
+
+                {msg.replyTo && (
+                  <div
+                    className="mb-2 pl-2.5 text-xs"
+                    style={{ borderLeft: '2px solid rgba(14,14,14,0.15)', color: 'rgba(14,14,14,0.45)' }}
+                  >
+                    <span className="font-medium">In reply to {msg.replyTo.senderName}</span>
+                    {msg.replyTo.subject && <>: {msg.replyTo.subject}</>}
+                    <p className="italic mt-0.5 line-clamp-2">
+                      "{msg.replyTo.content}"
+                    </p>
+                  </div>
+                )}
 
                 {msg.subject && (
                   <p className="text-sm font-semibold text-slate-700 mb-1 flex items-center gap-2 flex-wrap">

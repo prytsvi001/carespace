@@ -177,7 +177,7 @@ export const getUnreadCount = () =>
 export const markMessageRead = (id: string) =>
   api.patch(`/inbox/${id}/read`).then((r) => r.data);
 
-export const sendMessage = (data: { recipientId: string; type: string; content: string }) =>
+export const sendMessage = (data: { recipientId: string; type: string; content: string; replyToId?: string }) =>
   api.post('/inbox', data).then((r) => r.data);
 
 export const deleteMessage = (id: string) =>

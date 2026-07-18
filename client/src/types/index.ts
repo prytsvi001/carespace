@@ -146,6 +146,8 @@ export interface InboxMessage {
   subject: string | null;
   content: string;
   metadata?: InboxMessageMetadata | null;
+  replyToId?: string | null;
+  replyTo?: { id: string; subject: string | null; content: string; senderName: string } | null;
   read: boolean;
   createdAt: string;
   updatedAt: string;
