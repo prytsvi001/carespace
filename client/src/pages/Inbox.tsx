@@ -1,6 +1,6 @@
 // client/src/pages/Inbox.tsx
-import React, { useCallback, useEffect, useState } from 'react';
-import { Mail, MailOpen, Send, X, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Mail, MailOpen, Send, X, Trash2, Reply } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage, deleteMessage,
@@ -57,6 +57,8 @@ export default function Inbox({ onRead }: InboxProps) {
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
+  const [replyingTo, setReplyingTo] = useState<InboxMessage | null>(null);
+  const composeRef = useRef<HTMLDivElement>(null);
 
   const loadInbox = useCallback(async () => {
     try {
@@ -84,8 +86,24 @@ export default function Inbox({ onRead }: InboxProps) {
     setComposing(true);
     setSendError('');
     setContent('');
+    setReplyingTo(null);
     setMsgType(typeOptions[0]?.value ?? 'general');
     if (users.length > 0) setRecipientId(users[0].id);
+  };
+
+  const openReply = (msg: InboxMessage) => {
+    setComposing(true);
+    setSendError('');
+    setContent('');
+    setReplyingTo(msg);
+    setMsgType('general');
+    setRecipientId(msg.senderId);
+    setTimeout(() => composeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  };
+
+  const closeCompose = () => {
+    setComposing(false);
+    setReplyingTo(null);
   };
 
   const handleSend = async () => {
@@ -100,6 +118,7 @@ export default function Inbox({ onRead }: InboxProps) {
       setSentMessages((prev) => [msg, ...prev]);
       setComposing(false);
       setContent('');
+      setReplyingTo(null);
     } catch (e: any) {
       setSendError(e?.response?.data?.error ?? 'Failed to send. Please try again.');
     } finally {
@@ -170,7 +189,7 @@ export default function Inbox({ onRead }: InboxProps) {
         </div>
 
         <button
-          onClick={composing ? () => setComposing(false) : openCompose}
+          onClick={composing ? closeCompose : openCompose}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all shrink-0"
           style={
             composing
@@ -187,8 +206,20 @@ export default function Inbox({ onRead }: InboxProps) {
 
       {/* Compose panel */}
       {composing && (
-        <div className="card space-y-3">
-          <p className="text-sm font-semibold text-slate-700">Compose Message</p>
+        <div ref={composeRef} className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-700">
+              {replyingTo ? `Reply to ${replyingTo.sender.name}` : 'Compose Message'}
+            </p>
+            {replyingTo && (
+              <button
+                onClick={() => setReplyingTo(null)}
+                className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                Change recipient
+              </button>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -371,7 +402,17 @@ export default function Inbox({ onRead }: InboxProps) {
                   </p>
                 )}
 
-                <div className="mt-3 flex justify-end gap-2">
+                <div className="mt-3 flex justify-end gap-2 flex-wrap">
+                  {!isSent && (
+                    <button
+                      onClick={() => openReply(msg)}
+                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                    >
+                      <Reply size={13} strokeWidth={1.8} />
+                      Reply
+                    </button>
+                  )}
                   {!isSent && !msg.read && (
                     <button
                       onClick={() => handleMarkRead(msg.id)}
