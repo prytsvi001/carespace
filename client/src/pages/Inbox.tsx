@@ -1,6 +1,6 @@
 // client/src/pages/Inbox.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mail, MailOpen, Send, X, Trash2, Reply } from 'lucide-react';
+import { Mail, MailOpen, Send, X, Trash2, Reply, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage, deleteMessage,
@@ -127,6 +127,16 @@ export default function Inbox({ onRead }: InboxProps) {
     } finally {
       setSending(false);
     }
+  };
+
+  // ── Collapse read messages to just their title, expandable on click ──────
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   const handleMarkRead = async (id: string) => {
@@ -361,62 +371,84 @@ export default function Inbox({ onRead }: InboxProps) {
                   </span>
                 </div>
 
-                {msg.replyTo && (
-                  <div
-                    className="mb-2 pl-2.5 text-xs"
-                    style={{ borderLeft: '2px solid rgba(14,14,14,0.15)', color: 'rgba(14,14,14,0.45)' }}
-                  >
-                    <span className="font-medium">In reply to {msg.replyTo.senderName}</span>
-                    {msg.replyTo.subject && <>: {msg.replyTo.subject}</>}
-                    <p className="italic mt-0.5 line-clamp-2">
-                      "{msg.replyTo.content}"
-                    </p>
-                  </div>
-                )}
+                {(() => {
+                  const isCollapsed = msg.read && !expandedIds.has(msg.id);
+                  const collapsedLabel = msg.subject
+                    || (msg.content.length > 80 ? `${msg.content.slice(0, 80)}…` : msg.content);
+                  return (
+                    <>
+                      <button
+                        onClick={() => msg.read && toggleExpanded(msg.id)}
+                        className="w-full flex items-center justify-between gap-2 text-left mb-1"
+                        style={{ cursor: msg.read ? 'pointer' : 'default' }}
+                      >
+                        <span className="text-sm font-semibold text-slate-700 flex items-center gap-2 flex-wrap min-w-0">
+                          <span className="truncate">{collapsedLabel}</span>
+                          {msg.metadata?.status === 'resent' && (
+                            <span
+                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
+                              style={{ backgroundColor: 'rgba(59,130,246,0.12)', color: '#2563eb' }}
+                            >
+                              Revised
+                            </span>
+                          )}
+                        </span>
+                        {msg.read && (
+                          isCollapsed
+                            ? <ChevronDown size={16} strokeWidth={2} className="shrink-0 text-slate-300" />
+                            : <ChevronUp size={16} strokeWidth={2} className="shrink-0 text-slate-300" />
+                        )}
+                      </button>
 
-                {msg.subject && (
-                  <p className="text-sm font-semibold text-slate-700 mb-1 flex items-center gap-2 flex-wrap">
-                    {msg.subject}
-                    {msg.metadata?.status === 'resent' && (
-                      <span
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                        style={{ backgroundColor: 'rgba(59,130,246,0.12)', color: '#2563eb' }}
-                      >
-                        Revised
-                      </span>
-                    )}
-                  </p>
-                )}
-                {msg.type === 'qa_report' && msg.metadata?.issues ? (
-                  <div className="space-y-2">
-                    <QAReportPreview
-                      title={`${format(new Date(msg.metadata.year, msg.metadata.month - 1, 1), 'MMMM yyyy')} — Your Stats`}
-                      totalChats={msg.metadata.totalChats ?? null}
-                      issues={msg.metadata.issues}
-                      timeline={msg.metadata.timeline ?? []}
-                      canReturn={!isSent && role === 'agent'}
-                      onIssueComment={handleIssueComment}
-                      onReportComment={(text, action) => handleReportComment(msg, text, action)}
-                    />
-                    {msg.metadata.note && (
-                      <p
-                        className="text-sm text-slate-600 italic leading-relaxed rounded-lg p-3"
-                        style={{ backgroundColor: 'rgba(14,14,14,0.03)', whiteSpace: 'pre-wrap' }}
-                      >
-                        "{msg.metadata.note}"
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-600 leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
-                    {msg.content}
-                  </p>
-                )}
-                {msg.metadata && msg.updatedAt !== msg.createdAt && (
-                  <p className="text-xs text-slate-400 mt-1">
-                    Updated {format(new Date(msg.updatedAt), 'dd MMM yyyy')}
-                  </p>
-                )}
+                      {!isCollapsed && (
+                        <>
+                          {msg.replyTo && (
+                            <div
+                              className="mb-2 pl-2.5 text-xs"
+                              style={{ borderLeft: '2px solid rgba(14,14,14,0.15)', color: 'rgba(14,14,14,0.45)' }}
+                            >
+                              <span className="font-medium">In reply to {msg.replyTo.senderName}</span>
+                              {msg.replyTo.subject && <>: {msg.replyTo.subject}</>}
+                              <p className="italic mt-0.5 line-clamp-2">
+                                "{msg.replyTo.content}"
+                              </p>
+                            </div>
+                          )}
+                          {msg.type === 'qa_report' && msg.metadata?.issues ? (
+                            <div className="space-y-2">
+                              <QAReportPreview
+                                title={`${format(new Date(msg.metadata.year, msg.metadata.month - 1, 1), 'MMMM yyyy')} — Your Stats`}
+                                totalChats={msg.metadata.totalChats ?? null}
+                                issues={msg.metadata.issues}
+                                timeline={msg.metadata.timeline ?? []}
+                                canReturn={!isSent && role === 'agent'}
+                                onIssueComment={handleIssueComment}
+                                onReportComment={(text, action) => handleReportComment(msg, text, action)}
+                              />
+                              {msg.metadata.note && (
+                                <p
+                                  className="text-sm text-slate-600 italic leading-relaxed rounded-lg p-3"
+                                  style={{ backgroundColor: 'rgba(14,14,14,0.03)', whiteSpace: 'pre-wrap' }}
+                                >
+                                  "{msg.metadata.note}"
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-slate-600 leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
+                              {msg.content}
+                            </p>
+                          )}
+                          {msg.metadata && msg.updatedAt !== msg.createdAt && (
+                            <p className="text-xs text-slate-400 mt-1">
+                              Updated {format(new Date(msg.updatedAt), 'dd MMM yyyy')}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
 
                 <div className="mt-3 flex justify-end gap-2 flex-wrap">
                   {!isSent && (
