@@ -142,25 +142,27 @@ function TotalChatsField({
 
   if (editing) {
     return (
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <input
           ref={inputRef}
           type="number"
           min="0"
-          className="input w-24 py-1 text-base font-bold"
+          className="input w-20 py-1 text-base font-bold"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKey}
         />
         <button
+          type="button"
           onClick={handleSave}
-          className="text-xs btn-accent py-1 px-2"
+          className="text-xs btn-accent py-1 px-2 shrink-0"
         >
           Save
         </button>
         <button
+          type="button"
           onClick={() => setEditing(false)}
-          className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+          className="text-xs text-slate-400 hover:text-slate-600 transition-colors shrink-0"
         >
           ✕
         </button>
