@@ -180,6 +180,9 @@ export const markMessageRead = (id: string) =>
 export const sendMessage = (data: { recipientId: string; type: string; content: string }) =>
   api.post('/inbox', data).then((r) => r.data);
 
+export const deleteMessage = (id: string) =>
+  api.delete(`/inbox/${id}`).then((r) => r.data);
+
 // ─── Reviews ───────────────────────────────────────────────────────────────
 export const getReviews = (params?: {
   userId?: string;

@@ -1,14 +1,15 @@
 // client/src/pages/Inbox.tsx
 import React, { useCallback, useEffect, useState } from 'react';
-import { Mail, MailOpen, Send, X } from 'lucide-react';
+import { Mail, MailOpen, Send, X, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
-  getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage,
+  getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage, deleteMessage,
   addQAAgentReportComment, addQAIssueComment,
 } from '../api';
 import { InboxMessage } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { QAReportPreview } from '../components/qaReport';
+import { ConfirmDialog } from '../components/ui';
 
 type InboxUser = { id: string; name: string; role: string };
 
@@ -113,6 +114,20 @@ export default function Inbox({ onRead }: InboxProps) {
       onRead?.();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const handleDelete = async (id: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+    setSentMessages((prev) => prev.filter((m) => m.id !== id));
+    try {
+      await deleteMessage(id);
+      onRead?.();
+    } catch (e) {
+      console.error(e);
+      loadInbox();
     }
   };
 
@@ -356,8 +371,8 @@ export default function Inbox({ onRead }: InboxProps) {
                   </p>
                 )}
 
-                {!isSent && !msg.read && (
-                  <div className="mt-3 flex justify-end">
+                <div className="mt-3 flex justify-end gap-2">
+                  {!isSent && !msg.read && (
                     <button
                       onClick={() => handleMarkRead(msg.id)}
                       className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
@@ -366,13 +381,28 @@ export default function Inbox({ onRead }: InboxProps) {
                       <Mail size={13} strokeWidth={2} />
                       Mark as read
                     </button>
-                  </div>
-                )}
+                  )}
+                  <button
+                    onClick={() => setConfirmDeleteId(msg.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                    style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+                  >
+                    <Trash2 size={13} strokeWidth={1.8} />
+                    Delete
+                  </button>
+                </div>
               </div>
             );
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        message="Delete this message? This only removes it from your own view."
+        onConfirm={() => { if (confirmDeleteId) handleDelete(confirmDeleteId); setConfirmDeleteId(null); }}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   );
 }

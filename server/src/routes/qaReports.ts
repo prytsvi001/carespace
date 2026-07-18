@@ -72,7 +72,7 @@ async function refreshInboxMessage(reportId: string, agentId: string) {
 
   await prisma.inboxMessage.update({
     where: { id: agentReport.inboxMessageId },
-    data: { subject, metadata, read: false },
+    data: { subject, metadata, read: false, deletedByReceiver: false },
   });
 }
 
@@ -214,7 +214,7 @@ router.post('/agent-reports/send', async (req: Request, res: Response) => {
       // Update the same inbox message in place — resending shouldn't create a duplicate
       const updatedMessage = await prisma.inboxMessage.update({
         where: { id: existingAgentReport.inboxMessageId },
-        data: { subject, content, metadata, read: false },
+        data: { subject, content, metadata, read: false, deletedByReceiver: false },
       });
       messageId = updatedMessage.id;
     } else {

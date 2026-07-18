@@ -27,7 +27,7 @@ router.get('/', async (req: Request, res: Response) => {
     const userId = (req.user as Express.User).id;
 
     const messages = await prisma.inboxMessage.findMany({
-      where: { receiverId: userId },
+      where: { receiverId: userId, deletedByReceiver: false },
       include: {
         sender: { select: { id: true, name: true, role: true } },
       },
@@ -62,7 +62,7 @@ router.get('/sent', async (req: Request, res: Response) => {
   try {
     const userId = (req.user as Express.User).id;
     const messages = await prisma.inboxMessage.findMany({
-      where: { senderId: userId },
+      where: { senderId: userId, deletedBySender: false },
       include: {
         receiver: { select: { id: true, name: true, role: true } },
       },
@@ -148,6 +148,36 @@ router.patch('/:id/read', async (req: Request, res: Response) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to mark as read' });
+  }
+});
+
+// DELETE /api/inbox/:id — removes the message from the caller's own side
+// (received or sent) without affecting the other party's copy
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as Express.User).id;
+    const msg = await prisma.inboxMessage.findUnique({ where: { id: req.params.id } });
+
+    if (!msg || (msg.receiverId !== userId && msg.senderId !== userId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const deletedBySender = msg.senderId === userId ? true : msg.deletedBySender;
+    const deletedByReceiver = msg.receiverId === userId ? true : msg.deletedByReceiver;
+
+    if (deletedBySender && deletedByReceiver) {
+      await prisma.inboxMessage.delete({ where: { id: msg.id } });
+    } else {
+      await prisma.inboxMessage.update({
+        where: { id: msg.id },
+        data: { deletedBySender, deletedByReceiver },
+      });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to delete message' });
   }
 });
 
