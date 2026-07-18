@@ -88,7 +88,9 @@ export default function Reviews() {
       if (others && user) {
         const combined: FilterUser[] = [
           { id: user.id, name: user.name },
-          ...(others as FilterUser[]),
+          ...(others as { id: string; name: string; role: string }[])
+            .filter((u) => u.role !== 'peek_handler')
+            .map((u) => ({ id: u.id, name: u.name })),
         ].sort((a, b) => a.name.localeCompare(b.name));
         setFilterUsers(combined);
       }
