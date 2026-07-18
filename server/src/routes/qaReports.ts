@@ -174,7 +174,13 @@ router.post('/agent-reports/send', async (req: Request, res: Response) => {
       note?.trim() ? `\nNote from ${senderName}:\n${note.trim()}` : '',
     ].filter(Boolean).join('\n');
 
-    const metadata = JSON.stringify({ year: y, month: m, agentId, reportId: report.id, status: newStatus });
+    const metadata = JSON.stringify({
+      year: y, month: m, agentId, reportId: report.id, status: newStatus,
+      agentName, totalChats: effectiveTotalChats, note: note?.trim() || null,
+      issues: report.issues.map((i) => ({
+        id: i.id, chatRef: i.chatRef, issueType: i.issueType, notes: i.notes,
+      })),
+    });
 
     let messageId: string;
     if (existingAgentReport?.inboxMessageId) {

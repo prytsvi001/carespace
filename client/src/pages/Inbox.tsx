@@ -8,6 +8,7 @@ import {
 } from '../api';
 import { InboxMessage } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { QAReportPreview } from '../components/qaReport';
 
 type InboxUser = { id: string; name: string; role: string };
 
@@ -353,9 +354,27 @@ export default function Inbox({ onRead }: InboxProps) {
                     )}
                   </p>
                 )}
-                <p className="text-sm text-slate-600 leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
-                  {msg.content}
-                </p>
+                {msg.type === 'qa_report' && msg.metadata?.issues ? (
+                  <div className="space-y-2">
+                    <QAReportPreview
+                      title={`${format(new Date(msg.metadata.year, msg.metadata.month - 1, 1), 'MMMM yyyy')} — Your Stats`}
+                      totalChats={msg.metadata.totalChats ?? null}
+                      issues={msg.metadata.issues}
+                    />
+                    {msg.metadata.note && (
+                      <p
+                        className="text-sm text-slate-600 italic leading-relaxed rounded-lg p-3"
+                        style={{ backgroundColor: 'rgba(14,14,14,0.03)', whiteSpace: 'pre-wrap' }}
+                      >
+                        "{msg.metadata.note}"
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-600 leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
+                    {msg.content}
+                  </p>
+                )}
                 {msg.metadata && msg.updatedAt !== msg.createdAt && (
                   <p className="text-xs text-slate-400 mt-1">
                     Updated {format(new Date(msg.updatedAt), 'dd MMM yyyy')}

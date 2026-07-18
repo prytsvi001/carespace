@@ -118,6 +118,10 @@ export interface InboxMessageMetadata {
   agentId: string;
   reportId: string;
   status: string;
+  agentName?: string;
+  totalChats?: number | null;
+  note?: string | null;
+  issues?: { id: string; chatRef: string; issueType: string; notes: string | null }[];
 }
 
 export interface InboxMessage {
