@@ -1,5 +1,5 @@
 // client/src/components/ui.tsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 
 // ─── Auto-resize textarea ────────────────────────────────────────────────────
@@ -35,6 +35,53 @@ export function AutoTextarea({
       rows={1}
       style={{ resize: 'none', overflow: 'hidden' }}
     />
+  );
+}
+
+// ─── Collapsible text (long pasted content) ─────────────────────────────────
+export function CollapsibleText({
+  text,
+  lines = 3,
+  className = 'text-sm text-slate-700',
+}: {
+  text: string;
+  lines?: number;
+  className?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.split('\n').length > lines || text.length > 240;
+
+  if (!isLong) {
+    return <span className={className} style={{ whiteSpace: 'pre-wrap' }}>{text}</span>;
+  }
+
+  return (
+    <div>
+      <span
+        className={className}
+        style={
+          expanded
+            ? { whiteSpace: 'pre-wrap' }
+            : {
+                whiteSpace: 'pre-wrap',
+                display: '-webkit-box',
+                WebkitLineClamp: lines,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }
+        }
+      >
+        {text}
+      </span>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="text-xs font-medium mt-1 hover:underline"
+        style={{ color: '#2563eb' }}
+      >
+        {expanded ? 'Show less' : 'Show more'}
+      </button>
+    </div>
   );
 }
 

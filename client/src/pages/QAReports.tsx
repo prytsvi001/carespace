@@ -13,7 +13,7 @@ import {
 } from '../api';
 import { Agent, QAReport, QAIssue, QAAgentReport } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { Modal, Spinner, EmptyState, ConfirmDialog, AutoTextarea } from '../components/ui';
+import { Modal, Spinner, EmptyState, ConfirmDialog, AutoTextarea, CollapsibleText } from '../components/ui';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -104,11 +104,7 @@ function ChatRefDisplay({ chatRef }: { chatRef: string }) {
       </a>
     );
   }
-  return (
-    <span className="text-sm text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>
-      {chatRef}
-    </span>
-  );
+  return <CollapsibleText text={chatRef} className="text-sm text-slate-700" />;
 }
 
 // ─── Inline total-chats editor ────────────────────────────────────────────────
