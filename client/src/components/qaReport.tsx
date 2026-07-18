@@ -2,10 +2,12 @@
 // Shared QA-report rendering pieces used by both QAReports.tsx (the compose/
 // preview panel) and Inbox.tsx (so a received report looks the same there).
 import React, { useRef, useState } from 'react';
+import { format } from 'date-fns';
 import {
   AlertTriangle, MessageSquare, BellOff, ExternalLink, Pencil,
 } from 'lucide-react';
-import { Spinner, CollapsibleText } from './ui';
+import { Spinner, CollapsibleText, AutoTextarea } from './ui';
+import type { QAComment } from '../types';
 
 // ─── Issue type config ────────────────────────────────────────────────────────
 
@@ -47,6 +49,7 @@ export interface QAIssueLike {
   chatRef: string;
   issueType: string;
   notes: string | null;
+  comments?: QAComment[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -276,21 +279,130 @@ export function AgentStatsGrid({
   );
 }
 
+// ─── Comment thread (per-issue, and the report-level timeline) ──────────────
+
+export function QACommentThread({
+  entries,
+  onSubmit,
+  canReturn = false,
+  placeholder = 'Add a comment…',
+  emptyLabel = 'No comments yet',
+}: {
+  entries: QAComment[];
+  onSubmit: (text: string, action: 'comment' | 'return') => Promise<void>;
+  canReturn?: boolean;
+  placeholder?: string;
+  emptyLabel?: string;
+}) {
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState<'comment' | 'return' | null>(null);
+
+  const submit = async (action: 'comment' | 'return') => {
+    if (!text.trim() || submitting) return;
+    setSubmitting(action);
+    try {
+      await onSubmit(text.trim(), action);
+      setText('');
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {entries.length === 0 ? (
+        <p className="text-xs italic" style={{ color: 'rgba(14,14,14,0.35)' }}>{emptyLabel}</p>
+      ) : (
+        <div className="space-y-2">
+          {entries.map((e) =>
+            e.type === 'status_change' ? (
+              <div key={e.id} className="flex items-center gap-2 text-xs" style={{ color: 'rgba(14,14,14,0.40)' }}>
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'rgba(14,14,14,0.25)' }} />
+                <span>{e.text}</span>
+                <span>· {format(new Date(e.createdAt), 'dd MMM, HH:mm')}</span>
+              </div>
+            ) : (
+              <div key={e.id} className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-600">{e.authorName}</span>
+                  <span className="text-xs" style={{ color: 'rgba(14,14,14,0.35)' }}>
+                    {format(new Date(e.createdAt), 'dd MMM yyyy, HH:mm')}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-600 leading-snug">{e.text}</p>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      <AutoTextarea
+        className="input text-sm"
+        placeholder={placeholder}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div className="flex gap-2 justify-end flex-wrap">
+        <button
+          type="button"
+          onClick={() => submit('comment')}
+          disabled={!text.trim() || !!submitting}
+          className="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50"
+          style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+        >
+          {submitting === 'comment' ? 'Sending…' : 'Send Comment'}
+        </button>
+        {canReturn && (
+          <button
+            type="button"
+            onClick={() => submit('return')}
+            disabled={!text.trim() || !!submitting}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50"
+            style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: '#dc2626' }}
+          >
+            {submitting === 'return' ? 'Returning…' : 'Return for Re-review'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Bordered preview cards (used in the compose modal and Inbox) ────────────
 
-export function QAIssuesPreviewList({ issues }: { issues: QAIssueLike[] }) {
+export function QAIssuesPreviewList({
+  issues,
+  canReturn = false,
+  onIssueComment,
+}: {
+  issues: QAIssueLike[];
+  canReturn?: boolean;
+  onIssueComment?: (issueId: string, text: string, action: 'comment' | 'return') => Promise<void>;
+}) {
   if (issues.length === 0) {
     return <p className="text-xs text-slate-400 italic">No issues logged for this agent this month.</p>;
   }
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       {issues.map((issue) => (
         <div key={issue.id} className="flex items-start gap-2">
           <IssueTypeBadge value={issue.issueType} />
-          <div className="min-w-0 flex-1">
-            <ChatRefDisplay chatRef={issue.chatRef} />
-            {issue.notes && (
-              <p className="text-xs text-slate-400 mt-0.5 leading-snug">{issue.notes}</p>
+          <div className="min-w-0 flex-1 space-y-2">
+            <div>
+              <ChatRefDisplay chatRef={issue.chatRef} />
+              {issue.notes && (
+                <p className="text-xs text-slate-400 mt-0.5 leading-snug">{issue.notes}</p>
+              )}
+            </div>
+            {onIssueComment && (
+              <div className="pt-2" style={{ borderTop: '1px solid rgba(14,14,14,0.06)' }}>
+                <QACommentThread
+                  entries={issue.comments ?? []}
+                  onSubmit={(text, action) => onIssueComment(issue.id, text, action)}
+                  canReturn={canReturn}
+                  placeholder="Comment on this issue…"
+                />
+              </div>
             )}
           </div>
         </div>
@@ -301,7 +413,17 @@ export function QAIssuesPreviewList({ issues }: { issues: QAIssueLike[] }) {
 
 const CARD_STYLE = { backgroundColor: 'rgba(14,14,14,0.03)', border: '1px solid rgba(14,14,14,0.08)' };
 
-export function QAIssuesPreviewCard({ issues, title = 'Issues this month' }: { issues: QAIssueLike[]; title?: string }) {
+export function QAIssuesPreviewCard({
+  issues,
+  title = 'Issues this month',
+  canReturn = false,
+  onIssueComment,
+}: {
+  issues: QAIssueLike[];
+  title?: string;
+  canReturn?: boolean;
+  onIssueComment?: (issueId: string, text: string, action: 'comment' | 'return') => Promise<void>;
+}) {
   return (
     <div className="rounded-lg p-4 space-y-3" style={CARD_STYLE}>
       <div className="flex items-center justify-between">
@@ -313,7 +435,7 @@ export function QAIssuesPreviewCard({ issues, title = 'Issues this month' }: { i
           {issues.length} issue{issues.length !== 1 ? 's' : ''}
         </span>
       </div>
-      <QAIssuesPreviewList issues={issues} />
+      <QAIssuesPreviewList issues={issues} canReturn={canReturn} onIssueComment={onIssueComment} />
     </div>
   );
 }
@@ -361,12 +483,20 @@ export function QAReportPreview({
   issues,
   canEdit = false,
   onSaveTotalChats,
+  timeline,
+  onIssueComment,
+  onReportComment,
+  canReturn = false,
 }: {
   title: string;
   totalChats: number | null;
   issues: QAIssueLike[];
   canEdit?: boolean;
   onSaveTotalChats?: (n: number | null) => Promise<void>;
+  timeline?: QAComment[];
+  onIssueComment?: (issueId: string, text: string, action: 'comment' | 'return') => Promise<void>;
+  onReportComment?: (text: string, action: 'comment' | 'return') => Promise<void>;
+  canReturn?: boolean;
 }) {
   const stats = computeIssueStats(issues, totalChats);
   return (
@@ -378,7 +508,18 @@ export function QAReportPreview({
         onSaveTotalChats={onSaveTotalChats ?? (async () => {})}
         {...stats}
       />
-      <QAIssuesPreviewCard issues={issues} />
+      <QAIssuesPreviewCard issues={issues} canReturn={canReturn} onIssueComment={onIssueComment} />
+      {timeline && onReportComment && (
+        <div className="rounded-lg p-4 space-y-3" style={CARD_STYLE}>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Report Timeline</p>
+          <QACommentThread
+            entries={timeline}
+            onSubmit={onReportComment}
+            canReturn={canReturn}
+            placeholder="Add a general comment about this report…"
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   getAgents, getQAReport,
   createQAIssue, updateQAIssue, deleteQAIssue,
   getQAAgentReports, saveQAAgentReportDraft, sendQAAgentReport, updateQAAgentReportTotal,
+  addQAAgentReportComment, addQAIssueComment,
 } from '../api';
 import { Agent, QAReport, QAIssue, QAAgentReport } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -217,6 +218,17 @@ export default function QAReports() {
     } finally {
       setComposeSending(false);
     }
+  };
+
+  const handleIssueComment = async (issueId: string, text: string, action: 'comment' | 'return') => {
+    await addQAIssueComment(issueId, { text, action });
+    await loadReport();
+  };
+
+  const handleReportComment = async (text: string, action: 'comment' | 'return') => {
+    if (!composeAgentId) return;
+    await addQAAgentReportComment({ year, month, agentId: composeAgentId, text, action });
+    await loadReport();
   };
 
   // ── Computed metrics ──────────────────────────────────────────────────────
@@ -441,7 +453,7 @@ export default function QAReports() {
                   const status = ar?.status ?? 'draft';
                   const meta = STATUS_META[status];
                   const isDraft = status === 'draft';
-                  const latestComment = ar?.comments?.[ar.comments.length - 1];
+                  const latestComment = [...(ar?.comments ?? [])].reverse().find((c) => c.type === 'comment');
                   return (
                     <div
                       key={a.id}
@@ -594,45 +606,16 @@ export default function QAReports() {
         title={`QA Report — ${composeAgent?.name ?? ''}`}
       >
         <div className="space-y-4">
-          {/* Stats + issues preview — same component reused in the agent's Inbox */}
+          {/* Stats + issues preview (with per-issue comment threads) + report
+              timeline — same component reused in the agent's Inbox */}
           <QAReportPreview
             title={`${monthLabel} — ${composeAgent?.name ?? ''}'s stats`}
             totalChats={composeAgentReport?.totalChats ?? null}
             issues={composeIssues}
+            timeline={composeAgentReport?.comments ?? []}
+            onIssueComment={handleIssueComment}
+            onReportComment={handleReportComment}
           />
-
-          {/* Comment thread — agent replies / return-for-review requests */}
-          {composeAgentReport && composeAgentReport.comments.length > 0 && (
-            <div
-              className="rounded-lg p-4 space-y-3"
-              style={{ backgroundColor: 'rgba(14,14,14,0.03)', border: '1px solid rgba(14,14,14,0.08)' }}
-            >
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Conversation
-              </p>
-              <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
-                {composeAgentReport.comments.map((c, i) => (
-                  <div key={i} className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-slate-600">{c.authorName}</span>
-                      {c.type === 'return_request' && (
-                        <span
-                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                          style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: '#dc2626' }}
-                        >
-                          Returned for re-review
-                        </span>
-                      )}
-                      <span className="text-xs" style={{ color: 'rgba(14,14,14,0.35)' }}>
-                        {format(new Date(c.createdAt), 'dd MMM yyyy, HH:mm')}
-                      </span>
-                    </div>
-                    <p className="text-sm text-slate-600 leading-snug">{c.text}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Personal note */}
           <div>

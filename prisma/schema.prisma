@@ -158,6 +158,7 @@ model QAIssue {
   chatRef   String
   issueType String   // "technical" | "communication" | "no_response"
   notes     String?
+  comments  String   @default("[]") // JSON: [{id, type: "comment", authorId, authorName, authorRole, text, createdAt}]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -174,7 +175,7 @@ model QAAgentReport {
   status         String    @default("draft")  // "draft" | "sent" | "returned" | "resent"
   totalChats     Int?
   note           String?
-  comments       String    @default("[]") // JSON: [{authorId, authorName, authorRole, text, type: "reply"|"return_request", createdAt}]
+  comments       String    @default("[]") // JSON: [{id, type: "comment"|"status_change", authorId?, authorName?, authorRole?, status?, text, createdAt}] — report-level timeline
   sentByUserId   String?   // who last sent/resent — routes agent replies back to the right person
   inboxMessageId String?   // the InboxMessage shown in the agent's inbox, updated in place on resend
   sentAt         DateTime?

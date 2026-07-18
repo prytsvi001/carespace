@@ -112,6 +112,17 @@ export interface Plan {
   updatedAt: string;
 }
 
+export interface QAComment {
+  id: string;
+  type: 'comment' | 'status_change';
+  authorId?: string;
+  authorName?: string;
+  authorRole?: string;
+  status?: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface InboxMessageMetadata {
   year: number;
   month: number;
@@ -121,7 +132,8 @@ export interface InboxMessageMetadata {
   agentName?: string;
   totalChats?: number | null;
   note?: string | null;
-  issues?: { id: string; chatRef: string; issueType: string; notes: string | null }[];
+  issues?: { id: string; chatRef: string; issueType: string; notes: string | null; comments?: QAComment[] }[];
+  timeline?: QAComment[];
 }
 
 export interface InboxMessage {
@@ -147,6 +159,7 @@ export interface QAIssue {
   chatRef: string;
   issueType: string;
   notes: string | null;
+  comments: QAComment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -159,15 +172,6 @@ export interface QAReport {
   issues: QAIssue[];
 }
 
-export interface QAReportComment {
-  authorId: string;
-  authorName: string;
-  authorRole: string;
-  text: string;
-  type: 'reply' | 'return_request';
-  createdAt: string;
-}
-
 export interface QAAgentReport {
   id: string;
   reportId: string;
@@ -176,7 +180,7 @@ export interface QAAgentReport {
   status: 'draft' | 'sent' | 'returned' | 'resent';
   totalChats: number | null;
   note: string | null;
-  comments: QAReportComment[];
+  comments: QAComment[];
   sentAt: string | null;
   createdAt: string;
   updatedAt: string;
