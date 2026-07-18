@@ -12,6 +12,8 @@ import {
   getQAAgentReports, saveQAAgentReportDraft, sendQAAgentReport, updateQAAgentReportTotal,
 } from '../api';
 import { Agent, QAReport, QAIssue, QAAgentReport } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { Modal, Spinner, EmptyState, ConfirmDialog, AutoTextarea } from '../components/ui';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -21,8 +23,6 @@ const STATUS_META: Record<QAAgentReport['status'], { label: string; bg: string; 
   returned: { label: 'Returned for Re-review',   bg: 'rgba(239,68,68,0.12)', color: '#dc2626' },
   resent:   { label: 'Revised & Resent',         bg: 'rgba(59,130,246,0.12)', color: '#2563eb' },
 };
-import { useAuth } from '../context/AuthContext';
-import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
 
 // ─── Issue type config ────────────────────────────────────────────────────────
 
@@ -104,7 +104,11 @@ function ChatRefDisplay({ chatRef }: { chatRef: string }) {
       </a>
     );
   }
-  return <span className="text-sm text-slate-700">{chatRef}</span>;
+  return (
+    <span className="text-sm text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>
+      {chatRef}
+    </span>
+  );
 }
 
 // ─── Inline total-chats editor ────────────────────────────────────────────────
@@ -802,14 +806,14 @@ export default function QAReports() {
 
           <div>
             <label className="label">Chat Reference *</label>
-            <input
+            <AutoTextarea
               className="input"
-              placeholder="Ticket ID, URL, or any reference…"
+              placeholder="Ticket ID, URL, or paste the full chat…"
               value={form.chatRef}
               onChange={(e) => setForm((f) => ({ ...f, chatRef: e.target.value }))}
             />
             <p className="mt-1 text-xs text-slate-400">
-              Paste a URL, a ticket number, a chat ID — anything that identifies the chat.
+              Paste a URL, a ticket number, a chat ID, or the full chat text — anything that identifies the chat.
             </p>
           </div>
 

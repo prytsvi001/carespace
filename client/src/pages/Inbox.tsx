@@ -353,7 +353,9 @@ export default function Inbox({ onRead }: InboxProps) {
                     )}
                   </p>
                 )}
-                <p className="text-sm text-slate-600 leading-relaxed">{msg.content}</p>
+                <p className="text-sm text-slate-600 leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
+                  {msg.content}
+                </p>
                 {msg.metadata && msg.updatedAt !== msg.createdAt && (
                   <p className="text-xs text-slate-400 mt-1">
                     Updated {format(new Date(msg.updatedAt), 'dd MMM yyyy')}

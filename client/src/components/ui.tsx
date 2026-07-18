@@ -1,6 +1,42 @@
 // client/src/components/ui.tsx
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Sun, Moon } from 'lucide-react';
+
+// ─── Auto-resize textarea ────────────────────────────────────────────────────
+export function useAutoResize(ref: React.RefObject<HTMLTextAreaElement>, value: string) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value, ref]);
+}
+
+export function AutoTextarea({
+  value,
+  onChange,
+  placeholder,
+  className = 'input text-sm',
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useAutoResize(ref, value);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      className={className}
+      rows={1}
+      style={{ resize: 'none', overflow: 'hidden' }}
+    />
+  );
+}
 
 // ─── Modal ─────────────────────────────────────────────────────────────────
 interface ModalProps {

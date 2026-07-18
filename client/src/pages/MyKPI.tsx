@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Pencil, Plus, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getKpiSettings, updateKpiSettings } from '../api';
+import { AutoTextarea } from '../components/ui';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,43 +98,6 @@ function deepClone<T>(val: T): T {
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-}
-
-// ─── Auto-resize hook + textarea ──────────────────────────────────────────────
-
-function useAutoResize(ref: React.RefObject<HTMLTextAreaElement>, value: string) {
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [value, ref]);
-}
-
-function AutoTextarea({
-  value,
-  onChange,
-  placeholder,
-  className = 'input text-sm',
-}: {
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  placeholder?: string;
-  className?: string;
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useAutoResize(ref, value);
-  return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      className={className}
-      rows={1}
-      style={{ resize: 'none', overflow: 'hidden' }}
-    />
-  );
 }
 
 // ─── MultilineText ─────────────────────────────────────────────────────────────
