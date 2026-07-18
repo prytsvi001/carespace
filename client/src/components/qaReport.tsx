@@ -180,8 +180,8 @@ function TotalChatsField({
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-2xl font-bold text-slate-800">
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-2xl font-bold text-slate-800 break-all">
         {value != null ? value.toLocaleString() : (
           <span className="text-slate-300 text-base font-normal">Not set</span>
         )}
@@ -189,7 +189,7 @@ function TotalChatsField({
       {canEdit && (
         <button
           onClick={startEdit}
-          className="text-slate-300 hover:text-slate-500 transition-colors"
+          className="text-slate-300 hover:text-slate-500 transition-colors shrink-0"
           title="Edit total chats"
         >
           <Pencil size={13} strokeWidth={1.8} />
