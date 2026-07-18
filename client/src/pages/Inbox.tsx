@@ -360,9 +360,10 @@ export default function Inbox({ onRead }: InboxProps) {
                   <div className="mt-3 flex justify-end">
                     <button
                       onClick={() => handleMarkRead(msg.id)}
-                      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
+                      style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
                     >
-                      <Mail size={12} strokeWidth={1.5} />
+                      <Mail size={13} strokeWidth={2} />
                       Mark as read
                     </button>
                   </div>
