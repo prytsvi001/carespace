@@ -5,10 +5,11 @@ import { format } from 'date-fns';
 import {
   getAgents, getPeakRequests, createPeakRequest, updatePeakRequest,
   updatePeakRequestStatus, archivePeakRequest, deletePeakRequest,
-  patchPeakRequestFields,
+  patchPeakRequestFields, getDutyStatus, DutyStatus,
 } from '../api';
 import { Agent, PeakRequest, RequestStatus } from '../types';
 import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
+import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
 
 // ── Tag definitions ───────────────────────────────────────────────────────────
@@ -295,6 +296,14 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const [filterAgent, setFilterAgent]   = useState('');
   const [search, setSearch]             = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [dutyInfo, setDutyInfo] = useState<DutyStatus | null>(null);
+
+  useEffect(() => {
+    const loadDuty = () => getDutyStatus().then(setDutyInfo).catch(() => {});
+    loadDuty();
+    const id = setInterval(loadDuty, 20_000);
+    return () => clearInterval(id);
+  }, []);
 
   const [form, setForm] = useState({
     agentId: '',
@@ -393,13 +402,38 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
           <h2 className="text-xl font-bold text-slate-800">Peek Requests</h2>
           <p className="text-sm text-slate-400">Peekviewer Client Requests</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <PeekDutyToggle />
           <button className="btn-secondary whitespace-nowrap" onClick={() => setShowArchived(v => !v)}>
             {showArchived ? 'Hide Archive' : 'Show Archive'}
           </button>
           <button className="btn-accent whitespace-nowrap" onClick={() => setShowForm(true)}>+ New Request</button>
         </div>
       </div>
+
+      {/* Who's online / on shift */}
+      {dutyInfo && (
+        <div
+          className="flex flex-wrap gap-x-6 gap-y-1 text-sm rounded-xl px-4 py-3"
+          style={{ backgroundColor: 'rgba(14,14,14,0.03)', border: '1px solid rgba(14,14,14,0.07)' }}
+        >
+          <span>
+            <span className="font-semibold text-slate-700">Peek Team Agent online:</span>{' '}
+            <span className="text-slate-500">
+              {dutyInfo.peekTeamOnline.length > 0 ? dutyInfo.peekTeamOnline.join(', ') : 'No one online'}
+            </span>
+          </span>
+          <span>
+            <span className="font-semibold text-slate-700">Support agent online:</span>{' '}
+            <span className="text-slate-500">
+              {[
+                dutyInfo.supportShift.morning ? `${dutyInfo.supportShift.morning} (Morning)` : null,
+                dutyInfo.supportShift.night ? `${dutyInfo.supportShift.night} (Night)` : null,
+              ].filter(Boolean).join(', ') || '—'}
+            </span>
+          </span>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">

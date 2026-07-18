@@ -1,25 +1,9 @@
 // server/src/routes/statistics.ts
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
+import { getRotationPair } from '../rotationSchedule';
 
 const router = Router();
-
-// Rotation schedule — must stay in sync with ShiftCalendar.tsx
-const ROTATION_BLOCKS = [
-  { morning: 'Nicky Brown', night: 'Julia Manson' },
-  { morning: 'Jonathan Lewis', night: 'Victoria Davis' },
-  { morning: 'Julia Manson', night: 'Nicky Brown' },
-  { morning: 'Victoria Davis', night: 'Jonathan Lewis' },
-] as const;
-
-function getRotationPair(date: Date): { morning: string; night: string } | null {
-  const ROTATION_START_UTC = Date.UTC(2026, 5, 1); // 2026-06-01
-  const dayUTC = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  const daysSinceStart = Math.round((dayUTC - ROTATION_START_UTC) / (24 * 60 * 60 * 1000));
-  if (daysSinceStart < 0) return null;
-  const block = Math.floor(daysSinceStart / 4) % ROTATION_BLOCKS.length;
-  return ROTATION_BLOCKS[block];
-}
 
 function utcDateKey(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;

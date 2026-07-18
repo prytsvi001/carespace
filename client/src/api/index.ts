@@ -340,4 +340,18 @@ export const createQuickLink = (data: { title: string; url: string; category?: s
 export const deleteQuickLink = (id: string) =>
   api.delete(`/quick-links/${id}`).then((r) => r.data);
 
+// ─── Duty status (Peek Requests) ────────────────────────────────────────────
+export interface DutyStatus {
+  myOnDuty: boolean;
+  eligible: boolean;
+  peekTeamOnline: string[];
+  supportShift: { morning: string | null; night: string | null };
+}
+
+export const getDutyStatus = () =>
+  api.get('/duty').then((r) => r.data as DutyStatus);
+
+export const setDutyStatus = (onDuty: boolean) =>
+  api.patch('/duty/me', { onDuty }).then((r) => r.data);
+
 export default api;

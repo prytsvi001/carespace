@@ -13,11 +13,11 @@ const AGENTS = [
   'Sandra Moore',
 ];
 
-const USERS: { name: string; email: string; role: string }[] = [
+const USERS: { name: string; email: string; role: string; peekDutyEligible?: boolean }[] = [
   { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead' },
   { name: 'Sandra Moore',      email: 'oleksandra_kraichynska@struktura.io', role: 'head' },
   { name: 'Jonathan Lewis',    email: 'yan_horlatyi@struktura.io',           role: 'agent' },
-  { name: 'Julia Manson',      email: 'tetiana_blazhievska@struktura.io',    role: 'agent' },
+  { name: 'Julia Manson',      email: 'tetiana_blazhievska@struktura.io',    role: 'agent', peekDutyEligible: true },
   { name: 'Nicky Brown',       email: 'myroslava_horshchar@struktura.io',    role: 'agent' },
   { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler' },
   { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler' },
@@ -43,12 +43,16 @@ async function main() {
   for (const u of USERS) {
     await prisma.user.upsert({
       where: { email: u.email },
-      update: { name: u.name, role: u.role, agentId: agentByName[u.name]?.id ?? null },
+      update: {
+        name: u.name, role: u.role, agentId: agentByName[u.name]?.id ?? null,
+        peekDutyEligible: u.peekDutyEligible ?? false,
+      },
       create: {
         name: u.name,
         email: u.email,
         role: u.role,
         agentId: agentByName[u.name]?.id ?? null,
+        peekDutyEligible: u.peekDutyEligible ?? false,
       },
     });
   }

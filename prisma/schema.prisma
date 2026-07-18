@@ -32,6 +32,8 @@ model User {
   googleId  String?  @unique
   agentId   String?  @unique
   agent     Agent?   @relation(fields: [agentId], references: [id])
+  peekOnDuty       Boolean @default(false) // manually toggled "I'm online" status for Peek Requests duty
+  peekDutyEligible Boolean @default(false) // extra non-peek_handler users allowed to toggle peekOnDuty (e.g. an agent who sometimes covers Peek)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
