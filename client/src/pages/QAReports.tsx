@@ -12,6 +12,15 @@ import {
   getQAAgentReports, saveQAAgentReportDraft, sendQAAgentReport, updateQAAgentReportTotal,
 } from '../api';
 import { Agent, QAReport, QAIssue, QAAgentReport } from '../types';
+
+// ─── Status config ────────────────────────────────────────────────────────────
+
+const STATUS_META: Record<QAAgentReport['status'], { label: string; bg: string; color: string }> = {
+  draft:    { label: 'Draft',                    bg: 'rgba(14,14,14,0.06)',   color: 'rgba(14,14,14,0.5)' },
+  sent:     { label: 'Sent',                     bg: 'rgba(34,197,94,0.15)',  color: '#16a34a' },
+  returned: { label: 'Returned for Re-review',   bg: 'rgba(239,68,68,0.12)', color: '#dc2626' },
+  resent:   { label: 'Revised & Resent',         bg: 'rgba(59,130,246,0.12)', color: '#2563eb' },
+};
 import { useAuth } from '../context/AuthContext';
 import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
 
@@ -692,12 +701,15 @@ export default function QAReports() {
                   const agentTotalChats = ar?.totalChats ?? null;
                   const { issueCount: agentIssueCount, problemRate, successRate, typeCounts } =
                     agentStats(allIssues, a.id, agentTotalChats);
-                  const isSent = ar?.status === 'sent';
+                  const status = ar?.status ?? 'draft';
+                  const meta = STATUS_META[status];
+                  const isDraft = status === 'draft';
+                  const latestComment = ar?.comments?.[ar.comments.length - 1];
                   return (
                     <div
                       key={a.id}
                       className="card flex flex-col gap-3"
-                      style={{ opacity: isSent ? 0.85 : 1 }}
+                      style={{ opacity: status === 'sent' ? 0.85 : 1 }}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -709,25 +721,19 @@ export default function QAReports() {
                           </div>
                           <span className="font-medium text-sm text-slate-800">{a.name}</span>
                         </div>
-                        {isSent ? (
-                          <span className="flex items-center gap-1 text-xs font-medium text-green-600 shrink-0">
-                            <CheckCircle2 size={12} strokeWidth={2} />
-                            Sent
-                          </span>
-                        ) : (
-                          <span
-                            className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
-                            style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
-                          >
-                            Draft
-                          </span>
-                        )}
+                        <span
+                          className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full shrink-0 text-right"
+                          style={{ backgroundColor: meta.bg, color: meta.color }}
+                        >
+                          {status === 'sent' && <CheckCircle2 size={12} strokeWidth={2} />}
+                          {meta.label}
+                        </span>
                       </div>
 
                       <div style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }} className="pt-3">
                         <AgentStatsGrid
                           totalChats={agentTotalChats}
-                          canEdit={canEdit && !isSent}
+                          canEdit={canEdit}
                           onSaveTotalChats={(n) => handleSaveAgentTotal(a.id, n)}
                           issueCount={agentIssueCount}
                           problemRate={problemRate}
@@ -736,9 +742,9 @@ export default function QAReports() {
                         />
                       </div>
 
-                      {isSent && ar?.sentAt && (
+                      {!isDraft && ar?.sentAt && (
                         <p className="text-xs text-slate-400" style={{ borderTop: '1px solid rgba(14,14,14,0.07)', paddingTop: '0.75rem' }}>
-                          Sent {format(new Date(ar.sentAt), 'MMM d, yyyy')}
+                          {status === 'resent' ? 'Resent' : 'Sent'} {format(new Date(ar.sentAt), 'MMM d, yyyy')}
                           {ar.note && (
                             <span className="block mt-0.5 italic text-slate-400 line-clamp-2">
                               "{ar.note}"
@@ -747,15 +753,22 @@ export default function QAReports() {
                         </p>
                       )}
 
-                      {!isSent && (
-                        <button
-                          className="btn-accent flex items-center justify-center gap-1.5 text-sm mt-auto"
-                          onClick={() => openCompose(a.id)}
+                      {status === 'returned' && latestComment && (
+                        <p
+                          className="text-xs rounded-lg p-2 leading-relaxed"
+                          style={{ backgroundColor: 'rgba(239,68,68,0.06)', color: '#b91c1c' }}
                         >
-                          <Send size={13} strokeWidth={2} />
-                          Compose & Send
-                        </button>
+                          <span className="font-semibold">{latestComment.authorName}:</span> {latestComment.text}
+                        </p>
                       )}
+
+                      <button
+                        className="btn-accent flex items-center justify-center gap-1.5 text-sm mt-auto"
+                        onClick={() => openCompose(a.id)}
+                      >
+                        <Send size={13} strokeWidth={2} />
+                        {isDraft ? 'Compose & Send' : 'Edit & Resend'}
+                      </button>
                     </div>
                   );
                 })}
@@ -900,6 +913,39 @@ export default function QAReports() {
               </div>
             )}
           </div>
+
+          {/* Comment thread — agent replies / return-for-review requests */}
+          {composeAgentReport && composeAgentReport.comments.length > 0 && (
+            <div
+              className="rounded-lg p-4 space-y-3"
+              style={{ backgroundColor: 'rgba(14,14,14,0.03)', border: '1px solid rgba(14,14,14,0.08)' }}
+            >
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                Conversation
+              </p>
+              <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                {composeAgentReport.comments.map((c, i) => (
+                  <div key={i} className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-slate-600">{c.authorName}</span>
+                      {c.type === 'return_request' && (
+                        <span
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                          style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: '#dc2626' }}
+                        >
+                          Returned for re-review
+                        </span>
+                      )}
+                      <span className="text-xs" style={{ color: 'rgba(14,14,14,0.35)' }}>
+                        {format(new Date(c.createdAt), 'dd MMM yyyy, HH:mm')}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-600 leading-snug">{c.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Personal note */}
           <div>

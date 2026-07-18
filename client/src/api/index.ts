@@ -241,6 +241,14 @@ export const sendQAAgentReport = (data: {
   year: number; month: number; agentId: string; note: string; totalChats?: number | null;
 }) => api.post('/qa-reports/agent-reports/send', data).then((r) => r.data);
 
+export const sendQAAgentReportReply = (data: {
+  year: number; month: number; agentId: string; text: string;
+}) => api.post('/qa-reports/agent-reports/reply', data).then((r) => r.data);
+
+export const returnQAAgentReport = (data: {
+  year: number; month: number; agentId: string; text: string;
+}) => api.post('/qa-reports/agent-reports/return', data).then((r) => r.data);
+
 // ─── PDP ──────────────────────────────────────────────────────────────────────
 export const getMyPDP = () => api.get('/pdp/me').then((r) => r.data);
 

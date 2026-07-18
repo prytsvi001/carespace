@@ -8,6 +8,23 @@ router.use(requireAuth);
 
 const VALID_ISSUE_TYPES = ['technical', 'communication', 'no_response'];
 
+type ReportComment = {
+  authorId: string;
+  authorName: string;
+  authorRole: string;
+  text: string;
+  type: 'reply' | 'return_request';
+  createdAt: string;
+};
+
+function parseComments(raw: string): ReportComment[] {
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+function formatAgentReport(ar: { comments: string; [key: string]: unknown }) {
+  return { ...ar, comments: parseComments(ar.comments) };
+}
+
 // GET /api/qa-reports/agent-reports?year=&month=
 router.get('/agent-reports', async (req: Request, res: Response) => {
   try {
@@ -25,7 +42,7 @@ router.get('/agent-reports', async (req: Request, res: Response) => {
       include: { agent: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'asc' },
     });
-    return res.json(agentReports);
+    return res.json(agentReports.map(formatAgentReport));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to fetch agent reports' });
@@ -66,14 +83,14 @@ router.patch('/agent-reports', async (req: Request, res: Response) => {
       },
       include: { agent: { select: { id: true, name: true } } },
     });
-    return res.json(agentReport);
+    return res.json(formatAgentReport(agentReport));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to save draft' });
   }
 });
 
-// POST /api/qa-reports/agent-reports/send — deliver report to agent's inbox
+// POST /api/qa-reports/agent-reports/send — deliver (or re-deliver) report to agent's inbox
 router.post('/agent-reports/send', async (req: Request, res: Response) => {
   try {
     const senderId = (req.user as Express.User).id;
@@ -118,6 +135,10 @@ router.post('/agent-reports/send', async (req: Request, res: Response) => {
       ? totalChats
       : existingAgentReport?.totalChats ?? null;
 
+    const isResend = !!existingAgentReport
+      && ['sent', 'returned', 'resent'].includes(existingAgentReport.status);
+    const newStatus = isResend ? 'resent' : 'sent';
+
     const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', {
       month: 'long',
       year: 'numeric',
@@ -143,42 +164,175 @@ router.post('/agent-reports/send', async (req: Request, res: Response) => {
       successRate !== null ? `Success rate: ${successRate.toFixed(1)}%` : null,
     ].filter(Boolean).join('\n');
 
+    const subject = isResend ? `QA Report (Updated) — ${monthLabel}` : `QA Report — ${monthLabel}`;
+
     const content = [
-      `QA Report — ${monthLabel}`,
+      subject,
       `Agent: ${agentName}`,
       statsLines,
       report.issues.length > 0 ? `\nIssues:\n${issueLines}` : '\nNo issues logged this month.',
       note?.trim() ? `\nNote from ${senderName}:\n${note.trim()}` : '',
     ].filter(Boolean).join('\n');
 
-    const message = await prisma.inboxMessage.create({
-      data: {
-        senderId,
-        receiverId: agentUser.id,
-        type: 'qa_report',
-        subject: `QA Report — ${monthLabel}`,
-        content,
-      },
-    });
+    const metadata = JSON.stringify({ year: y, month: m, agentId, reportId: report.id, status: newStatus });
+
+    let messageId: string;
+    if (existingAgentReport?.inboxMessageId) {
+      // Update the same inbox message in place — resending shouldn't create a duplicate
+      const updatedMessage = await prisma.inboxMessage.update({
+        where: { id: existingAgentReport.inboxMessageId },
+        data: { subject, content, metadata, read: false },
+      });
+      messageId = updatedMessage.id;
+    } else {
+      const created = await prisma.inboxMessage.create({
+        data: { senderId, receiverId: agentUser.id, type: 'qa_report', subject, content, metadata },
+      });
+      messageId = created.id;
+    }
 
     const agentReport = await prisma.qAAgentReport.upsert({
       where: { reportId_agentId: { reportId: report.id, agentId } },
       create: {
         reportId: report.id, agentId,
-        note: note?.trim() || null, status: 'sent', sentAt: new Date(),
-        totalChats: effectiveTotalChats,
+        note: note?.trim() || null, status: newStatus, sentAt: new Date(),
+        totalChats: effectiveTotalChats, sentByUserId: senderId, inboxMessageId: messageId,
       },
       update: {
-        note: note?.trim() || null, status: 'sent', sentAt: new Date(),
-        totalChats: effectiveTotalChats,
+        note: note?.trim() || null, status: newStatus, sentAt: new Date(),
+        totalChats: effectiveTotalChats, sentByUserId: senderId, inboxMessageId: messageId,
       },
       include: { agent: { select: { id: true, name: true } } },
     });
 
-    return res.status(201).json({ agentReport, messageId: message.id });
+    return res.status(201).json({ agentReport: formatAgentReport(agentReport), messageId });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to send report' });
+  }
+});
+
+// POST /api/qa-reports/agent-reports/reply — add a comment/question, no status change
+router.post('/agent-reports/reply', async (req: Request, res: Response) => {
+  try {
+    const user = req.user as Express.User;
+    const { year, month, agentId, text } = req.body as {
+      year?: number; month?: number; agentId?: string; text?: string;
+    };
+    const y = Number(year), m = Number(month);
+    if (!y || !m || !agentId || !text?.trim()) {
+      return res.status(400).json({ error: 'year, month, agentId, and text are required' });
+    }
+
+    const isAdmin = user.role === 'head' || user.role === 'lead';
+    const isOwningAgent = user.agentId === agentId;
+    if (!isAdmin && !isOwningAgent) {
+      return res.status(403).json({ error: 'Not permitted' });
+    }
+
+    const report = await prisma.qAReport.findUnique({ where: { year_month: { year: y, month: m } } });
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    const agentReport = await prisma.qAAgentReport.findUnique({
+      where: { reportId_agentId: { reportId: report.id, agentId } },
+    });
+    if (!agentReport) return res.status(404).json({ error: 'Agent report not found' });
+
+    const comments = parseComments(agentReport.comments);
+    comments.push({
+      authorId: user.id, authorName: user.name, authorRole: user.role,
+      text: text.trim(), type: 'reply', createdAt: new Date().toISOString(),
+    });
+
+    const updated = await prisma.qAAgentReport.update({
+      where: { id: agentReport.id },
+      data: { comments: JSON.stringify(comments) },
+      include: { agent: { select: { id: true, name: true } } },
+    });
+
+    const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const metadata = JSON.stringify({ year: y, month: m, agentId, reportId: report.id, status: updated.status });
+
+    const notifyReceiverId = isOwningAgent
+      ? agentReport.sentByUserId
+      : (await prisma.user.findFirst({ where: { agentId } }))?.id;
+
+    if (notifyReceiverId) {
+      await prisma.inboxMessage.create({
+        data: {
+          senderId: user.id,
+          receiverId: notifyReceiverId,
+          type: 'qa_report',
+          subject: `Reply on QA Report — ${monthLabel}`,
+          content: isOwningAgent
+            ? `${user.name} replied on the ${monthLabel} QA report:\n\n${text.trim()}`
+            : `${user.name} replied on your ${monthLabel} QA report:\n\n${text.trim()}`,
+          metadata,
+        },
+      });
+    }
+
+    return res.json(formatAgentReport(updated));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to add reply' });
+  }
+});
+
+// POST /api/qa-reports/agent-reports/return — agent returns the report for re-review
+router.post('/agent-reports/return', async (req: Request, res: Response) => {
+  try {
+    const user = req.user as Express.User;
+    const { year, month, agentId, text } = req.body as {
+      year?: number; month?: number; agentId?: string; text?: string;
+    };
+    const y = Number(year), m = Number(month);
+    if (!y || !m || !agentId || !text?.trim()) {
+      return res.status(400).json({ error: 'year, month, agentId, and text are required' });
+    }
+    if (user.agentId !== agentId) {
+      return res.status(403).json({ error: 'Only the report owner can return it for re-review' });
+    }
+
+    const report = await prisma.qAReport.findUnique({ where: { year_month: { year: y, month: m } } });
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    const agentReport = await prisma.qAAgentReport.findUnique({
+      where: { reportId_agentId: { reportId: report.id, agentId } },
+    });
+    if (!agentReport) return res.status(404).json({ error: 'Agent report not found' });
+
+    const comments = parseComments(agentReport.comments);
+    comments.push({
+      authorId: user.id, authorName: user.name, authorRole: user.role,
+      text: text.trim(), type: 'return_request', createdAt: new Date().toISOString(),
+    });
+
+    const updated = await prisma.qAAgentReport.update({
+      where: { id: agentReport.id },
+      data: { comments: JSON.stringify(comments), status: 'returned' },
+      include: { agent: { select: { id: true, name: true } } },
+    });
+
+    const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    if (agentReport.sentByUserId) {
+      await prisma.inboxMessage.create({
+        data: {
+          senderId: user.id,
+          receiverId: agentReport.sentByUserId,
+          type: 'qa_report',
+          subject: `QA Report Returned — ${monthLabel}`,
+          content: `${user.name} returned the ${monthLabel} QA report for re-review:\n\n${text.trim()}`,
+          metadata: JSON.stringify({ year: y, month: m, agentId, reportId: report.id, status: 'returned' }),
+        },
+      });
+    }
+
+    return res.json(formatAgentReport(updated));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to return report' });
   }
 });
 

@@ -12,6 +12,15 @@ const ALLOWED_TYPES: Record<string, string[]> = {
   agent: ['general'],
 };
 
+function parseMetadata(raw: string | null) {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+function formatMessage(msg: { metadata: string | null; [key: string]: unknown }) {
+  return { ...msg, metadata: parseMetadata(msg.metadata) };
+}
+
 // GET /api/inbox — received messages for current user, newest first
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -25,7 +34,7 @@ router.get('/', async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json(messages);
+    res.json(messages.map(formatMessage));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch inbox' });
@@ -59,7 +68,7 @@ router.get('/sent', async (req: Request, res: Response) => {
       },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(messages);
+    res.json(messages.map(formatMessage));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch sent messages' });

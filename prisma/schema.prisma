@@ -72,8 +72,10 @@ model InboxMessage {
   type       String   // "task_assignment" | "qa_report" | "salary_message" | "general"
   subject    String?
   content    String
+  metadata   String?  // JSON: { year, month, agentId, reportId, status } — only for type "qa_report"
   read       Boolean  @default(false)
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
 
   @@index([receiverId])
   @@index([senderId])
@@ -164,17 +166,20 @@ model QAIssue {
 }
 
 model QAAgentReport {
-  id         String    @id @default(cuid())
-  reportId   String
-  report     QAReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  agentId    String
-  agent      Agent     @relation(fields: [agentId], references: [id])
-  status     String    @default("draft")  // "draft" | "sent"
-  totalChats Int?
-  note       String?
-  sentAt     DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  reportId       String
+  report         QAReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  agentId        String
+  agent          Agent     @relation(fields: [agentId], references: [id])
+  status         String    @default("draft")  // "draft" | "sent" | "returned" | "resent"
+  totalChats     Int?
+  note           String?
+  comments       String    @default("[]") // JSON: [{authorId, authorName, authorRole, text, type: "reply"|"return_request", createdAt}]
+  sentByUserId   String?   // who last sent/resent — routes agent replies back to the right person
+  inboxMessageId String?   // the InboxMessage shown in the agent's inbox, updated in place on resend
+  sentAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([reportId, agentId])
   @@index([reportId])

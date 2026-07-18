@@ -2,7 +2,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Mail, MailOpen, Send, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage } from '../api';
+import {
+  getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage,
+  sendQAAgentReportReply, returnQAAgentReport,
+} from '../api';
 import { InboxMessage } from '../types';
 import { useAuth } from '../context/AuthContext';
 
@@ -109,6 +112,49 @@ export default function Inbox({ onRead }: InboxProps) {
       onRead?.();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // ── QA report reply / return-for-review ──────────────────────────────────
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [reportActionLoading, setReportActionLoading] = useState<string | null>(null);
+  const [reportActionError, setReportActionError] = useState<Record<string, string>>({});
+
+  const handleSendReply = async (msg: InboxMessage) => {
+    const text = (replyDrafts[msg.id] || '').trim();
+    if (!text || !msg.metadata) return;
+    setReportActionLoading(msg.id);
+    setReportActionError((prev) => ({ ...prev, [msg.id]: '' }));
+    try {
+      await sendQAAgentReportReply({
+        year: msg.metadata.year, month: msg.metadata.month, agentId: msg.metadata.agentId, text,
+      });
+      setReplyDrafts((prev) => ({ ...prev, [msg.id]: '' }));
+      await loadInbox();
+    } catch (e) {
+      console.error(e);
+      setReportActionError((prev) => ({ ...prev, [msg.id]: 'Failed to send reply.' }));
+    } finally {
+      setReportActionLoading(null);
+    }
+  };
+
+  const handleReturnForReview = async (msg: InboxMessage) => {
+    const text = (replyDrafts[msg.id] || '').trim();
+    if (!text || !msg.metadata) return;
+    setReportActionLoading(msg.id);
+    setReportActionError((prev) => ({ ...prev, [msg.id]: '' }));
+    try {
+      await returnQAAgentReport({
+        year: msg.metadata.year, month: msg.metadata.month, agentId: msg.metadata.agentId, text,
+      });
+      setReplyDrafts((prev) => ({ ...prev, [msg.id]: '' }));
+      await loadInbox();
+    } catch (e) {
+      console.error(e);
+      setReportActionError((prev) => ({ ...prev, [msg.id]: 'Failed to return report.' }));
+    } finally {
+      setReportActionLoading(null);
     }
   };
 
@@ -295,9 +341,57 @@ export default function Inbox({ onRead }: InboxProps) {
                 </div>
 
                 {msg.subject && (
-                  <p className="text-sm font-semibold text-slate-700 mb-1">{msg.subject}</p>
+                  <p className="text-sm font-semibold text-slate-700 mb-1 flex items-center gap-2 flex-wrap">
+                    {msg.subject}
+                    {msg.metadata?.status === 'resent' && (
+                      <span
+                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                        style={{ backgroundColor: 'rgba(59,130,246,0.12)', color: '#2563eb' }}
+                      >
+                        Revised
+                      </span>
+                    )}
+                  </p>
                 )}
                 <p className="text-sm text-slate-600 leading-relaxed">{msg.content}</p>
+                {msg.metadata && msg.updatedAt !== msg.createdAt && (
+                  <p className="text-xs text-slate-400 mt-1">
+                    Updated {format(new Date(msg.updatedAt), 'dd MMM yyyy')}
+                  </p>
+                )}
+
+                {!isSent && msg.type === 'qa_report' && msg.metadata && role === 'agent' && (
+                  <div className="mt-3 pt-3 space-y-2" style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }}>
+                    <textarea
+                      className="input resize-none text-sm"
+                      rows={2}
+                      placeholder="Add a question, note, or reason for returning this report…"
+                      value={replyDrafts[msg.id] || ''}
+                      onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [msg.id]: e.target.value }))}
+                    />
+                    {reportActionError[msg.id] && (
+                      <p className="text-xs text-red-500">{reportActionError[msg.id]}</p>
+                    )}
+                    <div className="flex gap-2 justify-end flex-wrap">
+                      <button
+                        onClick={() => handleSendReply(msg)}
+                        disabled={reportActionLoading === msg.id || !(replyDrafts[msg.id] || '').trim()}
+                        className="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50"
+                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                      >
+                        Send Reply
+                      </button>
+                      <button
+                        onClick={() => handleReturnForReview(msg)}
+                        disabled={reportActionLoading === msg.id || !(replyDrafts[msg.id] || '').trim()}
+                        className="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50"
+                        style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: '#dc2626' }}
+                      >
+                        Return for Re-review
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {!isSent && !msg.read && (
                   <div className="mt-3 flex justify-end">
