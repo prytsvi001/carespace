@@ -19,6 +19,7 @@ import Reviews from './pages/Reviews';
 import PDP from './pages/PDP';
 import QAReports from './pages/QAReports';
 import MyKPI from './pages/MyKPI';
+import { ShortcutsDrawer } from './components/ShortcutsDrawer';
 import { getUnreadCount, getNewRequestsCount } from './api';
 
 // ── Tab types ────────────────────────────────────────────────────────────────
@@ -398,6 +399,8 @@ function MainApp() {
           )}
         </div>
       </nav>
+
+      <ShortcutsDrawer />
     </div>
   );
 }

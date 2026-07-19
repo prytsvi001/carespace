@@ -339,6 +339,19 @@ export const createQuickLink = (data: { title: string; url: string; category?: s
 export const deleteQuickLink = (id: string) =>
   api.delete(`/quick-links/${id}`).then((r) => r.data);
 
+// ─── Shortcuts (shared team-wide library) ──────────────────────────────────
+export const getShortcuts = () =>
+  api.get('/shortcuts').then((r) => r.data);
+
+export const createShortcut = (data: { title: string; type: 'text' | 'link'; content: string; category?: string }) =>
+  api.post('/shortcuts', data).then((r) => r.data);
+
+export const updateShortcut = (id: string, data: { title: string; type: 'text' | 'link'; content: string; category?: string }) =>
+  api.put(`/shortcuts/${id}`, data).then((r) => r.data);
+
+export const deleteShortcut = (id: string) =>
+  api.delete(`/shortcuts/${id}`).then((r) => r.data);
+
 // ─── Duty status (Peek Requests) ────────────────────────────────────────────
 export interface DutyStatus {
   myOnDuty: boolean;

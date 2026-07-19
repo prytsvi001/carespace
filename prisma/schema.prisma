@@ -39,6 +39,7 @@ model User {
 
   plans            Plan[]
   quickLinks       QuickLink[]
+  shortcuts        Shortcut[]
   sentMessages     InboxMessage[] @relation("SentMessages")
   receivedMessages InboxMessage[] @relation("ReceivedMessages")
   reviews          ClientReview[]
@@ -294,6 +295,21 @@ model QuickLink {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+model Shortcut {
+  id            String   @id @default(cuid())
+  title         String
+  type          String   @default("text") // "text" | "link"
+  content       String   // full text template body for "text", or the URL for "link"
+  category      String   @default("")
+  createdById   String?
+  createdBy     User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
 }
 
 model PeakRequest {

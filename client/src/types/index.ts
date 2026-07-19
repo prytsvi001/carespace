@@ -291,6 +291,20 @@ export interface QuickLink {
   updatedAt: string;
 }
 
+export type ShortcutType = 'text' | 'link';
+
+export interface Shortcut {
+  id: string;
+  title: string;
+  type: ShortcutType;
+  content: string;
+  category: string;
+  createdById: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface MonthlyStats {
   year?: number;
   month?: number;

@@ -22,6 +22,7 @@ import reviewsRouter from './routes/reviews';
 import qaReportsRouter from './routes/qaReports';
 import pdpRouter from './routes/pdp';
 import quickLinksRouter from './routes/quickLinks';
+import shortcutsRouter from './routes/shortcuts';
 import kpiRouter from './routes/kpi';
 import dutyRouter from './routes/duty';
 import { requireAuth } from './middleware/auth';
@@ -89,6 +90,7 @@ app.use('/api/reviews',    reviewsRouter);    // requireAuth applied inside rout
 app.use('/api/qa-reports', qaReportsRouter); // requireAuth applied inside router
 app.use('/api/pdp',         pdpRouter);        // requireAuth applied inside router
 app.use('/api/quick-links', quickLinksRouter); // requireAuth applied inside router
+app.use('/api/shortcuts',   shortcutsRouter);   // requireAuth applied inside router
 app.use('/api/kpi',         kpiRouter);        // requireAuth applied inside router
 app.use('/api/duty',        dutyRouter);       // requireAuth applied inside router
 
