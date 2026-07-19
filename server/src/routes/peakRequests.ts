@@ -14,9 +14,29 @@ function formatRequest(r: { comments: string; [key: string]: unknown }) {
   return { ...r, comments: parseComments(r.comments) };
 }
 
+const DONE_ARCHIVE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+// Runs on every board load/poll — no separate cron process needed (production
+// runs as Vercel serverless functions, which can't host a long-lived timer).
+// Rows that were already DONE before this feature shipped have no doneAt yet;
+// stamping them with "now" here means their 24h timer effectively starts at
+// first-check-after-deploy, matching the "start the timer at deploy time" spec.
+async function autoArchiveStaleDone() {
+  const now = new Date();
+  await prisma.peakRequest.updateMany({
+    where: { status: 'DONE', archived: false, doneAt: null },
+    data: { doneAt: now },
+  });
+  await prisma.peakRequest.updateMany({
+    where: { status: 'DONE', archived: false, doneAt: { lte: new Date(now.getTime() - DONE_ARCHIVE_AFTER_MS) } },
+    data: { archived: true },
+  });
+}
+
 // GET /api/peak-requests?status=NEW&agentId=...
 router.get('/', async (req: Request, res: Response) => {
   try {
+    await autoArchiveStaleDone();
     const { status, agentId, limit = '50', offset = '0', includeArchived, search } = req.query;
 
     const where: Record<string, unknown> = includeArchived === 'true' ? {} : { archived: false };
@@ -51,6 +71,7 @@ router.get('/', async (req: Request, res: Response) => {
 // GET /api/peak-requests/new-count
 router.get('/new-count', async (req: Request, res: Response) => {
   try {
+    await autoArchiveStaleDone();
     const count = await prisma.peakRequest.count({
       where: { archived: false, status: 'NEW' },
     });
@@ -185,9 +206,15 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
+    const existing = await prisma.peakRequest.findUnique({ where: { id }, select: { status: true } });
+    if (!existing) return res.status(404).json({ error: 'Request not found' });
+
     const request = await prisma.peakRequest.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        doneAt: status === 'DONE' ? (existing.status === 'DONE' ? undefined : new Date()) : null,
+      },
       include: { agent: true },
     });
 

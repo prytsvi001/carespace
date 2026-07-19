@@ -72,6 +72,7 @@ export interface PeakRequest {
   profileNickname?: string | null;
   requestText: string;
   status: RequestStatus;
+  doneAt: string | null;
   comments: PeakRequestComment[];
   tags: string;
   createdAt: string;

@@ -304,6 +304,7 @@ model PeakRequest {
   profileNickname  String?
   requestText      String
   status        String        @default("NEW")
+  doneAt        DateTime?     // set when status transitions to DONE; auto-archived 24h after
   comments      String        @default("[]") // JSON: [{authorId, authorName, text, createdAt}]
   tags          String        @default("")
   createdAt     DateTime      @default(now())
