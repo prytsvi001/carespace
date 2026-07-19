@@ -40,6 +40,14 @@ const TAGS = [
 
 type TagKey = typeof TAGS[number]['key'];
 
+const REQUEST_PRESETS = [
+  'Profile temporarily unavailable',
+  'Refresh error',
+  'Do we still have access to the target device?',
+  'Please change the extension',
+  'Add to hot clients',
+] as const;
+
 const STATUS_COLS: { status: RequestStatus; label: string; icon: string; bg: string }[] = [
   { status: 'NEW',         label: 'New',         icon: '🆕', bg: 'bg-blue-50' },
   { status: 'IN_PROGRESS', label: 'In Progress',  icon: '⚡', bg: 'bg-amber-50' },
@@ -297,6 +305,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const [search, setSearch]             = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [dutyInfo, setDutyInfo] = useState<DutyStatus | null>(null);
+  const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
 
   useEffect(() => {
     const loadDuty = () => getDutyStatus().then(setDutyInfo).catch(() => {});
@@ -363,6 +372,12 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleApplyPreset = (preset: string) => {
+    setForm(f => ({ ...f, requestText: f.requestText.trim() ? `${f.requestText}\n${preset}` : preset }));
+    setAppliedPreset(preset);
+    setTimeout(() => setAppliedPreset(prev => (prev === preset ? null : prev)), 1000);
   };
 
   const handleStatusChange = async (id: string, status: RequestStatus) => {
@@ -547,6 +562,26 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
               value={form.requestText}
               onChange={e => setForm(f => ({ ...f, requestText: e.target.value }))}
             />
+            <div className="mt-1.5">
+              <span className="text-[10px] text-slate-400 font-medium">Quick select:</span>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {REQUEST_PRESETS.map(preset => {
+                  const justApplied = appliedPreset === preset;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => handleApplyPreset(preset)}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border transition-all
+                        ${justApplied ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300'}`}
+                    >
+                      {justApplied && <Check size={10} strokeWidth={2.5} />}
+                      <span>{preset}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <div>
             <label className="label">Comments / Notes</label>
