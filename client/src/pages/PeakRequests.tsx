@@ -3,11 +3,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ClipboardList, Copy, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import {
-  getAgents, getPeakRequests, createPeakRequest, updatePeakRequest,
+  getPeakRequests, createPeakRequest, updatePeakRequest,
   updatePeakRequestStatus, archivePeakRequest, deletePeakRequest,
   patchPeakRequestFields, getDutyStatus, DutyStatus,
 } from '../api';
-import { Agent, PeakRequest, RequestStatus } from '../types';
+import { PeakRequest, RequestStatus } from '../types';
 import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
@@ -294,7 +294,6 @@ function RequestCard({
 export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => void }) {
   const { user } = useAuth();
   const isPeekHandler = user?.role === 'peek_handler';
-  const [agents, setAgents]     = useState<Agent[]>([]);
   const [requests, setRequests] = useState<PeakRequest[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -326,17 +325,13 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const loadData = async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      const [agentData, reqData] = await Promise.all([
-        getAgents(),
-        getPeakRequests({
-          status: filterStatus || undefined,
-          agentId: filterAgent || undefined,
-          search: search || undefined,
-          limit: 200,
-          includeArchived: showArchived,
-        }),
-      ]);
-      setAgents(agentData);
+      const reqData = await getPeakRequests({
+        status: filterStatus || undefined,
+        agentId: filterAgent || undefined,
+        search: search || undefined,
+        limit: 200,
+        includeArchived: showArchived,
+      });
       setRequests(reqData.requests);
     } catch (e) {
       console.error(e);
@@ -409,6 +404,19 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
 
   const byStatus = (status: RequestStatus) => requests.filter(r => r.status === status);
 
+  const openNewForm = () => {
+    setEditingId(null);
+    setForm({
+      agentId: user?.agentId || '',
+      contactEmail: '',
+      profileNickname: '',
+      requestText: '',
+      requestDate: format(new Date(), 'yyyy-MM-dd'),
+      comments: '',
+    });
+    setShowForm(true);
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -422,7 +430,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
           <button className="btn-secondary whitespace-nowrap" onClick={() => setShowArchived(v => !v)}>
             {showArchived ? 'Hide Archive' : 'Show Archive'}
           </button>
-          <button className="btn-accent whitespace-nowrap" onClick={() => setShowForm(true)}>+ New Request</button>
+          <button className="btn-accent whitespace-nowrap" onClick={openNewForm}>+ New Request</button>
         </div>
       </div>
 
@@ -475,7 +483,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
         <div className="flex justify-center py-12"><Spinner size="lg" /></div>
       ) : requests.length === 0 ? (
         <EmptyState icon={<ClipboardList size={44} strokeWidth={1} />} message="No requests yet" action={
-          <button className="btn-accent" onClick={() => setShowForm(true)}>Submit First Request</button>
+          <button className="btn-accent" onClick={openNewForm}>Submit First Request</button>
         } />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -530,13 +538,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
         title={editingId ? 'Edit Peak Request' : 'New Peak Request'}>
         <div className="space-y-4">
           <div>
-            <label className="label">Agent *</label>
-            <select className="input" value={form.agentId} onChange={e => setForm(f => ({ ...f, agentId: e.target.value }))}>
-              <option value="">Select your name...</option>
-              {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          </div>
-          <div>
             <label className="label">Date *</label>
             <input type="date" className="input" value={form.requestDate}
               onChange={e => setForm(f => ({ ...f, requestDate: e.target.value }))} />
@@ -548,7 +549,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
               placeholder="support@example.com" />
           </div>
           <div>
-            <label className="label">Profile nickname (issue)</label>
+            <label className="label">Profile nickname</label>
             <input className="input" value={form.profileNickname || ''}
               onChange={e => setForm(f => ({ ...f, profileNickname: e.target.value }))}
               placeholder="Enter the profile nickname..." />
@@ -583,12 +584,11 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
               </div>
             </div>
           </div>
-          <div>
-            <label className="label">Comments / Notes</label>
-            <textarea className="input resize-none" rows={3} value={form.comments}
-              onChange={e => setForm(f => ({ ...f, comments: e.target.value }))}
-              placeholder="Any notes for the handler..." />
-          </div>
+          {!form.agentId && (
+            <p className="text-xs text-red-500">
+              Your account isn't linked to an agent profile, so a request can't be submitted. Contact an admin to get linked.
+            </p>
+          )}
           <div className="flex gap-3 pt-2">
             <button className="btn-secondary flex-1" onClick={() => { setShowForm(false); setEditingId(null); }}>Cancel</button>
             <button
