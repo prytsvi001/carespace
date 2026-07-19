@@ -303,9 +303,8 @@ model PeakRequest {
   contactEmail     String?
   profileNickname  String?
   requestText      String
-  requestDate   DateTime      // UTC
   status        String        @default("NEW")
-  comments      String?
+  comments      String        @default("[]") // JSON: [{authorId, authorName, text, createdAt}]
   tags          String        @default("")
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -313,5 +312,4 @@ model PeakRequest {
 
   @@index([agentId])
   @@index([status])
-  @@index([requestDate])
 }

@@ -101,8 +101,6 @@ export const createPeakRequest = (data: {
   contactEmail?: string;
   profileNickname?: string;
   requestText: string;
-  requestDate: string;
-  comments?: string;
 }) => api.post('/peak-requests', data).then(r => r.data);
 
 export const updatePeakRequest = (id: string, data: {
@@ -110,15 +108,16 @@ export const updatePeakRequest = (id: string, data: {
   contactEmail?: string;
   profileNickname?: string;
   requestText: string;
-  requestDate: string;
-  comments?: string;
 }) => api.put(`/peak-requests/${id}`, data).then(r => r.data);
 
 export const updatePeakRequestStatus = (id: string, status: string) =>
   api.patch(`/peak-requests/${id}/status`, { status }).then(r => r.data);
 
-export const patchPeakRequestFields = (id: string, fields: { comments?: string; tags?: string }) =>
+export const patchPeakRequestFields = (id: string, fields: { tags?: string }) =>
   api.patch(`/peak-requests/${id}/fields`, fields).then(r => r.data);
+
+export const addPeakRequestComment = (id: string, text: string) =>
+  api.post(`/peak-requests/${id}/comments`, { text }).then(r => r.data);
 
 export const getNewRequestsCount = () =>
   api.get('/peak-requests/new-count').then(r => r.data as { count: number });

@@ -1,13 +1,13 @@
 // client/src/pages/PeakRequests.tsx
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ClipboardList, Copy, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
   updatePeakRequestStatus, archivePeakRequest, deletePeakRequest,
-  patchPeakRequestFields, getDutyStatus, DutyStatus,
+  patchPeakRequestFields, addPeakRequestComment, getDutyStatus, DutyStatus,
 } from '../api';
-import { PeakRequest, RequestStatus } from '../types';
+import { PeakRequest, PeakRequestComment, RequestStatus } from '../types';
 import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
@@ -64,18 +64,17 @@ function RequestCard({
   onStatusChange: (id: string, status: RequestStatus) => void;
   onArchive: (id: string) => void;
   onDelete: (id: string) => void;
-  onFieldsUpdated: (id: string, fields: { comments?: string; tags?: string }) => void;
+  onFieldsUpdated: (id: string, fields: { comments?: PeakRequestComment[]; tags?: string }) => void;
   highlightNew?: boolean;
 }) {
   const [confirm, setConfirm]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [copiedField, setCopiedField]     = useState<'email' | 'nickname' | null>(null);
 
-  // ── Inline note state ──────────────────────────────────────────────────────
-  const [noteText, setNoteText]       = useState(req.comments || '');
-  const [isEditingNote, setIsEditing] = useState(false);
-  const [noteSaved, setNoteSaved]     = useState(false);
-  const noteRef = useRef<HTMLTextAreaElement>(null);
+  // ── Comment thread state ───────────────────────────────────────────────────
+  const [comments, setComments] = useState<PeakRequestComment[]>(req.comments);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [postingComment, setPostingComment] = useState(false);
 
   // ── Tags state ─────────────────────────────────────────────────────────────
   const [activeTags, setActiveTags] = useState<TagKey[]>(() =>
@@ -84,21 +83,12 @@ function RequestCard({
 
   // Sync when parent refreshes (e.g. after Edit modal save)
   useEffect(() => {
-    if (!isEditingNote) setNoteText(req.comments || '');
-  }, [req.comments, isEditingNote]);
+    setComments(req.comments);
+  }, [req.comments]);
 
   useEffect(() => {
     setActiveTags((req.tags || '').split(',').filter(Boolean) as TagKey[]);
   }, [req.tags]);
-
-  // Focus textarea when entering edit mode
-  useEffect(() => {
-    if (isEditingNote && noteRef.current) {
-      const el = noteRef.current;
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
-    }
-  }, [isEditingNote]);
 
   // Copy-to-clipboard timeout
   useEffect(() => {
@@ -112,25 +102,27 @@ function RequestCard({
     catch (e) { console.error('copy failed', e); }
   };
 
-  // ── Note save ──────────────────────────────────────────────────────────────
-  const saveNote = async (value: string) => {
-    setIsEditing(false);
-    if (value === (req.comments || '')) return;
+  // ── Post comment ───────────────────────────────────────────────────────────
+  const handlePostComment = async () => {
+    const text = commentDraft.trim();
+    if (!text) return;
+    setPostingComment(true);
     try {
-      await patchPeakRequestFields(req.id, { comments: value });
-      onFieldsUpdated(req.id, { comments: value });
-      setNoteSaved(true);
-      setTimeout(() => setNoteSaved(false), 1500);
+      const updated = await addPeakRequestComment(req.id, text);
+      setComments(updated.comments);
+      setCommentDraft('');
+      onFieldsUpdated(req.id, { comments: updated.comments });
     } catch (e) {
       console.error(e);
-      setNoteText(req.comments || '');
+    } finally {
+      setPostingComment(false);
     }
   };
 
-  const handleNoteKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && e.shiftKey) {
+  const handleCommentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      saveNote(noteText);
+      handlePostComment();
     }
   };
 
@@ -210,9 +202,9 @@ function RequestCard({
         </div>
       )}
 
-      {/* Date + status transition */}
+      {/* Created timestamp + status transition */}
       <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-400">{format(new Date(req.requestDate), 'dd MMM yyyy')}</span>
+        <span className="text-xs text-slate-400">Created: {format(new Date(req.createdAt), "MMM d, yyyy 'at' HH:mm")}</span>
         {next && (
           <button
             onClick={() => onStatusChange(req.id, next)}
@@ -245,37 +237,46 @@ function RequestCard({
           })}
         </div>
 
-        {/* Inline note */}
-        <div>
-          {isEditingNote || !noteText ? (
-            <textarea
-              ref={noteRef}
-              value={noteText}
-              rows={2}
-              placeholder="Add a note…"
-              className="w-full resize-none rounded-lg px-2 py-1.5 text-xs outline-none transition-colors"
-              style={{
-                border: '1px solid rgba(14,14,14,0.10)',
-                color: 'rgba(14,14,14,0.60)',
-                backgroundColor: 'rgba(14,14,14,0.025)',
-              }}
-              onChange={e => setNoteText(e.target.value)}
-              onFocus={() => setIsEditing(true)}
-              onBlur={() => saveNote(noteText)}
-              onKeyDown={handleNoteKeyDown}
-            />
-          ) : (
-            <p
-              onClick={() => setIsEditing(true)}
-              className="text-xs rounded-lg px-2 py-1.5 cursor-text leading-relaxed transition-colors hover:bg-slate-50"
-              style={{ color: 'rgba(14,14,14,0.55)' }}
+        {/* Comment thread */}
+        <div className="space-y-1.5">
+          {comments.length > 0 && (
+            <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+              {comments.map((c, i) => (
+                <div key={i} className="rounded-lg px-2 py-1.5" style={{ backgroundColor: 'rgba(14,14,14,0.025)' }}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-medium text-slate-600">{c.authorName}</span>
+                    <span className="text-[10px]" style={{ color: 'rgba(14,14,14,0.35)' }}>
+                      {format(new Date(c.createdAt), "MMM d, yyyy 'at' HH:mm")}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-snug">{c.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          <textarea
+            value={commentDraft}
+            rows={2}
+            placeholder="Add a comment…"
+            className="w-full resize-none rounded-lg px-2 py-1.5 text-xs outline-none transition-colors"
+            style={{
+              border: '1px solid rgba(14,14,14,0.10)',
+              color: 'rgba(14,14,14,0.60)',
+              backgroundColor: 'rgba(14,14,14,0.025)',
+            }}
+            onChange={e => setCommentDraft(e.target.value)}
+            onKeyDown={handleCommentKeyDown}
+          />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handlePostComment}
+              disabled={postingComment || !commentDraft.trim()}
+              className="text-[10px] px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors disabled:opacity-50"
             >
-              {noteText}
-            </p>
-          )}
-          {noteSaved && (
-            <span className="block text-[10px] text-emerald-500 mt-0.5 px-2">Saved ✓</span>
-          )}
+              {postingComment ? 'Posting…' : 'Post comment'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -318,8 +319,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     contactEmail: '',
     profileNickname: '',
     requestText: '',
-    requestDate: format(new Date(), 'yyyy-MM-dd'),
-    comments: '',
   });
 
   const loadData = async (showSpinner = true) => {
@@ -359,7 +358,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       }
       setShowForm(false);
       setEditingId(null);
-      setForm({ agentId: '', contactEmail: '', profileNickname: '', requestText: '', requestDate: format(new Date(), 'yyyy-MM-dd'), comments: '' });
+      setForm({ agentId: '', contactEmail: '', profileNickname: '', requestText: '' });
       await loadData();
       onDataChanged?.();
     } catch (e) {
@@ -398,7 +397,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   };
 
   // Inline field updates — no reload needed
-  const handleFieldsUpdated = (id: string, fields: { comments?: string; tags?: string }) => {
+  const handleFieldsUpdated = (id: string, fields: { comments?: PeakRequestComment[]; tags?: string }) => {
     setRequests(prev => prev.map(r => r.id === id ? { ...r, ...fields } : r));
   };
 
@@ -411,8 +410,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       contactEmail: '',
       profileNickname: '',
       requestText: '',
-      requestDate: format(new Date(), 'yyyy-MM-dd'),
-      comments: '',
     });
     setShowForm(true);
   };
@@ -515,8 +512,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                           contactEmail: item.contactEmail || '',
                           profileNickname: item.profileNickname || '',
                           requestText: item.requestText,
-                          requestDate: format(new Date(item.requestDate), 'yyyy-MM-dd'),
-                          comments: item.comments || '',
                         });
                         setShowForm(true);
                       }}
@@ -537,11 +532,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       <Modal open={showForm} onClose={() => { setShowForm(false); setEditingId(null); }}
         title={editingId ? 'Edit Peak Request' : 'New Peak Request'}>
         <div className="space-y-4">
-          <div>
-            <label className="label">Date *</label>
-            <input type="date" className="input" value={form.requestDate}
-              onChange={e => setForm(f => ({ ...f, requestDate: e.target.value }))} />
-          </div>
           <div>
             <label className="label">Customer Email</label>
             <input className="input" value={form.contactEmail || ''}

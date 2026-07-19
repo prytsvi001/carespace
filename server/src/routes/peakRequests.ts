@@ -4,6 +4,16 @@ import prisma from '../prisma';
 
 const router = Router();
 
+type PeakComment = { authorId: string | null; authorName: string; text: string; createdAt: string };
+
+function parseComments(raw: string): PeakComment[] {
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+function formatRequest(r: { comments: string; [key: string]: unknown }) {
+  return { ...r, comments: parseComments(r.comments) };
+}
+
 // GET /api/peak-requests?status=NEW&agentId=...
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -24,14 +34,14 @@ router.get('/', async (req: Request, res: Response) => {
       prisma.peakRequest.findMany({
         where,
         include: { agent: true },
-        orderBy: { requestDate: 'desc' },
+        orderBy: { createdAt: 'desc' },
         take: Number(limit),
         skip: Number(offset),
       }),
       prisma.peakRequest.count({ where }),
     ]);
 
-    res.json({ requests, total });
+    res.json({ requests: requests.map(formatRequest), total });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to fetch peak requests' });
@@ -54,10 +64,10 @@ router.get('/new-count', async (req: Request, res: Response) => {
 // POST /api/peak-requests
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { agentId, contactEmail, profileNickname, requestText, requestDate, comments } = req.body;
+    const { agentId, contactEmail, profileNickname, requestText } = req.body;
 
-    if (!agentId || !requestText || !requestDate) {
-      return res.status(400).json({ error: 'agentId, requestText, and requestDate are required' });
+    if (!agentId || !requestText) {
+      return res.status(400).json({ error: 'agentId and requestText are required' });
     }
 
     const request = await prisma.peakRequest.create({
@@ -66,14 +76,12 @@ router.post('/', async (req: Request, res: Response) => {
         contactEmail: contactEmail || null,
         profileNickname: profileNickname || null,
         requestText,
-        requestDate: new Date(requestDate),
         status: 'NEW',
-        comments: comments || null,
       },
       include: { agent: true },
     });
 
-    return res.status(201).json(request);
+    return res.status(201).json(formatRequest(request));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to create peak request' });
@@ -84,10 +92,10 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { agentId, contactEmail, profileNickname, requestText, requestDate, comments } = req.body;
+    const { agentId, contactEmail, profileNickname, requestText } = req.body;
 
-    if (!agentId || !requestText || !requestDate) {
-      return res.status(400).json({ error: 'agentId, requestText, and requestDate are required' });
+    if (!agentId || !requestText) {
+      return res.status(400).json({ error: 'agentId and requestText are required' });
     }
 
     const request = await prisma.peakRequest.update({
@@ -97,27 +105,24 @@ router.put('/:id', async (req: Request, res: Response) => {
         contactEmail: contactEmail || null,
         profileNickname: profileNickname || null,
         requestText,
-        requestDate: new Date(requestDate),
-        comments: comments || null,
       },
       include: { agent: true },
     });
 
-    return res.json(request);
+    return res.json(formatRequest(request));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update peak request' });
   }
 });
 
-// PATCH /api/peak-requests/:id/fields  — lightweight inline update (comments, tags)
+// PATCH /api/peak-requests/:id/fields  — lightweight inline update (tags)
 router.patch('/:id/fields', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { comments, tags } = req.body;
+    const { tags } = req.body;
 
     const data: Record<string, unknown> = {};
-    if (comments !== undefined) data.comments = comments || null;
     if (tags !== undefined) data.tags = tags;
 
     if (Object.keys(data).length === 0) {
@@ -130,10 +135,43 @@ router.patch('/:id/fields', async (req: Request, res: Response) => {
       include: { agent: true },
     });
 
-    return res.json(request);
+    return res.json(formatRequest(request));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update fields' });
+  }
+});
+
+// POST /api/peak-requests/:id/comments — append a comment
+router.post('/:id/comments', async (req: Request, res: Response) => {
+  try {
+    const user = req.user as Express.User;
+    const { id } = req.params;
+    const { text } = req.body as { text?: string };
+
+    if (!text?.trim()) return res.status(400).json({ error: 'Comment text is required' });
+
+    const existing = await prisma.peakRequest.findUnique({ where: { id }, select: { comments: true } });
+    if (!existing) return res.status(404).json({ error: 'Request not found' });
+
+    const comments = parseComments(existing.comments);
+    comments.push({
+      authorId: user.id,
+      authorName: user.name,
+      text: text.trim(),
+      createdAt: new Date().toISOString(),
+    });
+
+    const request = await prisma.peakRequest.update({
+      where: { id },
+      data: { comments: JSON.stringify(comments) },
+      include: { agent: true },
+    });
+
+    return res.json(formatRequest(request));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to add comment' });
   }
 });
 
@@ -153,7 +191,7 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
       include: { agent: true },
     });
 
-    return res.json(request);
+    return res.json(formatRequest(request));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update status' });

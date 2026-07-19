@@ -57,6 +57,13 @@ export interface AIChatQA {
   archived: boolean;
 }
 
+export interface PeakRequestComment {
+  authorId: string | null;
+  authorName: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface PeakRequest {
   id: string;
   agentId: string;
@@ -64,9 +71,8 @@ export interface PeakRequest {
   contactEmail?: string | null;
   profileNickname?: string | null;
   requestText: string;
-  requestDate: string;
   status: RequestStatus;
-  comments?: string | null;
+  comments: PeakRequestComment[];
   tags: string;
   createdAt: string;
   updatedAt: string;
