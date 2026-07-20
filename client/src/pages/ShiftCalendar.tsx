@@ -16,6 +16,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isTod
 import { getAgents, getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../api';
 import { Agent, CalendarEvent, LeaveType, ShiftType } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 
 const LEAVE_COLORS: Record<LeaveType, string> = {
   SHIFT:                    'bg-amber-100 text-amber-800 border border-amber-200',
@@ -171,6 +172,8 @@ function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentM
 }
 
 export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChanged?: () => void; readOnly?: boolean }) {
+  const { user } = useAuth();
+  const [viewMode, setViewMode] = useState<'all' | 'mine'>('all');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [agents, setAgents] = useState<Agent[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -222,7 +225,9 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
   const paddedDays: (Date | null)[] = [...Array(startPad).fill(null), ...days];
 
   const getEventsForDate = (date: Date) =>
-    events.filter(ev => format(new Date(ev.eventDate), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
+    events
+      .filter(ev => format(new Date(ev.eventDate), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'))
+      .filter(ev => viewMode === 'all' || ev.agentId === user?.agentId);
 
   const handleDragStart = (event: DragStartEvent) => {
     const found = events.find(e => e.id === event.active.id);
@@ -344,16 +349,36 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-2">
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${getEventColor('SHIFT', 'MORNING')}`}><Sun size={11} strokeWidth={1.5} />Morning Shift</span>
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${getEventColor('SHIFT', 'NIGHT')}`}><Moon size={11} strokeWidth={1.5} />Night Shift</span>
-        {(['VACATION', 'SICK_LEAVE_WITH_NOTE', 'SICK_LEAVE_WITHOUT_NOTE', 'BIRTHDAY_OFF'] as LeaveType[]).map(type => (
-          <span key={type} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${LEAVE_COLORS[type]}`}>
-            <EventIcon leaveType={type} size={11} />
-            {LEAVE_LABELS[type]}
-          </span>
-        ))}
+      {/* Legend + view filter */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${getEventColor('SHIFT', 'MORNING')}`}><Sun size={11} strokeWidth={1.5} />Morning Shift</span>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${getEventColor('SHIFT', 'NIGHT')}`}><Moon size={11} strokeWidth={1.5} />Night Shift</span>
+          {(['VACATION', 'SICK_LEAVE_WITH_NOTE', 'SICK_LEAVE_WITHOUT_NOTE', 'BIRTHDAY_OFF'] as LeaveType[]).map(type => (
+            <span key={type} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${LEAVE_COLORS[type]}`}>
+              <EventIcon leaveType={type} size={11} />
+              {LEAVE_LABELS[type]}
+            </span>
+          ))}
+        </div>
+
+        {user?.agentId && (
+          <div className="flex gap-1 p-0.5 rounded-lg" style={{ backgroundColor: 'rgba(14,14,14,0.06)' }}>
+            {(['all', 'mine'] as const).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setViewMode(mode)}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                  viewMode === mode ? 'text-[#0E0E0E]' : 'text-slate-500 hover:text-slate-700'
+                }`}
+                style={viewMode === mode ? { backgroundColor: '#A1F96E' } : undefined}
+              >
+                {mode === 'all' ? 'All' : 'My shifts'}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {loading ? (
