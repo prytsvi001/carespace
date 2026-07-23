@@ -9,7 +9,7 @@ import {
   getTodayLogs,
 } from '../api';
 import { PeakRequest, PeakRequestComment, RequestStatus, ShiftLog } from '../types';
-import { Modal, Spinner, EmptyState, ConfirmDialog, OnlineNowStrip } from '../components/ui';
+import { Modal, Spinner, EmptyState, ConfirmDialog, OnlineNowStrip, StatusStrip } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
 
@@ -443,21 +443,15 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       </div>
 
       {/* Support agents currently on an active shift (Daily Log data, not the Shift Calendar schedule) */}
-      <OnlineNowStrip activeLogs={activeShiftLogs} label="Support agent online" emptyMessage="No agents currently on shift" />
+      <OnlineNowStrip activeLogs={activeShiftLogs} emptyMessage="No support agents currently online" />
 
       {/* Peek Team on-duty toggle status */}
       {dutyInfo && (
-        <div
-          className="flex flex-wrap gap-x-6 gap-y-1 text-sm rounded-xl px-4 py-3"
-          style={{ backgroundColor: 'rgba(14,14,14,0.03)', border: '1px solid rgba(14,14,14,0.07)' }}
-        >
-          <span>
-            <span className="font-semibold text-slate-700">Peek Team Agent online:</span>{' '}
-            <span className="text-slate-500">
-              {dutyInfo.peekTeamOnline.length > 0 ? dutyInfo.peekTeamOnline.join(', ') : 'No one online'}
-            </span>
-          </span>
-        </div>
+        <StatusStrip
+          active={dutyInfo.peekTeamOnline.length > 0}
+          onlineText={`Peek Team Agent online: ${dutyInfo.peekTeamOnline.join(', ')}`}
+          offlineText="Peek Team Agent offline"
+        />
       )}
 
       {/* Filters */}
