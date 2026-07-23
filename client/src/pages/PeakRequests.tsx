@@ -456,7 +456,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
           active={dutyInfo.peekTeamOnline.length > 0}
           label="Peek Team Agent online"
           value={dutyInfo.peekTeamOnline.join(', ')}
-          offlineText="No Peek team agents online"
+          offlineText="No Peek agents online"
         />
       )}
 
