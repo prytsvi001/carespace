@@ -1,6 +1,42 @@
 // client/src/components/ui.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
+import type { ShiftLog } from '../types';
+
+// ─── Online now strip ────────────────────────────────────────────────────────
+// Shows agents with a currently active (unarchived) shift log — i.e. they've
+// started a shift but not yet clicked "End Shift". Shared by Daily Log and
+// Peek Requests so both surfaces agree on who's actually on shift right now.
+export function OnlineNowStrip({
+  activeLogs,
+  emptyMessage = "Everyone's offline right now",
+}: {
+  activeLogs: ShiftLog[];
+  emptyMessage?: string;
+}) {
+  const hasActive = activeLogs.length > 0;
+  return (
+    <div
+      className="rounded-xl px-3 py-2 text-sm"
+      style={
+        hasActive
+          ? { border: '1px solid rgba(161,249,110,0.50)', backgroundColor: 'rgba(161,249,110,0.12)', color: '#0E0E0E' }
+          : { border: '1px solid rgba(14,14,14,0.09)', backgroundColor: 'rgba(14,14,14,0.03)', color: 'rgba(14,14,14,0.45)' }
+      }
+    >
+      {hasActive ? (
+        <span>
+          ● Online now: {activeLogs.map((log) => `${log.agent.name} — ${log.shiftType === 'MORNING' ? 'Morning' : 'Night'} Shift`).join(', ')}
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1.5">
+          <Moon size={13} strokeWidth={1.5} />
+          {emptyMessage}
+        </span>
+      )}
+    </div>
+  );
+}
 
 // ─── Auto-resize textarea ────────────────────────────────────────────────────
 export function useAutoResize(ref: React.RefObject<HTMLTextAreaElement>, value: string) {

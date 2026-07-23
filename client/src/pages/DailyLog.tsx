@@ -4,7 +4,7 @@ import { MessageCircle, Ticket, Phone, RefreshCcw, Sun, Moon, ClipboardList, Sav
 import { format } from 'date-fns';
 import { getAgents, createShiftLog, getShiftLogs, updateShiftLog, archiveShiftLog, deleteShiftLog } from '../api';
 import { Agent, ShiftLog, ShiftType } from '../types';
-import { Modal, Spinner, EmptyState, StatusBadge, ConfirmDialog } from '../components/ui';
+import { Modal, Spinner, EmptyState, StatusBadge, ConfirmDialog, OnlineNowStrip } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 
 const SHIFT_HOURS: Record<ShiftType, number> = { MORNING: 11, NIGHT: 8 };
@@ -307,14 +307,7 @@ export default function DailyLog({ onSyncStats, onDataChanged }: { onSyncStats?:
 
       {/* Online now strip — main view only */}
       {!showArchived && (
-        <div className="rounded-xl px-3 py-2 text-sm"
-             style={logs.some(log => !log.archived)
-               ? { border: '1px solid rgba(161,249,110,0.50)', backgroundColor: 'rgba(161,249,110,0.12)', color: '#0E0E0E' }
-               : { border: '1px solid rgba(14,14,14,0.09)', backgroundColor: 'rgba(14,14,14,0.03)', color: 'rgba(14,14,14,0.45)' }}>
-          {logs.some(log => !log.archived)
-            ? <span>● Online now: {logs.filter(log => !log.archived).map(log => `${log.agent.name} — ${log.shiftType === 'MORNING' ? 'Morning' : 'Night'} Shift`).join(', ')}</span>
-            : <span className="inline-flex items-center gap-1.5"><Moon size={13} strokeWidth={1.5} />Everyone's offline right now</span>}
-        </div>
+        <OnlineNowStrip activeLogs={logs.filter(log => !log.archived)} />
       )}
 
       {/* Logs */}

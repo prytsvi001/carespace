@@ -6,9 +6,10 @@ import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
   updatePeakRequestStatus, archivePeakRequest, deletePeakRequest,
   patchPeakRequestFields, addPeakRequestComment, getDutyStatus, DutyStatus,
+  getTodayLogs,
 } from '../api';
-import { PeakRequest, PeakRequestComment, RequestStatus } from '../types';
-import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
+import { PeakRequest, PeakRequestComment, RequestStatus, ShiftLog } from '../types';
+import { Modal, Spinner, EmptyState, ConfirmDialog, OnlineNowStrip } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
 
@@ -306,11 +307,21 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const [showArchived, setShowArchived] = useState(false);
   const [dutyInfo, setDutyInfo] = useState<DutyStatus | null>(null);
   const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
+  const [activeShiftLogs, setActiveShiftLogs] = useState<ShiftLog[]>([]);
 
   useEffect(() => {
     const loadDuty = () => getDutyStatus().then(setDutyInfo).catch(() => {});
     loadDuty();
     const id = setInterval(loadDuty, 20_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Same "active shift" data source as the Daily Log tab's Online now strip —
+  // agents who've started a shift but not yet clicked End Shift.
+  useEffect(() => {
+    const loadActiveShifts = () => getTodayLogs().then(setActiveShiftLogs).catch(() => {});
+    loadActiveShifts();
+    const id = setInterval(loadActiveShifts, 20_000);
     return () => clearInterval(id);
   }, []);
 
@@ -431,7 +442,10 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
         </div>
       </div>
 
-      {/* Who's online / on shift */}
+      {/* Support agents currently on an active shift (Daily Log data, not the Shift Calendar schedule) */}
+      <OnlineNowStrip activeLogs={activeShiftLogs} emptyMessage="No agents currently on shift" />
+
+      {/* Peek Team on-duty toggle status */}
       {dutyInfo && (
         <div
           className="flex flex-wrap gap-x-6 gap-y-1 text-sm rounded-xl px-4 py-3"
@@ -441,15 +455,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
             <span className="font-semibold text-slate-700">Peek Team Agent online:</span>{' '}
             <span className="text-slate-500">
               {dutyInfo.peekTeamOnline.length > 0 ? dutyInfo.peekTeamOnline.join(', ') : 'No one online'}
-            </span>
-          </span>
-          <span>
-            <span className="font-semibold text-slate-700">Support agent online:</span>{' '}
-            <span className="text-slate-500">
-              {[
-                dutyInfo.supportShift.morning ? `${dutyInfo.supportShift.morning} (Morning)` : null,
-                dutyInfo.supportShift.night ? `${dutyInfo.supportShift.night} (Night)` : null,
-              ].filter(Boolean).join(', ') || '—'}
             </span>
           </span>
         </div>
