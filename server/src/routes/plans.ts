@@ -11,37 +11,31 @@ function getTodayStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// GET /api/plans?type=daily&date=YYYY-MM-DD  or  ?type=monthly&date=YYYY-MM
+// GET /api/plans — returns every plan for the user, grouped/sorted client-side
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = (req.user as Express.User).id;
-    const { type, date } = req.query as { type?: string; date?: string };
+    const today = getTodayStr();
 
-    // Carry-over: when loading today's daily plans, move any incomplete past daily plans to today
-    if (type === 'daily' && date) {
-      const today = getTodayStr();
-      if (date === today) {
-        await prisma.plan.updateMany({
-          where: { userId, type: 'daily', completed: false, date: { lt: today } },
-          data: { date: today, carriedOver: true },
-        });
-      }
-    }
-
-    let where: Record<string, unknown> = { userId };
-    if (type) where.type = type;
-
-    if (date) {
-      if (type === 'monthly') {
-        // Monthly plans: match any date starting with "YYYY-MM" (handles old "YYYY-MM" format and new "YYYY-MM-DD")
-        where.date = { startsWith: date };
-      } else {
-        where.date = date;
-      }
+    // Carry-over: any incomplete plan whose due date is in the past moves to today.
+    // Only match full "YYYY-MM-DD" dates — legacy "YYYY-MM" (month-only) values would
+    // otherwise compare as "less than" today via string comparison and get corrupted.
+    const stale = await prisma.plan.findMany({
+      where: { userId, completed: false, date: { not: null } },
+      select: { id: true, date: true },
+    });
+    const staleIds = stale
+      .filter((p) => p.date && p.date.length === 10 && p.date < today)
+      .map((p) => p.id);
+    if (staleIds.length > 0) {
+      await prisma.plan.updateMany({
+        where: { id: { in: staleIds } },
+        data: { date: today, carriedOver: true },
+      });
     }
 
     const plans = await prisma.plan.findMany({
-      where,
+      where: { userId },
       orderBy: [{ completed: 'asc' }, { createdAt: 'asc' }],
     });
 
@@ -56,24 +50,23 @@ router.get('/', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const userId = (req.user as Express.User).id;
-    const { title, type, date, priority, category, dueTime } = req.body as {
+    const { title, date, priority, category, dueTime } = req.body as {
       title?: string;
-      type?: string;
       date?: string;
       priority?: string;
       category?: string;
       dueTime?: string;
     };
 
-    if (!title?.trim() || !type) {
-      return res.status(400).json({ error: 'title and type are required' });
+    if (!title?.trim()) {
+      return res.status(400).json({ error: 'title is required' });
     }
 
     const plan = await prisma.plan.create({
       data: {
         userId,
         title: title.trim(),
-        type,
+        type: 'daily',
         date: date || null,
         priority: priority || 'medium',
         category: category || 'work',
@@ -95,12 +88,13 @@ router.patch('/:id', async (req: Request, res: Response) => {
     const plan = await prisma.plan.findUnique({ where: { id: req.params.id } });
     if (!plan || plan.userId !== userId) return res.status(404).json({ error: 'Not found' });
 
-    const { title, completed, priority, category, dueTime, carriedOverDismissed } = req.body as {
+    const { title, completed, priority, category, dueTime, date, carriedOverDismissed } = req.body as {
       title?: string;
       completed?: boolean;
       priority?: string;
       category?: string;
       dueTime?: string | null;
+      date?: string | null;
       carriedOverDismissed?: boolean;
     };
 
@@ -112,6 +106,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
         ...(typeof priority === 'string' ? { priority } : {}),
         ...(typeof category === 'string' ? { category } : {}),
         ...(dueTime !== undefined ? { dueTime: dueTime || null } : {}),
+        // Editing the due date means it's no longer "carried over" in the old sense
+        ...(date !== undefined ? { date: date || null, carriedOver: false } : {}),
         ...(typeof carriedOverDismissed === 'boolean' ? { carriedOverDismissed } : {}),
       },
     });

@@ -1,7 +1,7 @@
 // client/src/pages/MyPlans.tsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Plus, Trash2, CheckCircle2, Circle, ChevronDown, ChevronRight, X, Clock, Globe } from 'lucide-react';
-import { format, getDaysInMonth } from 'date-fns';
+import { Plus, Trash2, Pencil, CheckCircle2, Circle, X, Clock, Globe } from 'lucide-react';
+import { format, addDays, endOfWeek, isSameDay, isSameMonth } from 'date-fns';
 import { getPlans, createPlan, updatePlan, deletePlan, getQuickLinks, createQuickLink, deleteQuickLink } from '../api';
 import type { Plan, QuickLink } from '../types';
 
@@ -9,7 +9,8 @@ import type { Plan, QuickLink } from '../types';
 
 type Priority = 'high' | 'medium' | 'low';
 type Category = 'work' | 'learning' | 'personal';
-type PlanView = 'daily' | 'monthly' | 'links';
+type TopView = 'tasks' | 'links';
+type BucketKey = 'today' | 'tomorrow' | 'thisWeek' | 'thisMonth' | 'later' | 'noDate';
 
 const PRIORITY_SORT: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
 
@@ -47,11 +48,19 @@ const LINK_CAT_META: Record<string, { label: string; style: React.CSSProperties 
 
 const LINK_KNOWN_CATS = ['sheets', 'docs', 'tools', 'jira'] as const;
 
-const VIEW_LABELS: Record<PlanView, string> = {
-  daily: 'Today',
-  monthly: 'This Month',
+const VIEW_LABELS: Record<TopView, string> = {
+  tasks: 'Tasks',
   links: 'Quick Links',
 };
+
+const SECTIONS: { key: BucketKey; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'tomorrow', label: 'Tomorrow' },
+  { key: 'thisWeek', label: 'This week' },
+  { key: 'thisMonth', label: 'This month' },
+  { key: 'later', label: 'Later' },
+  { key: 'noDate', label: 'No date' },
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -60,28 +69,52 @@ function getTodayStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function getThisMonthStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+function getBucket(
+  plan: Plan,
+  ctx: { today: Date; tomorrow: Date; weekEnd: Date },
+): BucketKey {
+  if (!plan.date) return 'noDate';
+
+  // Legacy "YYYY-MM" (month-only) values from the old monthly-goals view have no day component.
+  if (plan.date.length < 10) {
+    const [y, m] = plan.date.split('-').map(Number);
+    const isCurrentMonth = y === ctx.today.getFullYear() && m === ctx.today.getMonth() + 1;
+    return isCurrentMonth ? 'thisMonth' : 'later';
+  }
+
+  let d: Date;
+  try {
+    d = new Date(plan.date + 'T00:00:00');
+  } catch {
+    return 'noDate';
+  }
+  if (isNaN(d.getTime())) return 'noDate';
+
+  if (d < ctx.today || isSameDay(d, ctx.today)) return 'today';
+  if (isSameDay(d, ctx.tomorrow)) return 'tomorrow';
+  if (d <= ctx.weekEnd) return 'thisWeek';
+  if (isSameMonth(d, ctx.today)) return 'thisMonth';
+  return 'later';
 }
 
-function getWeekForDay(day: number): 1 | 2 | 3 | 4 {
-  if (day <= 7) return 1;
-  if (day <= 14) return 2;
-  if (day <= 21) return 3;
-  return 4;
-}
-
-function sortPlans(plans: Plan[]): Plan[] {
+function sortWithinSection(plans: Plan[]): Plan[] {
   return [...plans].sort((a, b) => {
     if (a.completed !== b.completed) return a.completed ? 1 : -1;
-    if (a.dueTime && b.dueTime) {
-      const tc = a.dueTime.localeCompare(b.dueTime);
-      if (tc !== 0) return tc;
-    } else if (a.dueTime) return -1;
-    else if (b.dueTime) return 1;
-    return (PRIORITY_SORT[a.priority] ?? 1) - (PRIORITY_SORT[b.priority] ?? 1);
+    const pd = (PRIORITY_SORT[a.priority] ?? 1) - (PRIORITY_SORT[b.priority] ?? 1);
+    if (pd !== 0) return pd;
+    if (a.dueTime && b.dueTime) return a.dueTime.localeCompare(b.dueTime);
+    if (a.dueTime) return -1;
+    if (b.dueTime) return 1;
+    return 0;
   });
+}
+
+function formatDateLabel(dateStr: string): string {
+  if (dateStr.length < 10) {
+    const [y, m] = dateStr.split('-').map(Number);
+    try { return format(new Date(y, m - 1, 1), 'MMM yyyy'); } catch { return dateStr; }
+  }
+  try { return format(new Date(dateStr + 'T00:00:00'), 'MMM d'); } catch { return dateStr; }
 }
 
 function validateUrl(url: string): boolean {
@@ -107,23 +140,48 @@ function Favicon({ url }: { url: string }) {
   );
 }
 
+// ─── Shared field controls (add form + edit form) ──────────────────────────────
+
+function PriorityPicker({ value, onChange }: { value: Priority; onChange: (p: Priority) => void }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs font-medium w-16 shrink-0" style={{ color: 'rgba(14,14,14,0.45)' }}>
+        Priority
+      </span>
+      <div className="flex gap-1">
+        {(['high', 'medium', 'low'] as Priority[]).map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onChange(p)}
+            className="text-xs px-2.5 py-1 rounded-lg font-medium transition-all"
+            style={
+              value === p
+                ? { ...PRIORITY_META[p].badge, outline: `1.5px solid currentColor` }
+                : { backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.50)' }
+            }
+          >
+            {PRIORITY_META[p].label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── AddTaskInput ─────────────────────────────────────────────────────────────
 
 interface AddTaskInputProps {
-  view: 'daily' | 'monthly';
-  today: string;
-  thisMonth: string;
-  daysInMonth: number;
   onAdd: (data: {
     title: string;
     priority: Priority;
     category: Category;
+    date: string | null;
     dueTime: string | null;
-    date: string;
   }) => Promise<void>;
 }
 
-function AddTaskInput({ view, today, thisMonth, daysInMonth, onAdd }: AddTaskInputProps) {
+function AddTaskInput({ onAdd }: AddTaskInputProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -131,22 +189,18 @@ function AddTaskInput({ view, today, thisMonth, daysInMonth, onAdd }: AddTaskInp
   const [expanded, setExpanded] = useState(false);
   const [priority, setPriority] = useState<Priority>('medium');
   const [category, setCategory] = useState<Category>('work');
+  const [showDueDate, setShowDueDate] = useState(false);
+  const [taskDate, setTaskDate] = useState('');
   const [dueTime, setDueTime] = useState('');
-  const [showTime, setShowTime] = useState(false);
-  const [taskDate, setTaskDate] = useState(today);
   const [adding, setAdding] = useState(false);
-
-  useEffect(() => {
-    setTaskDate(today);
-  }, [view, today]);
 
   const reset = () => {
     setText('');
     setPriority('medium');
     setCategory('work');
+    setShowDueDate(false);
+    setTaskDate('');
     setDueTime('');
-    setShowTime(false);
-    setTaskDate(today);
     setExpanded(false);
   };
 
@@ -155,7 +209,7 @@ function AddTaskInput({ view, today, thisMonth, daysInMonth, onAdd }: AddTaskInp
     if (!title || adding) return;
     setAdding(true);
     try {
-      await onAdd({ title, priority, category, dueTime: dueTime || null, date: taskDate });
+      await onAdd({ title, priority, category, date: taskDate || null, dueTime: dueTime || null });
       reset();
     } catch (e) {
       console.error(e);
@@ -170,9 +224,6 @@ function AddTaskInput({ view, today, thisMonth, daysInMonth, onAdd }: AddTaskInp
     }
   };
 
-  const maxDate = `${thisMonth}-${String(daysInMonth).padStart(2, '0')}`;
-  const minDate = `${thisMonth}-01`;
-
   return (
     <div
       ref={containerRef}
@@ -184,7 +235,7 @@ function AddTaskInput({ view, today, thisMonth, daysInMonth, onAdd }: AddTaskInp
         <input
           ref={inputRef}
           className="input flex-1 text-sm"
-          placeholder={view === 'daily' ? 'Add a task for today…' : 'Add a goal for this month…'}
+          placeholder="Add a task…"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onFocus={() => setExpanded(true)}
@@ -199,35 +250,14 @@ function AddTaskInput({ view, today, thisMonth, daysInMonth, onAdd }: AddTaskInp
             onClick={() => { setExpanded(true); inputRef.current?.focus(); }}
           >
             <Plus size={15} strokeWidth={2} />
-            Add
+            Add task
           </button>
         )}
       </div>
 
       {expanded && (
         <div className="pt-3 space-y-2.5">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-medium w-16 shrink-0" style={{ color: 'rgba(14,14,14,0.45)' }}>
-              Priority
-            </span>
-            <div className="flex gap-1">
-              {(['high', 'medium', 'low'] as Priority[]).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPriority(p)}
-                  className="text-xs px-2.5 py-1 rounded-lg font-medium transition-all"
-                  style={
-                    priority === p
-                      ? { ...PRIORITY_META[p].badge, outline: `1.5px solid currentColor` }
-                      : { backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.50)' }
-                  }
-                >
-                  {PRIORITY_META[p].label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <PriorityPicker value={priority} onChange={setPriority} />
 
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-medium w-16 shrink-0" style={{ color: 'rgba(14,14,14,0.45)' }}>
@@ -243,35 +273,41 @@ function AddTaskInput({ view, today, thisMonth, daysInMonth, onAdd }: AddTaskInp
               <option value="personal">Personal</option>
             </select>
 
-            {view === 'monthly' && (
-              <input
-                type="date"
-                className="input text-xs py-1 px-2 w-36"
-                value={taskDate}
-                min={minDate}
-                max={maxDate}
-                onChange={(e) => setTaskDate(e.target.value || today)}
-              />
-            )}
-
-            {!showTime ? (
+            {!showDueDate ? (
               <button
                 type="button"
                 className="text-xs flex items-center gap-1 transition-colors"
                 style={{ color: 'rgba(14,14,14,0.40)' }}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setShowTime(true)}
+                onClick={() => setShowDueDate(true)}
               >
                 <Clock size={12} strokeWidth={1.5} />
-                Add time
+                Add due date
               </button>
             ) : (
-              <input
-                type="time"
-                className="input text-xs py-1 px-2 w-28"
-                value={dueTime}
-                onChange={(e) => setDueTime(e.target.value)}
-              />
+              <>
+                <input
+                  type="date"
+                  className="input text-xs py-1 px-2 w-36"
+                  value={taskDate}
+                  onChange={(e) => setTaskDate(e.target.value)}
+                />
+                <input
+                  type="time"
+                  className="input text-xs py-1 px-2 w-28"
+                  value={dueTime}
+                  onChange={(e) => setDueTime(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { setShowDueDate(false); setTaskDate(''); setDueTime(''); }}
+                  style={{ color: 'rgba(14,14,14,0.35)' }}
+                  title="Remove due date"
+                >
+                  <X size={13} strokeWidth={1.5} />
+                </button>
+              </>
             )}
           </div>
 
@@ -302,31 +338,143 @@ function AddTaskInput({ view, today, thisMonth, daysInMonth, onAdd }: AddTaskInp
 
 // ─── PlanItem ─────────────────────────────────────────────────────────────────
 
+interface PlanEditData {
+  title: string;
+  priority: Priority;
+  category: Category;
+  date: string | null;
+  dueTime: string | null;
+}
+
 function PlanItem({
   plan,
-  showDate,
+  isFirst,
   onToggle,
+  onSave,
   onDelete,
   onDismissCarryOver,
 }: {
   plan: Plan;
-  showDate?: boolean;
+  isFirst: boolean;
   onToggle: (p: Plan) => void;
-  onDelete: (id: string) => void;
+  onSave: (id: string, data: PlanEditData) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   onDismissCarryOver: (id: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const [eText, setEText] = useState(plan.title);
+  const [ePriority, setEPriority] = useState<Priority>(plan.priority);
+  const [eCategory, setECategory] = useState<Category>(plan.category);
+  const [eDate, setEDate] = useState(plan.date && plan.date.length >= 10 ? plan.date : '');
+  const [eTime, setETime] = useState(plan.dueTime ?? '');
+
+  const borderStyle = isFirst ? undefined : { borderTop: '1px solid rgba(14,14,14,0.06)' };
+
+  const startEdit = () => {
+    setEText(plan.title);
+    setEPriority(plan.priority);
+    setECategory(plan.category);
+    setEDate(plan.date && plan.date.length >= 10 ? plan.date : '');
+    setETime(plan.dueTime ?? '');
+    setConfirmingDelete(false);
+    setEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    const title = eText.trim();
+    if (!title || saving) return;
+    setSaving(true);
+    try {
+      await onSave(plan.id, { title, priority: ePriority, category: eCategory, date: eDate || null, dueTime: eTime || null });
+      setEditing(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    setDeleting(true);
+    try {
+      await onDelete(plan.id);
+    } catch (e) {
+      console.error(e);
+      setDeleting(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="px-3 py-3 space-y-2.5" style={borderStyle}>
+        <input
+          className="input text-sm w-full"
+          value={eText}
+          autoFocus
+          onChange={(e) => setEText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSaveEdit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+        <PriorityPicker value={ePriority} onChange={setEPriority} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-medium w-16 shrink-0" style={{ color: 'rgba(14,14,14,0.45)' }}>
+            Category
+          </span>
+          <select
+            className="input text-xs py-1 px-2 w-32"
+            value={eCategory}
+            onChange={(e) => setECategory(e.target.value as Category)}
+          >
+            <option value="work">Work</option>
+            <option value="learning">Learning</option>
+            <option value="personal">Personal</option>
+          </select>
+          <input
+            type="date"
+            className="input text-xs py-1 px-2 w-36"
+            value={eDate}
+            onChange={(e) => setEDate(e.target.value)}
+          />
+          <input
+            type="time"
+            className="input text-xs py-1 px-2 w-28"
+            value={eTime}
+            onChange={(e) => setETime(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-2 pt-0.5">
+          <button type="button" className="btn-secondary text-xs" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn-accent text-xs flex-1 flex items-center justify-center gap-1.5"
+            onClick={handleSaveEdit}
+            disabled={saving || !eText.trim()}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const pm = PRIORITY_META[plan.priority] ?? PRIORITY_META.medium;
   const cm = CATEGORY_META[plan.category] ?? CATEGORY_META.work;
-  const dateLabel = plan.date
-    ? (() => { try { return format(new Date(plan.date + 'T00:00:00'), 'MMM d'); } catch { return plan.date; } })()
-    : null;
+  const dateLabel = plan.date ? formatDateLabel(plan.date) : null;
 
   return (
     <div
-      className={`flex items-start gap-3 px-3 py-2.5 rounded-xl group transition-colors ${
+      className={`flex items-start gap-3 px-3 py-2.5 group transition-colors ${
         plan.completed ? '' : 'hover:bg-slate-50'
       }`}
-      style={{ opacity: plan.completed ? 0.52 : 1 }}
+      style={{ opacity: plan.completed ? 0.52 : 1, ...borderStyle }}
     >
       <button
         onClick={() => onToggle(plan)}
@@ -364,7 +512,7 @@ function PlanItem({
           <span className="text-xs px-1.5 py-0.5 rounded font-medium" style={cm.style}>
             {cm.label}
           </span>
-          {showDate && dateLabel && (
+          {dateLabel && (
             <span
               className="text-xs px-1.5 py-0.5 rounded font-medium"
               style={{ backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.45)' }}
@@ -390,15 +538,48 @@ function PlanItem({
         </div>
       </div>
 
-      <button
-        onClick={() => onDelete(plan.id)}
-        className="shrink-0 opacity-0 group-hover:opacity-100 transition-all mt-0.5"
-        style={{ color: 'rgba(14,14,14,0.25)' }}
-        onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
-        onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(14,14,14,0.25)')}
-      >
-        <Trash2 size={14} strokeWidth={1.5} />
-      </button>
+      {confirmingDelete ? (
+        <div className="shrink-0 flex items-center gap-1.5 mt-0.5">
+          <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
+            Delete this task?
+          </span>
+          <button
+            onClick={handleConfirmDelete}
+            disabled={deleting}
+            className="text-xs text-red-500 font-medium hover:text-red-700 transition-colors"
+          >
+            Yes
+          </button>
+          <button
+            onClick={() => setConfirmingDelete(false)}
+            className="text-xs hover:text-slate-600 transition-colors"
+            style={{ color: 'rgba(14,14,14,0.40)' }}
+          >
+            No
+          </button>
+        </div>
+      ) : (
+        <div className="shrink-0 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all mt-0.5">
+          <button
+            onClick={startEdit}
+            style={{ color: 'rgba(14,14,14,0.30)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#0E0E0E')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(14,14,14,0.30)')}
+            title="Edit"
+          >
+            <Pencil size={14} strokeWidth={1.5} />
+          </button>
+          <button
+            onClick={() => setConfirmingDelete(true)}
+            style={{ color: 'rgba(14,14,14,0.25)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(14,14,14,0.25)')}
+            title="Delete"
+          >
+            <Trash2 size={14} strokeWidth={1.5} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -406,24 +587,9 @@ function PlanItem({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MyPlans() {
-  const today = getTodayStr();
-  const thisMonth = getThisMonthStr();
-
-  const [view, setView] = useState<PlanView>('daily');
+  const [view, setView] = useState<TopView>('tasks');
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // For monthly week expand/collapse
-  const todayDay = new Date().getDate();
-  const currentWeekNum = getWeekForDay(todayDay);
-  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(() => {
-    const s = new Set<number>();
-    for (let w = currentWeekNum; w <= 4; w++) s.add(w);
-    return s;
-  });
-
-  const [nowYear, nowMonth] = thisMonth.split('-').map(Number);
-  const daysInCurrentMonth = getDaysInMonth(new Date(nowYear, nowMonth - 1));
 
   // ── Quick Links state ────────────────────────────────────────────────────────
   const [links, setLinks] = useState<QuickLink[]>([]);
@@ -436,18 +602,16 @@ export default function MyPlans() {
   // ── Load callbacks ───────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
-    if (view === 'links') return;
     setLoading(true);
     try {
-      const date = view === 'daily' ? today : thisMonth;
-      const data = await getPlans({ type: view, date });
-      setPlans(sortPlans(data));
+      const data = await getPlans();
+      setPlans(data);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [view, today, thisMonth]);
+  }, []);
 
   const loadLinks = useCallback(async () => {
     setLinksLoading(true);
@@ -462,7 +626,7 @@ export default function MyPlans() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (view === 'links') loadLinks(); }, [view, loadLinks]);
+  useEffect(() => { if (view === 'links' && links.length === 0) loadLinks(); }, [view, loadLinks, links.length]);
 
   // ── Plan handlers ────────────────────────────────────────────────────────────
 
@@ -470,29 +634,33 @@ export default function MyPlans() {
     title: string;
     priority: Priority;
     category: Category;
+    date: string | null;
     dueTime: string | null;
-    date: string;
   }) => {
-    if (view === 'links') return;
-    const plan = await createPlan({ ...data, type: view });
-    setPlans((prev) => sortPlans([plan, ...prev]));
+    const plan = await createPlan(data);
+    setPlans((prev) => [plan, ...prev]);
   };
 
   const handleToggle = async (plan: Plan) => {
     const optimistic = { ...plan, completed: !plan.completed };
-    setPlans((prev) => sortPlans(prev.map((p) => (p.id === plan.id ? optimistic : p))));
+    setPlans((prev) => prev.map((p) => (p.id === plan.id ? optimistic : p)));
     try {
       const updated = await updatePlan(plan.id, { completed: !plan.completed });
-      setPlans((prev) => sortPlans(prev.map((p) => (p.id === plan.id ? updated : p))));
+      setPlans((prev) => prev.map((p) => (p.id === plan.id ? updated : p)));
     } catch (e) {
       console.error(e);
-      setPlans((prev) => sortPlans(prev.map((p) => (p.id === plan.id ? plan : p))));
+      setPlans((prev) => prev.map((p) => (p.id === plan.id ? plan : p)));
     }
   };
 
+  const handleSaveEdit = async (id: string, data: PlanEditData) => {
+    const updated = await updatePlan(id, data);
+    setPlans((prev) => prev.map((p) => (p.id === id ? updated : p)));
+  };
+
   const handleDelete = async (id: string) => {
+    await deletePlan(id);
     setPlans((prev) => prev.filter((p) => p.id !== id));
-    try { await deletePlan(id); } catch (e) { console.error(e); load(); }
   };
 
   const handleDismissCarryOver = async (id: string) => {
@@ -536,175 +704,49 @@ export default function MyPlans() {
     }
   };
 
-  // ── Today view ───────────────────────────────────────────────────────────────
+  // ── Task grouping ────────────────────────────────────────────────────────────
 
-  const pending = plans.filter((p) => !p.completed);
-  const done = plans.filter((p) => p.completed);
-  const allDone = plans.length > 0 && pending.length === 0;
+  const now = new Date();
+  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrowDate = addDays(todayDate, 1);
+  const weekEndDate = endOfWeek(todayDate, { weekStartsOn: 1 });
 
-  const renderTodayView = () => (
-    <div className="space-y-1">
-      {allDone && (
-        <div className="py-5 text-center space-y-1">
-          <div className="flex items-center justify-center gap-2">
-            <CheckCircle2 size={20} strokeWidth={1.5} style={{ color: '#A1F96E' }} />
-            <span className="text-sm font-semibold text-slate-700">All done for today</span>
-          </div>
-          <p className="text-xs" style={{ color: 'rgba(14,14,14,0.40)' }}>
-            Great work — everything is checked off.
-          </p>
-        </div>
-      )}
-
-      {pending.map((plan) => (
-        <PlanItem
-          key={plan.id}
-          plan={plan}
-          onToggle={handleToggle}
-          onDelete={handleDelete}
-          onDismissCarryOver={handleDismissCarryOver}
-        />
-      ))}
-
-      {done.length > 0 && (
-        <>
-          {pending.length > 0 && <div className="h-px my-2" style={{ backgroundColor: 'rgba(14,14,14,0.06)' }} />}
-          <p className="text-xs px-3 mb-0.5" style={{ color: 'rgba(14,14,14,0.38)' }}>
-            Completed ({done.length})
-          </p>
-          {done.map((plan) => (
-            <PlanItem
-              key={plan.id}
-              plan={plan}
-              onToggle={handleToggle}
-              onDelete={handleDelete}
-              onDismissCarryOver={handleDismissCarryOver}
-            />
-          ))}
-        </>
-      )}
-    </div>
-  );
-
-  // ── Monthly view ─────────────────────────────────────────────────────────────
-
-  interface WeekGroup {
-    week: 1 | 2 | 3 | 4;
-    label: string;
-    startDay: number;
-    endDay: number;
-    tasks: Plan[];
-    isPast: boolean;
-    isCurrent: boolean;
+  const grouped: Record<BucketKey, Plan[]> = {
+    today: [], tomorrow: [], thisWeek: [], thisMonth: [], later: [], noDate: [],
+  };
+  for (const p of plans) {
+    grouped[getBucket(p, { today: todayDate, tomorrow: tomorrowDate, weekEnd: weekEndDate })].push(p);
+  }
+  for (const key of Object.keys(grouped) as BucketKey[]) {
+    grouped[key] = sortWithinSection(grouped[key]);
   }
 
-  const weekGroups: WeekGroup[] = ([1, 2, 3, 4] as const).reduce<WeekGroup[]>((acc, w) => {
-    const startDays = [1, 8, 15, 22] as const;
-    const endDays = [7, 14, 21, daysInCurrentMonth] as const;
-    const startDay = startDays[w - 1];
-    const endDay = endDays[w - 1];
-
-    if (startDay > daysInCurrentMonth) return acc;
-
-    const fmt = (d: number) =>
-      format(new Date(nowYear, nowMonth - 1, Math.min(d, daysInCurrentMonth)), 'MMM d');
-    const label = `${fmt(startDay)}–${fmt(endDay)}`;
-
-    const weekTasks = sortPlans(
-      plans.filter((p) => {
-        const day = parseInt((p.date ?? '').split('-')[2] ?? '1', 10) || 1;
-        return getWeekForDay(day) === w;
-      }),
-    );
-
-    acc.push({
-      week: w,
-      label,
-      startDay,
-      endDay,
-      tasks: weekTasks,
-      isPast: w < currentWeekNum,
-      isCurrent: w === currentWeekNum,
-    });
-    return acc;
-  }, []);
-
-  const toggleWeek = (w: number) => {
-    setExpandedWeeks((prev) => {
-      const next = new Set(prev);
-      if (next.has(w)) next.delete(w); else next.add(w);
-      return next;
-    });
-  };
-
-  const renderMonthView = () => (
-    <div className="space-y-2">
-      {weekGroups.map(({ week, label, tasks, isPast, isCurrent }) => {
-        const isExpanded = expandedWeeks.has(week);
-        const doneTasks = tasks.filter((t) => t.completed).length;
-        const isFuture = !isPast && !isCurrent;
-
+  const renderTasksView = () => (
+    <div className="space-y-4">
+      {SECTIONS.map(({ key, label }) => {
+        const items = grouped[key];
+        if (items.length === 0) return null;
         return (
-          <div
-            key={week}
-            className="card p-0 overflow-hidden"
-            style={{ opacity: isFuture ? 0.75 : 1 }}
-          >
-            <button
-              onClick={() => toggleWeek(week)}
-              className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
+          <div key={key} className="space-y-1.5">
+            <p
+              className="text-[10px] uppercase tracking-widest font-semibold px-1"
+              style={{ color: 'rgba(14,14,14,0.38)' }}
             >
-              <span className="text-sm font-semibold text-slate-700">Week {week}</span>
-              <span className="text-xs font-medium" style={{ color: 'rgba(14,14,14,0.45)' }}>
-                {label}
-              </span>
-              {isCurrent && (
-                <span
-                  className="text-xs px-2 py-0.5 rounded-full font-medium"
-                  style={{ backgroundColor: 'rgba(161,249,110,0.30)', color: '#0E0E0E' }}
-                >
-                  This week
-                </span>
-              )}
-              <div className="ml-auto flex items-center gap-2">
-                {tasks.length > 0 && (
-                  <span
-                    className="text-xs px-2 py-0.5 rounded-full font-medium"
-                    style={{ backgroundColor: 'rgba(14,14,14,0.07)', color: 'rgba(14,14,14,0.55)' }}
-                  >
-                    {doneTasks}/{tasks.length} done
-                  </span>
-                )}
-                {isExpanded ? (
-                  <ChevronDown size={15} strokeWidth={1.8} style={{ color: 'rgba(14,14,14,0.35)' }} />
-                ) : (
-                  <ChevronRight size={15} strokeWidth={1.8} style={{ color: 'rgba(14,14,14,0.35)' }} />
-                )}
-              </div>
-            </button>
-
-            {isExpanded && (
-              <div style={{ borderTop: '1px solid rgba(14,14,14,0.06)' }}>
-                {tasks.length === 0 ? (
-                  <p className="px-4 py-3 text-xs" style={{ color: 'rgba(14,14,14,0.35)' }}>
-                    No tasks for this week
-                  </p>
-                ) : (
-                  <div className="py-1 space-y-0.5">
-                    {tasks.map((plan) => (
-                      <PlanItem
-                        key={plan.id}
-                        plan={plan}
-                        showDate
-                        onToggle={handleToggle}
-                        onDelete={handleDelete}
-                        onDismissCarryOver={handleDismissCarryOver}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+              {label} <span style={{ opacity: 0.65 }}>({items.length})</span>
+            </p>
+            <div className="card p-0 overflow-hidden">
+              {items.map((plan, idx) => (
+                <PlanItem
+                  key={plan.id}
+                  plan={plan}
+                  isFirst={idx === 0}
+                  onToggle={handleToggle}
+                  onSave={handleSaveEdit}
+                  onDelete={handleDelete}
+                  onDismissCarryOver={handleDismissCarryOver}
+                />
+              ))}
+            </div>
           </div>
         );
       })}
@@ -897,7 +939,7 @@ export default function MyPlans() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   const totalCount = plans.length;
-  const completedCount = done.length;
+  const completedCount = plans.filter((p) => p.completed).length;
 
   return (
     <div className="space-y-5">
@@ -907,7 +949,7 @@ export default function MyPlans() {
           <h2 className="text-xl font-bold text-slate-800">My Plans</h2>
           <p className="text-sm text-slate-400">Personal — visible only to you</p>
         </div>
-        {view === 'daily' && totalCount > 0 && (
+        {view === 'tasks' && totalCount > 0 && (
           <span
             className="text-xs px-2 py-1 rounded-full font-medium shrink-0"
             style={{ backgroundColor: 'rgba(14,14,14,0.07)', color: 'rgba(14,14,14,0.55)' }}
@@ -922,7 +964,7 @@ export default function MyPlans() {
         className="flex rounded-lg overflow-hidden text-sm w-fit"
         style={{ border: '1px solid rgba(14,14,14,0.12)' }}
       >
-        {(['daily', 'monthly', 'links'] as PlanView[]).map((v) => (
+        {(['tasks', 'links'] as TopView[]).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -938,16 +980,8 @@ export default function MyPlans() {
         ))}
       </div>
 
-      {/* Add task input — plan views only */}
-      {view !== 'links' && (
-        <AddTaskInput
-          view={view as 'daily' | 'monthly'}
-          today={today}
-          thisMonth={thisMonth}
-          daysInMonth={daysInCurrentMonth}
-          onAdd={handleAdd}
-        />
-      )}
+      {/* Add task input — tasks view only */}
+      {view === 'tasks' && <AddTaskInput onAdd={handleAdd} />}
 
       {/* Content */}
       {view === 'links' ? (
@@ -958,12 +992,10 @@ export default function MyPlans() {
         </div>
       ) : plans.length === 0 ? (
         <div className="py-10 text-center text-sm" style={{ color: 'rgba(14,14,14,0.38)' }}>
-          No {view === 'daily' ? 'tasks for today' : 'goals this month'} yet — add one above.
+          No tasks yet — add one above.
         </div>
-      ) : view === 'daily' ? (
-        renderTodayView()
       ) : (
-        renderMonthView()
+        renderTasksView()
       )}
     </div>
   );

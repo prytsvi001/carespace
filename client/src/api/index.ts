@@ -139,13 +139,11 @@ export const getMe = () => api.get('/auth/me').then((r) => r.data);
 export const logout = () => api.post('/auth/logout').then((r) => r.data);
 
 // ─── Plans ─────────────────────────────────────────────────────────────────
-export const getPlans = (params?: { type?: string; date?: string }) =>
-  api.get('/plans', { params }).then((r) => r.data);
+export const getPlans = () => api.get('/plans').then((r) => r.data);
 
 export const createPlan = (data: {
   title: string;
-  type: string;
-  date?: string;
+  date?: string | null;
   priority?: string;
   category?: string;
   dueTime?: string | null;
@@ -157,6 +155,7 @@ export const updatePlan = (id: string, data: {
   priority?: string;
   category?: string;
   dueTime?: string | null;
+  date?: string | null;
   carriedOverDismissed?: boolean;
 }) => api.patch(`/plans/${id}`, data).then((r) => r.data);
 
