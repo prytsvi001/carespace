@@ -9,7 +9,7 @@ import {
   getTodayLogs,
 } from '../api';
 import { PeakRequest, PeakRequestComment, RequestStatus, ShiftLog } from '../types';
-import { Modal, Spinner, EmptyState, ConfirmDialog, OnlineNowStrip, StatusStrip } from '../components/ui';
+import { Modal, Spinner, EmptyState, ConfirmDialog, StatusStrip } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
 
@@ -443,7 +443,11 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       </div>
 
       {/* Support agents currently on an active shift (Daily Log data, not the Shift Calendar schedule) */}
-      <OnlineNowStrip activeLogs={activeShiftLogs} emptyMessage="No support agents currently online" />
+      <StatusStrip
+        active={activeShiftLogs.length > 0}
+        onlineText={`Support agent online: ${activeShiftLogs.map((log) => `${log.agent.name} — ${log.shiftType === 'MORNING' ? 'Morning' : 'Night'} Shift`).join(', ')}`}
+        offlineText="No support agents currently online"
+      />
 
       {/* Peek Team on-duty toggle status */}
       {dutyInfo && (
