@@ -1,5 +1,5 @@
 // client/src/pages/DailyLog.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MessageCircle, Ticket, Phone, RefreshCcw, Sun, Moon, ClipboardList, Save } from 'lucide-react';
 import { format } from 'date-fns';
 import { getAgents, createShiftLog, getShiftLogs, updateShiftLog, archiveShiftLog, deleteShiftLog } from '../api';
@@ -26,27 +26,36 @@ function ShiftLogCard({ log, onSave, onEndShift, onArchive, onDelete }: {
   onDelete: (id: string) => void;
 }) {
   const isActive = !log.archived;
-  const [editing, setEditing] = useState(isActive);
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [draft, setDraft] = useState<DraftStats>({ chatsCount: log.chatsCount, ticketsCount: log.ticketsCount, callsCount: log.callsCount, refundRequestsCount: log.refundRequestsCount, comments: log.comments || '' });
   const [confirm, setConfirm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const startEdit = () => {
-    setDraft({ chatsCount: log.chatsCount, ticketsCount: log.ticketsCount, callsCount: log.callsCount, refundRequestsCount: log.refundRequestsCount, comments: log.comments || '' });
-    setEditing(true);
-  };
+  // Auto-save, debounced 1.5s after the user stops typing/changing a field.
+  const isFirstRun = useRef(true);
+  const savedMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (isFirstRun.current) { isFirstRun.current = false; return; }
+    if (!isActive || !onSave) return;
 
-  const handleSave = async () => {
-    if (!onSave) return;
-    setSaving(true);
-    try {
-      await onSave(log.id, draft);
-      setEditing(false);
-    } finally {
-      setSaving(false);
-    }
-  };
+    setSaveState('saving');
+    const debounce = setTimeout(async () => {
+      try {
+        await onSave(log.id, draft);
+        setSaveState('saved');
+        if (savedMessageTimeout.current) clearTimeout(savedMessageTimeout.current);
+        savedMessageTimeout.current = setTimeout(() => setSaveState('idle'), 1500);
+      } catch (e) {
+        console.error(e);
+        setSaveState('idle');
+      }
+    }, 1500);
+
+    return () => clearTimeout(debounce);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
+
+  useEffect(() => () => { if (savedMessageTimeout.current) clearTimeout(savedMessageTimeout.current); }, []);
 
   return (
     <div className="card flex flex-col gap-2"
@@ -72,8 +81,8 @@ function ShiftLogCard({ log, onSave, onEndShift, onArchive, onDelete }: {
         </div>
       </div>
 
-      {/* Edit mode */}
-      {editing ? (
+      {/* Active shifts: always-editable, auto-saving form */}
+      {isActive ? (
         <>
           <div className="grid grid-cols-2 gap-3">
             {STAT_FIELDS.map(f => (
@@ -100,15 +109,13 @@ function ShiftLogCard({ log, onSave, onEndShift, onArchive, onDelete }: {
               onChange={e => setDraft(prev => ({ ...prev, comments: e.target.value }))}
             />
           </label>
-          <div className="flex justify-end pt-1">
-            <button className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50" onClick={handleSave} disabled={saving}>
-              <Save size={12} strokeWidth={1.5} />
-              {saving ? 'Saving…' : 'Save'}
-            </button>
+          <div className="flex justify-end items-center gap-1.5 pt-1 h-4 text-xs" style={{ color: 'rgba(14,14,14,0.40)' }}>
+            {saveState === 'saving' && (<><Save size={12} strokeWidth={1.5} />Saving…</>)}
+            {saveState === 'saved' && <span style={{ color: '#0E0E0E' }}>Saved</span>}
           </div>
         </>
       ) : (
-        /* View mode */
+        /* Archived shifts: read-only */
         <>
           <div className="grid grid-cols-4 gap-2 mt-1">
             {STAT_FIELDS.map(f => (
@@ -236,14 +243,16 @@ export default function DailyLog({ onSyncStats, onDataChanged }: { onSyncStats?:
   };
 
   const handleSaveLog = async (id: string, data: DraftStats) => {
-    await updateShiftLog(id, {
+    // Patch local state from the PUT response instead of a full loadData() reload —
+    // this fires on every debounced auto-save, so a full-page spinner would be disruptive.
+    const updated = await updateShiftLog(id, {
       chatsCount: data.chatsCount,
       ticketsCount: data.ticketsCount,
       callsCount: data.callsCount,
       refundRequestsCount: data.refundRequestsCount,
       comments: data.comments || undefined,
     });
-    await loadData();
+    setLogs(prev => prev.map(l => (l.id === id ? updated : l)));
     onDataChanged?.();
   };
 
