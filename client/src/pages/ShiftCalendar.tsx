@@ -122,6 +122,45 @@ function EventChip({ event, onDelete, onEdit, readOnly }: {
   );
 }
 
+// Same visuals as EventChip but without useDraggable — used inside the "+N more"
+// popup, which renders every event for the day (including the 3 already visible
+// and draggable in the cell body). Two components calling useDraggable with the
+// same event id at once would collide in dnd-kit's registry, so the popup's list
+// intentionally isn't drag-enabled.
+function StaticEventChip({ event, onDelete, onEdit, readOnly }: {
+  event: CalendarEvent;
+  onDelete: () => void;
+  onEdit: () => void;
+  readOnly?: boolean;
+}) {
+  return (
+    <div
+      onClick={readOnly ? undefined : () => onEdit()}
+      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium select-none
+        ${getEventColor(event.leaveType, event.shiftType)}
+        ${readOnly ? 'cursor-default' : 'group cursor-pointer'}`}
+    >
+      <EventIcon leaveType={event.leaveType} shiftType={event.shiftType} size={9} />
+      <span className="truncate min-w-0 flex-1" title={event.agent.name.split(' ')[0]}>{event.agent.name.split(' ')[0]}</span>
+      {event.isExtraShift && <span title="Extra shift" className="flex-shrink-0"><Star size={8} strokeWidth={2} className="text-amber-500" /></span>}
+      {!readOnly && (
+        <>
+          <span className="opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0 pointer-events-none">
+            <PencilIcon />
+          </span>
+          <button
+            onClick={e => { e.stopPropagation(); onDelete(); }}
+            className="flex-shrink-0 opacity-50 hover:opacity-100 hover:text-red-600 transition-all"
+            title="Delete entry"
+          >
+            <TrashIcon />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentMonth, readOnly }: {
   date: Date;
   events: CalendarEvent[];
@@ -132,12 +171,13 @@ function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentM
   readOnly?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: format(date, 'yyyy-MM-dd') });
+  const [showAll, setShowAll] = useState(false);
 
   return (
     <div
       ref={setNodeRef}
       onClick={readOnly ? undefined : () => onAdd(date)}
-      className={`min-h-[80px] sm:min-h-[100px] p-1.5 rounded-lg transition-colors
+      className={`relative min-h-[80px] sm:min-h-[100px] p-1.5 rounded-lg transition-colors
         ${readOnly ? 'cursor-default' : 'cursor-pointer group'}
         ${isOver && !readOnly ? 'ring-1 ring-inset ring-[#A1F96E]/70' : ''}
         ${!isCurrentMonth ? 'opacity-35' : ''}
@@ -164,9 +204,41 @@ function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentM
           <EventChip key={ev.id} event={ev} onDelete={() => onRequestDelete(ev.id)} onEdit={() => onEditEvent(ev)} readOnly={readOnly} />
         ))}
         {events.length > 3 && (
-          <span className="text-[10px] pl-1" style={{ color: 'rgba(14,14,14,0.38)' }}>+{events.length - 3} more</span>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowAll(true); }}
+            className="text-[10px] pl-1 text-left hover:underline"
+            style={{ color: 'rgba(14,14,14,0.38)' }}
+          >
+            +{events.length - 3} more
+          </button>
         )}
       </div>
+
+      {showAll && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setShowAll(false); }} />
+          <div
+            className="absolute z-50 top-full left-0 mt-1 bg-white rounded-xl shadow-lg border border-slate-100 p-2 w-56"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wide mb-1.5 px-1" style={{ color: 'rgba(14,14,14,0.40)' }}>
+              {format(date, 'MMM d')} — {events.length} agents
+            </p>
+            <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
+              {events.map(ev => (
+                <StaticEventChip
+                  key={ev.id}
+                  event={ev}
+                  onDelete={() => onRequestDelete(ev.id)}
+                  onEdit={() => { onEditEvent(ev); setShowAll(false); }}
+                  readOnly={readOnly}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
