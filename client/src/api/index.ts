@@ -352,11 +352,21 @@ export const deleteQuickLink = (id: string) =>
 export const getShortcuts = () =>
   api.get('/shortcuts').then((r) => r.data);
 
-export const createShortcut = (data: { title: string; type: 'text' | 'link'; content: string; category?: string }) =>
-  api.post('/shortcuts', data).then((r) => r.data);
+export const createShortcut = (data: {
+  title: string;
+  type: 'text' | 'link';
+  content?: string;
+  variants?: { label?: string; content: string }[];
+  category?: string;
+}) => api.post('/shortcuts', data).then((r) => r.data);
 
-export const updateShortcut = (id: string, data: { title: string; type: 'text' | 'link'; content: string; category?: string }) =>
-  api.put(`/shortcuts/${id}`, data).then((r) => r.data);
+export const updateShortcut = (id: string, data: {
+  title: string;
+  type: 'text' | 'link';
+  content?: string;
+  variants?: { label?: string; content: string }[];
+  category?: string;
+}) => api.put(`/shortcuts/${id}`, data).then((r) => r.data);
 
 export const deleteShortcut = (id: string) =>
   api.delete(`/shortcuts/${id}`).then((r) => r.data);

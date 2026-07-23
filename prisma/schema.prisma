@@ -306,7 +306,8 @@ model Shortcut {
   id            String   @id @default(cuid())
   title         String
   type          String   @default("text") // "text" | "link"
-  content       String   // full text template body for "text", or the URL for "link"
+  content       String   // the URL for "link"; for "text", kept in sync with variants[0] (legacy single-variant fallback)
+  variants      String   @default("[]") // JSON: [{id, label, content}] — multiple response variants for "text" shortcuts only
   category      String   @default("")
   createdById   String?
   createdBy     User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)

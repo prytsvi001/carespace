@@ -294,11 +294,18 @@ export interface QuickLink {
 
 export type ShortcutType = 'text' | 'link';
 
+export interface ShortcutVariant {
+  id: string;
+  label: string;
+  content: string;
+}
+
 export interface Shortcut {
   id: string;
   title: string;
   type: ShortcutType;
   content: string;
+  variants: ShortcutVariant[]; // "text" shortcuts only — empty for legacy rows and all "link" shortcuts
   category: string;
   createdById: string | null;
   createdByName: string | null;
