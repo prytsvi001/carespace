@@ -72,6 +72,11 @@ function RequestCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [copiedField, setCopiedField]     = useState<'email' | 'nickname' | null>(null);
 
+  // Archived Done cards start collapsed to keep that column scannable — full
+  // detail (request text, comments, tags, timestamps) is hidden until expanded.
+  const isArchivedDone = req.archived && req.status === 'DONE';
+  const [expanded, setExpanded] = useState(false);
+
   // ── Comment thread state ───────────────────────────────────────────────────
   const [comments, setComments] = useState<PeakRequestComment[]>(req.comments);
   const [commentDraft, setCommentDraft] = useState('');
@@ -148,6 +153,33 @@ function RequestCard({
   };
   const next = nextStatus[req.status];
 
+  if (isArchivedDone && !expanded) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            {req.contactEmail && (
+              <span className="text-xs text-slate-500 truncate">📧 {req.contactEmail}</span>
+            )}
+            {req.profileNickname && (
+              <span className="text-xs text-slate-500 truncate">👤 {req.profileNickname}</span>
+            )}
+            {!req.contactEmail && !req.profileNickname && (
+              <span className="text-xs text-slate-400 italic">No contact info</span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="shrink-0 text-xs px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors"
+          >
+            Expand
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`bg-white rounded-xl border p-3 shadow-sm hover:shadow-md transition-shadow
       ${highlightNew ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-100'}`}>
@@ -164,6 +196,9 @@ function RequestCard({
       <div className="flex items-start justify-between gap-2 mb-2">
         <span className="text-xs font-medium text-slate-500">{req.agent.name}</span>
         <div className="flex items-center gap-2">
+          {isArchivedDone && (
+            <button onClick={() => setExpanded(false)} className="text-xs text-slate-400 hover:text-slate-600">Collapse</button>
+          )}
           <button onClick={() => onEdit(req)} className="text-xs text-brand-600 hover:text-brand-700">Edit</button>
           <button onClick={() => setConfirm(true)} className="text-xs text-amber-600 hover:text-amber-700">Archive</button>
           <button onClick={() => setConfirmDelete(true)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
