@@ -22,6 +22,7 @@ model Agent {
   user           User?
   qaIssues       QAIssue[]
   qaAgentReports QAAgentReport[]
+  telegramReminderLogs TelegramReminderLog[]
 }
 
 model User {
@@ -34,6 +35,9 @@ model User {
   agent     Agent?   @relation(fields: [agentId], references: [id])
   peekOnDuty       Boolean @default(false) // manually toggled "I'm online" status for Peek Requests duty
   peekDutyEligible Boolean @default(false) // extra non-peek_handler users allowed to toggle peekOnDuty (e.g. an agent who sometimes covers Peek)
+  telegramChatId     String?   @unique // set once the user completes the Telegram link flow
+  telegramLinkCode   String?   @unique // short-lived pending code shown in the Connect Telegram modal
+  telegramLinkExpiry DateTime? // telegramLinkCode becomes invalid after this
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -59,6 +63,7 @@ model Plan {
   dueTime              String?                     // "HH:MM" optional
   carriedOver          Boolean  @default(false)
   carriedOverDismissed Boolean  @default(false)
+  reminderSent         Boolean  @default(false) // 24h-before-due Telegram reminder already sent
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -329,4 +334,20 @@ model PeakRequest {
 
   @@index([agentId])
   @@index([status])
+}
+
+// Dedup log for the shift-reminder cron — the external scheduler that hits
+// /api/cron/shift-reminders isn't guaranteed to fire exactly once per window,
+// and Vercel serverless functions share no in-memory state between invocations,
+// so this table's unique constraint is the only reliable "send exactly once" guard.
+model TelegramReminderLog {
+  id           String   @id @default(cuid())
+  agentId      String
+  agent        Agent    @relation(fields: [agentId], references: [id])
+  reminderType String   // "MORNING_START" | "MORNING_END" | "NIGHT_START" | "NIGHT_END"
+  shiftDate    String   // "YYYY-MM-DD", Kyiv-local calendar day the reminder is about
+  sentAt       DateTime @default(now())
+
+  @@unique([agentId, reminderType, shiftDate])
+  @@index([agentId])
 }

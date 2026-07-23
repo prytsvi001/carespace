@@ -1,6 +1,7 @@
 // server/src/routes/peakRequests.ts
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
+import { sendTelegramMessage, CARESPACE_URL } from '../telegram';
 
 const router = Router();
 
@@ -102,6 +103,14 @@ router.post('/', async (req: Request, res: Response) => {
       include: { agent: true },
     });
 
+    const peekHandlers = await prisma.user.findMany({
+      where: { OR: [{ role: 'peek_handler' }, { peekOnDuty: true }], telegramChatId: { not: null } },
+    });
+    const notifyText = `New Peak Request from ${request.agent.name}: ${requestText.trim().slice(0, 120)} ${CARESPACE_URL}`;
+    await Promise.allSettled(
+      peekHandlers.map((u) => sendTelegramMessage(u.telegramChatId as string, notifyText)),
+    );
+
     return res.status(201).json(formatRequest(request));
   } catch (error) {
     console.error(error);
@@ -188,6 +197,12 @@ router.post('/:id/comments', async (req: Request, res: Response) => {
       data: { comments: JSON.stringify(comments) },
       include: { agent: true },
     });
+
+    const originalRequester = await prisma.user.findFirst({ where: { agentId: request.agentId } });
+    if (originalRequester && originalRequester.id !== user.id && originalRequester.telegramChatId) {
+      const notifyText = `${user.name} commented on your Peek Request: ${text.trim().slice(0, 120)} ${CARESPACE_URL}`;
+      await sendTelegramMessage(originalRequester.telegramChatId, notifyText);
+    }
 
     return res.json(formatRequest(request));
   } catch (error) {

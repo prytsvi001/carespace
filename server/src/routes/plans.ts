@@ -105,9 +105,11 @@ router.patch('/:id', async (req: Request, res: Response) => {
         ...(typeof completed === 'boolean' ? { completed } : {}),
         ...(typeof priority === 'string' ? { priority } : {}),
         ...(typeof category === 'string' ? { category } : {}),
-        ...(dueTime !== undefined ? { dueTime: dueTime || null } : {}),
+        // Changing the due date or time invalidates any already-sent 24h-before
+        // reminder, so it can fire again for the new due instant.
+        ...(dueTime !== undefined ? { dueTime: dueTime || null, reminderSent: false } : {}),
         // Editing the due date means it's no longer "carried over" in the old sense
-        ...(date !== undefined ? { date: date || null, carriedOver: false } : {}),
+        ...(date !== undefined ? { date: date || null, carriedOver: false, reminderSent: false } : {}),
         ...(typeof carriedOverDismissed === 'boolean' ? { carriedOverDismissed } : {}),
       },
     });

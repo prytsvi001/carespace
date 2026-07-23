@@ -101,6 +101,7 @@ export interface AuthUser {
   name: string;
   role: UserRole;
   agentId: string | null;
+  telegramChatId: string | null;
 }
 
 export interface Plan {

@@ -138,6 +138,13 @@ export const getAgentStats = (agentId: string, months?: number) =>
 export const getMe = () => api.get('/auth/me').then((r) => r.data);
 export const logout = () => api.post('/auth/logout').then((r) => r.data);
 
+// ─── Telegram ──────────────────────────────────────────────────────────────
+export const getTelegramLinkCode = (): Promise<{ code: string; botUsername: string | null }> =>
+  api.post('/telegram/link-code').then((r) => r.data);
+
+export const getTelegramStatus = (): Promise<{ connected: boolean }> =>
+  api.get('/telegram/status').then((r) => r.data);
+
 // ─── Plans ─────────────────────────────────────────────────────────────────
 export const getPlans = () => api.get('/plans').then((r) => r.data);
 

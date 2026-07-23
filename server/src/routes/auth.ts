@@ -13,6 +13,7 @@ declare global {
       name: string;
       role: string;
       agentId: string | null;
+      telegramChatId: string | null;
     }
   }
 }
@@ -45,6 +46,7 @@ passport.use(
           name: user.name,
           role: user.role,
           agentId: user.agentId,
+          telegramChatId: user.telegramChatId,
         });
       } catch (err) {
         return done(err as Error);
@@ -65,6 +67,7 @@ passport.deserializeUser(async (id: string, done) => {
       name: user.name,
       role: user.role,
       agentId: user.agentId,
+      telegramChatId: user.telegramChatId,
     });
   } catch (err) {
     done(err);

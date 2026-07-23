@@ -3,10 +3,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ClipboardList, CalendarDays, Lightbulb, Bot, ChartBar,
   ListTodo, Star, TrendingUp, FileText, LogOut, User,
-  ChevronDown, Bell, BarChart3,
+  ChevronDown, Bell, BarChart3, Send, CheckCircle2,
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { Modal } from './components/ui';
+import { getTelegramLinkCode, getTelegramStatus } from './api';
 import Login from './pages/Login';
 import DailyLog from './pages/DailyLog';
 import Statistics from './pages/Statistics';
@@ -87,6 +89,10 @@ function MainApp() {
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSpaceMenu, setShowSpaceMenu] = useState(false);
+  const [showTelegramModal, setShowTelegramModal] = useState(false);
+  const [telegramConnected, setTelegramConnected] = useState(!!user?.telegramChatId);
+
+  useEffect(() => { setTelegramConnected(!!user?.telegramChatId); }, [user?.telegramChatId]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [newRequestsCount, setNewRequestsCount] = useState(0);
   const [dismissedRequestsCount, setDismissedRequestsCount] = useState<number>(() => {
@@ -294,6 +300,17 @@ function MainApp() {
                       </span>
                     </div>
                     <button
+                      onClick={() => { setShowUserMenu(false); setShowTelegramModal(true); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      {telegramConnected ? (
+                        <CheckCircle2 size={14} strokeWidth={1.5} style={{ color: '#A1F96E' }} />
+                      ) : (
+                        <Send size={14} strokeWidth={1.5} />
+                      )}
+                      {telegramConnected ? 'Telegram connected' : 'Connect Telegram'}
+                    </button>
+                    <button
                       onClick={() => { setShowUserMenu(false); logout(); }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
                     >
@@ -401,7 +418,99 @@ function MainApp() {
       </nav>
 
       <ShortcutsDrawer />
+
+      <TelegramModal
+        open={showTelegramModal}
+        onClose={() => setShowTelegramModal(false)}
+        onConnected={() => setTelegramConnected(true)}
+      />
     </div>
+  );
+}
+
+// ── Connect Telegram modal ──────────────────────────────────────────────────
+
+function TelegramModal({ open, onClose, onConnected }: { open: boolean; onClose: () => void; onConnected: () => void }) {
+  const [code, setCode] = useState<string | null>(null);
+  const [botUsername, setBotUsername] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setCode(null);
+    setConnected(false);
+    setError(false);
+    setLoading(true);
+    getTelegramLinkCode()
+      .then((data) => { setCode(data.code); setBotUsername(data.botUsername); })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  const handleCheck = async () => {
+    setChecking(true);
+    try {
+      const status = await getTelegramStatus();
+      if (status.connected) {
+        setConnected(true);
+        onConnected();
+      }
+    } catch {
+      // ignore — user can just try again
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Connect Telegram">
+      {error ? (
+        <p className="text-sm text-red-500">Couldn't generate a code — try again in a moment.</p>
+      ) : connected ? (
+        <div className="flex items-center gap-2 text-sm" style={{ color: '#0E0E0E' }}>
+          <CheckCircle2 size={16} strokeWidth={1.5} style={{ color: '#A1F96E' }} />
+          Telegram connected! You'll get CareSpace notifications there from now on.
+        </div>
+      ) : loading || !code ? (
+        <p className="text-sm text-slate-400">Generating your code…</p>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            {botUsername ? (
+              <>Open{' '}
+                <a
+                  href={`https://t.me/${botUsername}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium underline"
+                  style={{ color: '#0E0E0E' }}
+                >
+                  @{botUsername}
+                </a>{' '}
+                on Telegram and send it this code:
+              </>
+            ) : (
+              'Open the CareSpace bot on Telegram and send it this code:'
+            )}
+          </p>
+          <div
+            className="text-2xl font-mono font-bold text-center py-3 rounded-xl"
+            style={{ backgroundColor: 'rgba(14,14,14,0.05)', letterSpacing: '0.15em' }}
+          >
+            {code}
+          </div>
+          <p className="text-xs text-center" style={{ color: 'rgba(14,14,14,0.40)' }}>
+            Code expires in 10 minutes.
+          </p>
+          <button onClick={handleCheck} disabled={checking} className="btn-accent text-sm w-full">
+            {checking ? 'Checking…' : "I've sent it — refresh"}
+          </button>
+        </div>
+      )}
+    </Modal>
   );
 }
 

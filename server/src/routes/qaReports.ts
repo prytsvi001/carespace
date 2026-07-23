@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth } from '../middleware/auth';
+import { sendTelegramMessage, CARESPACE_URL } from '../telegram';
 
 const router = Router();
 router.use(requireAuth);
@@ -74,6 +75,27 @@ async function refreshInboxMessage(reportId: string, agentId: string) {
     where: { id: agentReport.inboxMessageId },
     data: { subject, metadata, read: false, deletedByReceiver: false },
   });
+}
+
+// Notifies whoever needs to act next when an agent returns their report for
+// re-review — the reviewer who last sent it, or all head/lead as a fallback
+// if that link is missing.
+async function notifyReturnedForReview(agentReport: { sentByUserId: string | null }, agentName: string) {
+  let recipients: { telegramChatId: string | null }[] = [];
+  if (agentReport.sentByUserId) {
+    const reviewer = await prisma.user.findUnique({ where: { id: agentReport.sentByUserId } });
+    if (reviewer) recipients = [reviewer];
+  }
+  if (recipients.length === 0) {
+    recipients = await prisma.user.findMany({ where: { role: { in: ['head', 'lead'] } } });
+  }
+
+  const text = `${agentName} returned their QA report for re-review. ${CARESPACE_URL}`;
+  await Promise.allSettled(
+    recipients
+      .filter((r): r is { telegramChatId: string } => !!r.telegramChatId)
+      .map((r) => sendTelegramMessage(r.telegramChatId, text)),
+  );
 }
 
 // GET /api/qa-reports/agent-reports?year=&month=
@@ -240,6 +262,14 @@ router.post('/agent-reports/send', async (req: Request, res: Response) => {
       include: { agent: { select: { id: true, name: true } } },
     });
 
+    if (agentUser.telegramChatId) {
+      const senderName = (req.user as Express.User).name;
+      const text = isResend
+        ? `${senderName} updated your QA report for ${monthLabel}. ${CARESPACE_URL}`
+        : `${senderName} sent you a new QA report for ${monthLabel}. ${CARESPACE_URL}`;
+      await sendTelegramMessage(agentUser.telegramChatId, text);
+    }
+
     return res.status(201).json({ agentReport: formatAgentReport(agentReport), messageId });
   } catch (err) {
     console.error(err);
@@ -296,6 +326,10 @@ router.post('/agent-reports/comment', async (req: Request, res: Response) => {
     });
 
     await refreshInboxMessage(report.id, agentId);
+
+    if (wantsReturn) {
+      await notifyReturnedForReview(agentReport, user.name);
+    }
 
     const updated = await prisma.qAAgentReport.findUnique({
       where: { id: agentReport.id },
@@ -363,6 +397,10 @@ router.post('/issues/:id/comment', async (req: Request, res: Response) => {
         },
       });
       await refreshInboxMessage(issue.reportId, issue.agentId);
+
+      if (wantsReturn) {
+        await notifyReturnedForReview(agentReport, user.name);
+      }
     }
 
     return res.json(formatIssue(updatedIssue));

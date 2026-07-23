@@ -25,6 +25,8 @@ import quickLinksRouter from './routes/quickLinks';
 import shortcutsRouter from './routes/shortcuts';
 import kpiRouter from './routes/kpi';
 import dutyRouter from './routes/duty';
+import telegramRouter from './routes/telegram';
+import cronRouter from './routes/cron';
 import { requireAuth } from './middleware/auth';
 
 const app = express();
@@ -93,5 +95,7 @@ app.use('/api/quick-links', quickLinksRouter); // requireAuth applied inside rou
 app.use('/api/shortcuts',   shortcutsRouter);   // requireAuth applied inside router
 app.use('/api/kpi',         kpiRouter);        // requireAuth applied inside router
 app.use('/api/duty',        dutyRouter);       // requireAuth applied inside router
+app.use('/api/telegram',    telegramRouter);   // requireAuth applied per-route (webhook has none)
+app.use('/api/cron',        cronRouter);       // secret-header check applied inside router, not requireAuth
 
 export default app;

@@ -2,6 +2,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth } from '../middleware/auth';
+import { sendTelegramMessage, CARESPACE_URL } from '../telegram';
 
 const router = Router();
 router.use(requireAuth);
@@ -156,6 +157,15 @@ router.post('/', async (req: Request, res: Response) => {
         receiver: { select: { id: true, name: true, role: true } },
       },
     });
+
+    if (recipient.telegramChatId) {
+      const senderName = (req.user as Express.User).name;
+      const preview = content.trim().slice(0, 120);
+      const text = type === 'task_assignment'
+        ? `New task assignment from ${senderName}: ${preview} ${CARESPACE_URL}`
+        : `New message from ${senderName}: ${preview} ${CARESPACE_URL}`;
+      await sendTelegramMessage(recipient.telegramChatId, text);
+    }
 
     const [withReply] = await attachReplyPreviews([message]);
     return res.status(201).json(formatMessage(withReply));
