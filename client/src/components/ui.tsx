@@ -209,11 +209,12 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 // ─── Confirm Dialog ────────────────────────────────────────────────────────
-export function ConfirmDialog({ open, onConfirm, onCancel, message }: {
+export function ConfirmDialog({ open, onConfirm, onCancel, message, confirming = false }: {
   open: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   message: string;
+  confirming?: boolean;
 }) {
   if (!open) return null;
   return (
@@ -223,8 +224,10 @@ export function ConfirmDialog({ open, onConfirm, onCancel, message }: {
            style={{ border: '1px solid rgba(14,14,14,0.09)' }}>
         <p className="text-ink mb-5">{message}</p>
         <div className="flex gap-3 justify-end">
-          <button className="btn-secondary" onClick={onCancel}>Cancel</button>
-          <button className="btn-danger" onClick={onConfirm}>Confirm</button>
+          <button className="btn-secondary" onClick={onCancel} disabled={confirming}>Cancel</button>
+          <button className="btn-danger" onClick={onConfirm} disabled={confirming}>
+            {confirming ? 'Confirming…' : 'Confirm'}
+          </button>
         </div>
       </div>
     </div>

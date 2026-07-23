@@ -9,7 +9,7 @@ import {
   getAgents, getQAReport,
   createQAIssue, updateQAIssue, deleteQAIssue,
   getQAAgentReports, saveQAAgentReportDraft, sendQAAgentReport, updateQAAgentReportTotal,
-  addQAAgentReportComment, addQAIssueComment,
+  addQAAgentReportComment, addQAIssueComment, resetAllQaReports,
 } from '../api';
 import { Agent, QAReport, QAIssue, QAAgentReport } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -41,6 +41,8 @@ const EMPTY_FORM = { chatRef: '', issueType: 'technical' as IssueTypeValue, note
 export default function QAReports() {
   const { user } = useAuth();
   const canEdit = user?.role === 'head' || user?.role === 'lead';
+  // "Reset / Clear all" is scoped to this one account, not the head/lead role generally.
+  const canReset = user?.email === 'victoria_pryts@struktura.io';
 
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
@@ -60,6 +62,10 @@ export default function QAReports() {
 
   // Delete confirm
   const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  // Reset / Clear all
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // Compose & Send modal
   const [composeAgentId, setComposeAgentId] = useState<string | null>(null);
@@ -181,6 +187,19 @@ export default function QAReports() {
     try { await deleteQAIssue(id); } catch (e) { console.error(e); loadReport(); }
   };
 
+  const handleResetAll = async () => {
+    setResetting(true);
+    try {
+      await resetAllQaReports();
+      setShowResetConfirm(false);
+      await loadReport();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   // ── Compose & Send ────────────────────────────────────────────────────────
 
   const openCompose = (agentId: string) => {
@@ -270,25 +289,33 @@ export default function QAReports() {
           <p className="text-sm text-slate-400">Monthly chat quality tracking and success rate</p>
         </div>
 
-        <div
-          className="flex items-center gap-1 rounded-xl p-1"
-          style={{ border: '1px solid rgba(14,14,14,0.10)', backgroundColor: '#fff' }}
-        >
-          <button
-            onClick={prevMonth}
-            className="p-1.5 rounded-lg hover:bg-slate-50 transition-colors text-slate-400 hover:text-slate-700"
+        <div className="flex items-center gap-2 flex-wrap">
+          <div
+            className="flex items-center gap-1 rounded-xl p-1"
+            style={{ border: '1px solid rgba(14,14,14,0.10)', backgroundColor: '#fff' }}
           >
-            <ChevronLeft size={16} strokeWidth={2} />
-          </button>
-          <span className="text-sm font-semibold text-slate-700 px-2 min-w-[120px] text-center">
-            {monthLabel}
-          </span>
-          <button
-            onClick={nextMonth}
-            className="p-1.5 rounded-lg hover:bg-slate-50 transition-colors text-slate-400 hover:text-slate-700"
-          >
-            <ChevronRight size={16} strokeWidth={2} />
-          </button>
+            <button
+              onClick={prevMonth}
+              className="p-1.5 rounded-lg hover:bg-slate-50 transition-colors text-slate-400 hover:text-slate-700"
+            >
+              <ChevronLeft size={16} strokeWidth={2} />
+            </button>
+            <span className="text-sm font-semibold text-slate-700 px-2 min-w-[120px] text-center">
+              {monthLabel}
+            </span>
+            <button
+              onClick={nextMonth}
+              className="p-1.5 rounded-lg hover:bg-slate-50 transition-colors text-slate-400 hover:text-slate-700"
+            >
+              <ChevronRight size={16} strokeWidth={2} />
+            </button>
+          </div>
+
+          {canReset && (
+            <button className="btn-danger whitespace-nowrap" onClick={() => setShowResetConfirm(true)}>
+              Reset / Clear all
+            </button>
+          )}
         </div>
       </div>
 
@@ -657,6 +684,14 @@ export default function QAReports() {
         message="Delete this issue permanently?"
         onConfirm={() => { if (confirmId) handleDelete(confirmId); setConfirmId(null); }}
         onCancel={() => setConfirmId(null)}
+      />
+
+      <ConfirmDialog
+        open={showResetConfirm}
+        message="This will permanently delete all QA chat entries. Are you sure?"
+        onConfirm={handleResetAll}
+        onCancel={() => setShowResetConfirm(false)}
+        confirming={resetting}
       />
     </div>
   );

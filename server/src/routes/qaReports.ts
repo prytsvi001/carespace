@@ -10,6 +10,10 @@ router.use(requireAuth);
 
 const VALID_ISSUE_TYPES = ['technical', 'communication', 'no_response'];
 
+// The "Reset / Clear all" button is scoped to this one account by business
+// requirement, not to the head/lead role generally.
+const QA_RESET_ALLOWED_EMAIL = 'victoria_pryts@struktura.io';
+
 type QAComment = {
   id: string;
   type: 'comment' | 'status_change';
@@ -492,6 +496,22 @@ router.post('/issues', async (req: Request, res: Response) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to create issue' });
+  }
+});
+
+// DELETE /api/qa-reports/reset-all — permanently wipes every QA report, which
+// cascades to delete every QAIssue and QAAgentReport (see schema onDelete: Cascade).
+router.delete('/reset-all', async (req: Request, res: Response) => {
+  try {
+    const user = req.user as Express.User;
+    if (user.email !== QA_RESET_ALLOWED_EMAIL) {
+      return res.status(403).json({ error: 'Not permitted' });
+    }
+    await prisma.qAReport.deleteMany({});
+    return res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to reset QA reports' });
   }
 });
 

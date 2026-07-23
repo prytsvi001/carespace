@@ -258,6 +258,9 @@ export const addQAIssueComment = (
   data: { text: string; action?: 'comment' | 'return' },
 ) => api.post(`/qa-reports/issues/${issueId}/comment`, data).then((r) => r.data);
 
+export const resetAllQaReports = () =>
+  api.delete('/qa-reports/reset-all').then((r) => r.data);
+
 // ─── PDP ──────────────────────────────────────────────────────────────────────
 export const getMyPDP = () => api.get('/pdp/me').then((r) => r.data);
 
