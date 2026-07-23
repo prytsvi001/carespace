@@ -172,13 +172,16 @@ function MainApp() {
           <div className="flex items-center justify-between h-14 gap-2">
 
             {/* Logo */}
-            <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setActiveTab('daily')}
+              className="flex items-center gap-2 shrink-0 hover:opacity-75 transition-opacity"
+            >
               <img src="/logo.png" alt="CareSpace" className="h-7 w-7 object-contain" />
               <span className="font-bold text-ink text-lg hidden sm:block">CareSpace</span>
               <span className="text-xs hidden sm:block" style={{ color: 'rgba(14,14,14,0.40)' }}>
                 struktura
               </span>
-            </div>
+            </button>
 
             {/* Desktop nav */}
             <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
