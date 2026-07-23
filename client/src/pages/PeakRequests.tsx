@@ -445,7 +445,8 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       {/* Support agents currently on an active shift (Daily Log data, not the Shift Calendar schedule) */}
       <StatusStrip
         active={activeShiftLogs.length > 0}
-        onlineText={`Support agent online: ${activeShiftLogs.map((log) => `${log.agent.name} — ${log.shiftType === 'MORNING' ? 'Morning' : 'Night'} Shift`).join(', ')}`}
+        label="Support agent online"
+        value={activeShiftLogs.map((log) => log.agent.name).join(', ')}
         offlineText="No support agents currently online"
       />
 
@@ -453,7 +454,8 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       {dutyInfo && (
         <StatusStrip
           active={dutyInfo.peekTeamOnline.length > 0}
-          onlineText={`Peek Team Agent online: ${dutyInfo.peekTeamOnline.join(', ')}`}
+          label="Peek Team Agent online"
+          value={dutyInfo.peekTeamOnline.join(', ')}
           offlineText="Peek Team Agent offline"
         />
       )}

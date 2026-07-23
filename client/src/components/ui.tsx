@@ -4,16 +4,18 @@ import { Sun, Moon } from 'lucide-react';
 import type { ShiftLog } from '../types';
 
 // ─── Status strip ────────────────────────────────────────────────────────────
-// Generic green/gray "is anyone active right now" banner — green + bullet when
+// Generic green/gray "is anyone active right now" banner — bold label when
 // active, muted + moon icon when not. Shared by every online-status indicator
 // so they all look and behave identically.
 export function StatusStrip({
   active,
-  onlineText,
+  label,
+  value,
   offlineText,
 }: {
   active: boolean;
-  onlineText: string;
+  label: string;
+  value: string;
   offlineText: string;
 }) {
   return (
@@ -26,7 +28,7 @@ export function StatusStrip({
       }
     >
       {active ? (
-        <span>● {onlineText}</span>
+        <span><span className="font-semibold">{label}:</span> {value}</span>
       ) : (
         <span className="inline-flex items-center gap-1.5">
           <Moon size={13} strokeWidth={1.5} />
@@ -47,10 +49,10 @@ export function OnlineNowStrip({
   activeLogs: ShiftLog[];
   emptyMessage?: string;
 }) {
-  const onlineText = `Online now: ${activeLogs
+  const value = activeLogs
     .map((log) => `${log.agent.name} — ${log.shiftType === 'MORNING' ? 'Morning' : 'Night'} Shift`)
-    .join(', ')}`;
-  return <StatusStrip active={activeLogs.length > 0} onlineText={onlineText} offlineText={emptyMessage} />;
+    .join(', ');
+  return <StatusStrip active={activeLogs.length > 0} label="Online now" value={value} offlineText={emptyMessage} />;
 }
 
 // ─── Auto-resize textarea ────────────────────────────────────────────────────
