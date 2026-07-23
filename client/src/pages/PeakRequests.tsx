@@ -44,7 +44,7 @@ type TagKey = typeof TAGS[number]['key'];
 const REQUEST_PRESETS = [
   'Profile temporarily unavailable',
   'Refresh error',
-  'Do we still have access to the target device?',
+  'Do we still have access to the target profile?',
   'Please change the extension',
   'Add to hot clients',
 ] as const;
