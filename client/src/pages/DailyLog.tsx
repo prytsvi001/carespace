@@ -256,20 +256,28 @@ export default function DailyLog({ onSyncStats, onDataChanged }: { onSyncStats?:
     onDataChanged?.();
   };
 
+  // archiveShiftLog/deleteShiftLog only return {success:true} (no updated resource), so these
+  // patch local state from known semantics instead of refetching: the default (non-archived)
+  // view only ever shows unarchived logs, so archiving removes it from view; the archived view
+  // shows both, so archiving there just flips the flag in place. Delete always removes it.
   const handleEndShift = async (id: string) => {
     await archiveShiftLog(id);
-    await loadData();
+    setLogs(prev => showArchived
+      ? prev.map(l => (l.id === id ? { ...l, archived: true } : l))
+      : prev.filter(l => l.id !== id));
     onDataChanged?.();
   };
 
   const handleArchive = async (id: string) => {
     await archiveShiftLog(id);
-    await loadData();
+    setLogs(prev => showArchived
+      ? prev.map(l => (l.id === id ? { ...l, archived: true } : l))
+      : prev.filter(l => l.id !== id));
     onDataChanged?.();
   };
   const handleDelete = async (id: string) => {
     await deleteShiftLog(id);
-    await loadData();
+    setLogs(prev => prev.filter(l => l.id !== id));
     onDataChanged?.();
   };
 

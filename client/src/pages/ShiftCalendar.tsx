@@ -327,14 +327,19 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
 
     try {
       if (targetEvent) {
-        await Promise.all([
+        const [updatedDragged, updatedTarget] = await Promise.all([
           updateCalendarEvent(draggedEvent.id, { eventDate: newDate }),
           updateCalendarEvent(targetEvent.id, { eventDate: oldDate }),
         ]);
+        setEvents(prev => prev.map(e => {
+          if (e.id === updatedDragged.id) return updatedDragged;
+          if (e.id === updatedTarget.id) return updatedTarget;
+          return e;
+        }));
       } else {
-        await updateCalendarEvent(draggedEvent.id, { eventDate: newDate });
+        const updated = await updateCalendarEvent(draggedEvent.id, { eventDate: newDate });
+        setEvents(prev => prev.map(e => (e.id === updated.id ? updated : e)));
       }
-      await loadData();
       onDataChanged?.();
     } catch (e) {
       console.error(e);
@@ -345,7 +350,7 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
   const handleAddEvent = async () => {
     if (!selectedDate || !form.agentId || !form.leaveType) return;
     try {
-      await createCalendarEvent({
+      const created = await createCalendarEvent({
         agentId: form.agentId,
         eventDate: format(selectedDate, 'yyyy-MM-dd'),
         leaveType: form.leaveType,
@@ -353,9 +358,9 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
         isExtraShift: form.leaveType === 'SHIFT' ? form.isExtraShift : false,
         notes: form.notes || undefined,
       });
+      setEvents(prev => [...prev, created]);
       setShowForm(false);
       setForm({ agentId: '', leaveType: 'SHIFT', shiftType: 'MORNING', isExtraShift: false, notes: '' });
-      await loadData();
       onDataChanged?.();
     } catch (e) {
       console.error(e);
@@ -375,14 +380,14 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
   const handleSaveEdit = async () => {
     if (!editingEvent) return;
     try {
-      await updateCalendarEvent(editingEvent.id, {
+      const updated = await updateCalendarEvent(editingEvent.id, {
         leaveType: editForm.leaveType,
         shiftType: editForm.leaveType === 'SHIFT' ? editForm.shiftType || null : null,
         isExtraShift: editForm.leaveType === 'SHIFT' ? editForm.isExtraShift : false,
         notes: editForm.notes || undefined,
       });
+      setEvents(prev => prev.map(e => (e.id === updated.id ? updated : e)));
       setEditingEvent(null);
-      await loadData();
       onDataChanged?.();
     } catch (e) {
       console.error(e);

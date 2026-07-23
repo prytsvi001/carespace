@@ -68,8 +68,13 @@ export function ShortcutsDrawer() {
     if (!deleteTarget) return;
     const target = deleteTarget;
     setDeleteTarget(null);
-    await deleteShortcut(target.id);
-    fetchShortcuts();
+    setShortcuts(prev => prev.filter(s => s.id !== target.id));
+    try {
+      await deleteShortcut(target.id);
+    } catch (e) {
+      console.error(e);
+      fetchShortcuts();
+    }
   };
 
   const closeDrawer = () => {
