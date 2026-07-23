@@ -443,7 +443,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       </div>
 
       {/* Support agents currently on an active shift (Daily Log data, not the Shift Calendar schedule) */}
-      <OnlineNowStrip activeLogs={activeShiftLogs} emptyMessage="No agents currently on shift" />
+      <OnlineNowStrip activeLogs={activeShiftLogs} label="Support agent online" emptyMessage="No agents currently on shift" />
 
       {/* Peek Team on-duty toggle status */}
       {dutyInfo && (

@@ -9,9 +9,11 @@ import type { ShiftLog } from '../types';
 // Peek Requests so both surfaces agree on who's actually on shift right now.
 export function OnlineNowStrip({
   activeLogs,
+  label = 'Online now',
   emptyMessage = "Everyone's offline right now",
 }: {
   activeLogs: ShiftLog[];
+  label?: string;
   emptyMessage?: string;
 }) {
   const hasActive = activeLogs.length > 0;
@@ -26,7 +28,7 @@ export function OnlineNowStrip({
     >
       {hasActive ? (
         <span>
-          ● Online now: {activeLogs.map((log) => `${log.agent.name} — ${log.shiftType === 'MORNING' ? 'Morning' : 'Night'} Shift`).join(', ')}
+          ● {label}: {activeLogs.map((log) => `${log.agent.name} — ${log.shiftType === 'MORNING' ? 'Morning' : 'Night'} Shift`).join(', ')}
         </span>
       ) : (
         <span className="inline-flex items-center gap-1.5">
