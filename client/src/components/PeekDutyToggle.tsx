@@ -42,7 +42,7 @@ export function PeekDutyToggle() {
       }
     >
       <Circle size={9} fill={status.myOnDuty ? '#0E0E0E' : 'transparent'} strokeWidth={1.8} />
-      {status.myOnDuty ? 'Online — End Peek Duty' : "I'm Online (Peek Duty)"}
+      {status.myOnDuty ? 'End Peek Duty' : 'Start Peek Duty'}
     </button>
   );
 }

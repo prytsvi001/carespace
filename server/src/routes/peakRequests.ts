@@ -103,26 +103,14 @@ router.post('/', async (req: Request, res: Response) => {
       include: { agent: true },
     });
 
-    // Only notify peek_handlers currently on an active (unarchived) shift today — i.e.
-    // "online" per the same Daily Log data the Peek Requests "Support agent online"
-    // banner uses — not a blanket broadcast to every peek_handler regardless of status.
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-
-    const activeAgentIds = (
-      await prisma.shiftLog.findMany({
-        where: { archived: false, shiftDate: { gte: today, lt: tomorrow } },
-        select: { agentId: true },
-      })
-    ).map((s) => s.agentId);
-
-    const onlinePeekHandlers = activeAgentIds.length > 0
-      ? await prisma.user.findMany({
-          where: { role: 'peek_handler', agentId: { in: activeAgentIds }, telegramChatId: { not: null } },
-        })
-      : [];
+    // Only notify users currently toggled "on duty" via the dedicated Peek Duty status
+    // (User.peekOnDuty, set through PATCH /api/duty/me) — a separate concept from the
+    // Daily Log shift system. Includes peek_handlers and any peekDutyEligible agent
+    // (e.g. Julia Manson) who has toggled themself on; excludes everyone else, even a
+    // peek_handler, when they haven't toggled on.
+    const onlinePeekHandlers = await prisma.user.findMany({
+      where: { peekOnDuty: true, telegramChatId: { not: null } },
+    });
 
     const notifyText = `New Peak Request from ${request.agent.name}: ${requestText.trim().slice(0, 120)} ${CARESPACE_URL}`;
     await Promise.allSettled(
