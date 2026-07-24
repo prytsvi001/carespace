@@ -21,10 +21,12 @@ export async function sendTelegramMessage(chatId: string, text: string): Promise
       body: JSON.stringify({ chat_id: chatId, text }),
     });
     if (!res.ok) {
-      console.error('Telegram sendMessage failed:', res.status, await res.text());
+      console.error(`Telegram sendMessage to ${chatId} failed:`, res.status, await res.text());
+    } else {
+      console.log(`Telegram sendMessage to ${chatId} succeeded (status ${res.status})`);
     }
   } catch (err) {
-    console.error('Telegram sendMessage error:', err);
+    console.error(`Telegram sendMessage to ${chatId} error:`, err);
   }
 }
 

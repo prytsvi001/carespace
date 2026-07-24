@@ -3,10 +3,17 @@ name: CareSpace reminder cron
 # Vercel Hobby doesn't offer reliable per-minute native cron, so this workflow pings the
 # app's reminder endpoints (shift start/end + My Plans task due-date + Proxy nudge) on a
 # schedule instead.
-# GitHub Actions' `schedule` trigger is best-effort (~5min practical granularity, no exact-
-# timing guarantee) — both endpoints tolerate this via a matching window plus a DB-backed
-# dedup guard, so a late or occasionally-skipped tick degrades to a late reminder (or, for
-# task reminders, a permanently-skipped one — see cron.ts) rather than a duplicate send.
+#
+# GitHub Actions' `schedule` trigger is NOT ~5min in practice, despite the declaration below —
+# checked the actual run history via the GitHub API and real invocations land 1-3.5 HOURS
+# apart, not 5 minutes. This is GitHub silently throttling frequent schedule triggers under
+# platform load; there's no config fix for it on our end. cron.ts's shift/proxy reminders
+# compensate with a 240-minute matching window (comfortably wider than the worst observed
+# gap) plus a DB-backed dedup guard, so a late or occasionally-skipped tick degrades to a
+# late reminder rather than a duplicate or a silently-forever-missed one. task-reminders
+# intentionally keeps a narrow 5-minute window instead (a stale "due tomorrow" message
+# hours late would be misleading) — meaning it likely still misses most days; flagged in
+# cron.ts as an open follow-up, not fixed here.
 on:
   schedule:
     - cron: '*/5 * * * *'

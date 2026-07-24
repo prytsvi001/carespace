@@ -26,11 +26,22 @@ interface ReminderDef {
 }
 
 // Reminders fire in [targetMinutes, targetMinutes + TOLERANCE_MINUTES) rather than at an exact
-// instant, because the external scheduler (GitHub Actions, ~5min cadence) that hits this endpoint
-// makes no timing guarantee. Correctness (exactly once, never silently forever-missed within the
-// window) comes from this window combined with the TelegramReminderLog unique constraint below —
-// not from precise timing, which this endpoint cannot promise given how it's invoked.
-const TOLERANCE_MINUTES = 5;
+// instant, because the external scheduler (GitHub Actions) that hits this endpoint makes no timing
+// guarantee. Correctness (exactly once, never silently forever-missed within the window) comes
+// from this window combined with the TelegramReminderLog unique constraint below.
+//
+// This was originally 5 minutes on the assumption GitHub Actions' */5 schedule would land roughly
+// on time. In production it doesn't: checking the actual workflow run history (GitHub Actions API)
+// shows real invocations spaced 1-3.5 HOURS apart, not 5 minutes — GitHub silently throttles
+// frequent `schedule` triggers under platform load, and there is no configuration fix for this on
+// our end. Confirmed via TelegramReminderLog: in this feature's entire history, exactly one
+// reminder (a single MORNING_START) had ever actually fired before this window was widened — every
+// PROXY_* reminder had silently never landed inside its old 5-minute window at all.
+// 240 minutes comfortably exceeds the worst observed gap (~3.5h) with margin, while still keeping
+// a reminder same-day relevant. This does NOT affect task-reminders below, which intentionally
+// keeps its own much narrower window (see TASK_REMINDER_WINDOW_MS) since a stale "due tomorrow"
+// message hours late would be actively misleading in a way a shift/proxy nudge would not be.
+const TOLERANCE_MINUTES = 240;
 
 const REMINDERS: ReminderDef[] = [
   { type: 'MORNING_START', targetMinutes: 9 * 60 + 10, shiftType: 'MORNING', dayOffset: 0, message: "Don't forget to log your shift in CareSpace Daily Log 📋" },
@@ -111,7 +122,13 @@ function kyivLocalToUtcMs(year: number, month: number, day: number, hour: number
 // My Plans tasks with a due date but no due time are treated as due at this Kyiv hour.
 const DEFAULT_DUE_HOUR = 9;
 const TASK_REMINDER_LEAD_MS = 24 * 60 * 60 * 1000;
-const TASK_REMINDER_WINDOW_MS = TOLERANCE_MINUTES * 60 * 1000;
+// Deliberately its own (narrow) constant, decoupled from the shift/proxy TOLERANCE_MINUTES above —
+// widening this one would mean a "due tomorrow" nudge could arrive hours late, past the point of
+// being useful. NOTE: this narrow window likely suffers from the exact same GitHub Actions
+// scheduling gap documented above, meaning task-reminders may also be rarely firing in practice —
+// flagged but intentionally left unchanged pending an explicit decision on that tradeoff.
+const TASK_REMINDER_TOLERANCE_MINUTES = 5;
+const TASK_REMINDER_WINDOW_MS = TASK_REMINDER_TOLERANCE_MINUTES * 60 * 1000;
 
 // GET /api/cron/task-reminders — 24h-before-due Telegram reminder for My Plans tasks.
 // One-shot per task (guarded by Plan.reminderSent, reset if the due date/time is edited)
@@ -192,11 +209,16 @@ const PROXY_REMINDERS: { type: ProxyReminderType; targetMinutes: number }[] = [
 router.get('/proxy-reminders', async (_req: Request, res: Response) => {
   try {
     const kyiv = getKyivParts(new Date());
+    const kyivHH = String(Math.floor(kyiv.minutesSinceMidnight / 60)).padStart(2, '0');
+    const kyivMM = String(kyiv.minutesSinceMidnight % 60).padStart(2, '0');
+    console.log(`[proxy-reminders] fired at ${new Date().toISOString()} (UTC) = ${kyivHH}:${kyivMM} Kyiv, ${kyiv.year}-${kyiv.month}-${kyiv.day}`);
     const sent: string[] = [];
 
     for (const reminder of PROXY_REMINDERS) {
       const diff = kyiv.minutesSinceMidnight - reminder.targetMinutes;
-      if (diff < 0 || diff >= TOLERANCE_MINUTES) continue;
+      const inWindow = diff >= 0 && diff < TOLERANCE_MINUTES;
+      console.log(`[proxy-reminders] ${reminder.type}: target ${Math.floor(reminder.targetMinutes / 60)}:${String(reminder.targetMinutes % 60).padStart(2, '0')} Kyiv, diff=${diff}min, inWindow=${inWindow}`);
+      if (!inWindow) continue;
 
       const { dateStr, start, end } = kyivDateBoundary(kyiv.year, kyiv.month, kyiv.day, 0);
 
@@ -204,6 +226,7 @@ router.get('/proxy-reminders', async (_req: Request, res: Response) => {
         where: { archived: false, shiftDate: { gte: start, lt: end } },
         select: { agentId: true },
       });
+      console.log(`[proxy-reminders] ${reminder.type}: ${activeLogs.length} active shift(s) found for ${dateStr}`);
 
       // Batch-resolve all on-shift agents' users in one query instead of one
       // findFirst per shift log.
@@ -214,18 +237,32 @@ router.get('/proxy-reminders', async (_req: Request, res: Response) => {
 
       for (const log of activeLogs) {
         const agentUser = userByAgentId.get(log.agentId);
-        if (!agentUser?.telegramChatId) continue;
-        if (agentUser.role === 'peek_handler') continue;
+        if (!agentUser) {
+          console.log(`[proxy-reminders] ${reminder.type}: agent ${log.agentId} has no linked User, skipping`);
+          continue;
+        }
+        if (!agentUser.telegramChatId) {
+          console.log(`[proxy-reminders] ${reminder.type}: ${agentUser.name} has no Telegram connected, skipping`);
+          continue;
+        }
+        if (agentUser.role === 'peek_handler') {
+          console.log(`[proxy-reminders] ${reminder.type}: ${agentUser.name} is peek_handler, excluded by design`);
+          continue;
+        }
 
         try {
           await prisma.telegramReminderLog.create({
             data: { agentId: log.agentId, reminderType: reminder.type, shiftDate: dateStr },
           });
         } catch (err: unknown) {
-          if ((err as { code?: string })?.code === 'P2002') continue; // already sent for this agent/time/day
+          if ((err as { code?: string })?.code === 'P2002') {
+            console.log(`[proxy-reminders] ${reminder.type}: already sent to ${agentUser.name} for ${dateStr}, skipping`);
+            continue;
+          }
           throw err;
         }
 
+        console.log(`[proxy-reminders] ${reminder.type}: sending to ${agentUser.name} (chatId ${agentUser.telegramChatId})`);
         await sendTelegramMessage(agentUser.telegramChatId, PROXY_REMINDER_MESSAGE);
         sent.push(`${log.agentId}:${reminder.type}:${dateStr}`);
       }
@@ -243,11 +280,16 @@ router.get('/shift-reminders', async (_req: Request, res: Response) => {
   try {
     const now = new Date();
     const kyiv = getKyivParts(now);
+    const kyivHH = String(Math.floor(kyiv.minutesSinceMidnight / 60)).padStart(2, '0');
+    const kyivMM = String(kyiv.minutesSinceMidnight % 60).padStart(2, '0');
+    console.log(`[shift-reminders] fired at ${now.toISOString()} (UTC) = ${kyivHH}:${kyivMM} Kyiv, ${kyiv.year}-${kyiv.month}-${kyiv.day}`);
     const sent: string[] = [];
 
     for (const reminder of REMINDERS) {
       const diff = kyiv.minutesSinceMidnight - reminder.targetMinutes;
-      if (diff < 0 || diff >= TOLERANCE_MINUTES) continue;
+      const inWindow = diff >= 0 && diff < TOLERANCE_MINUTES;
+      console.log(`[shift-reminders] ${reminder.type}: target ${Math.floor(reminder.targetMinutes / 60)}:${String(reminder.targetMinutes % 60).padStart(2, '0')} Kyiv, diff=${diff}min, inWindow=${inWindow}`);
+      if (!inWindow) continue;
 
       const { dateStr, start, end } = kyivDateBoundary(kyiv.year, kyiv.month, kyiv.day, reminder.dayOffset);
 
@@ -259,6 +301,7 @@ router.get('/shift-reminders', async (_req: Request, res: Response) => {
           eventDate: { gte: start, lt: end },
         },
       });
+      console.log(`[shift-reminders] ${reminder.type}: ${events.length} scheduled ${reminder.shiftType} shift(s) found for ${dateStr}`);
 
       // Batch-resolve all scheduled agents' users in one query instead of one
       // findFirst per calendar event.
