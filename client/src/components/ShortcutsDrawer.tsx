@@ -13,6 +13,24 @@ import { Spinner, EmptyState, ConfirmDialog, AutoTextarea } from './ui';
 
 type View = 'list' | 'form';
 
+// Muted accent palette for category color-coding — deliberately soft, not the
+// bright/primary hues elsewhere in the app, so they read as organizational
+// labels rather than status/priority indicators.
+const CATEGORY_COLORS = ['#85B7EB', '#97C459', '#F0997B', '#AFA9EC', '#D4A847', '#5DCAA5'];
+const NO_CATEGORY_COLOR = 'rgba(14,14,14,0.25)';
+const ALL_COLOR = '#A1F96E'; // matches the app's lime brand accent, used for the "All" filter only
+
+// Deterministic hash so the same category name always gets the same color
+// (no persistence needed), cycling through the palette for any number of categories.
+function colorForCategory(category: string): string {
+  if (!category) return NO_CATEGORY_COLOR;
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) {
+    hash = (hash * 31 + category.charCodeAt(i)) >>> 0;
+  }
+  return CATEGORY_COLORS[hash % CATEGORY_COLORS.length];
+}
+
 // Shortcuts created before variants existed have an empty `variants` array —
 // treat their single `content` as an implicit "Variant 1" everywhere.
 function effectiveVariants(s: Shortcut): ShortcutVariant[] {
@@ -57,13 +75,38 @@ export function ShortcutsDrawer() {
     return Array.from(set).sort();
   }, [shortcuts]);
 
-  const filtered = shortcuts.filter((s) => {
-    if (activeCategory && s.category !== activeCategory) return false;
+  const matchesSearch = (s: Shortcut) => {
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     if (s.title.toLowerCase().includes(q)) return true;
     return effectiveVariants(s).some((v) => v.content.toLowerCase().includes(q));
-  });
+  };
+
+  // Used when one specific category is selected in the sidebar.
+  const filtered = shortcuts.filter((s) => (!activeCategory || s.category === activeCategory) && matchesSearch(s));
+
+  // Used for the "All" view — grouped by category so the library reads as an
+  // organized reference rather than one long flat list.
+  const groupedByCategory = useMemo(() => {
+    const searched = shortcuts.filter(matchesSearch);
+    const byCategory = new Map<string, Shortcut[]>();
+    for (const s of searched) {
+      const key = s.category || '';
+      if (!byCategory.has(key)) byCategory.set(key, []);
+      byCategory.get(key)!.push(s);
+    }
+    const groups: { key: string; label: string; color: string; items: Shortcut[] }[] = [];
+    for (const c of categories) {
+      const items = byCategory.get(c);
+      if (items?.length) groups.push({ key: c, label: c, color: colorForCategory(c), items });
+    }
+    const uncategorized = byCategory.get('');
+    if (uncategorized?.length) {
+      groups.push({ key: '__none', label: 'Uncategorized', color: NO_CATEGORY_COLOR, items: uncategorized });
+    }
+    return groups;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortcuts, search, categories]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -83,6 +126,8 @@ export function ShortcutsDrawer() {
     setView('list');
   };
 
+  const headerBarColor = activeCategory ? colorForCategory(activeCategory) : ALL_COLOR;
+
   return (
     <>
       {/* Floating trigger button */}
@@ -96,111 +141,149 @@ export function ShortcutsDrawer() {
         <span className="hidden sm:inline">Shortcuts</span>
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-[60]">
-          <div className="absolute inset-0 bg-[#0E0E0E]/40 backdrop-blur-sm" onClick={closeDrawer} />
-          <div
-            className="absolute top-0 right-0 h-full w-full md:w-[420px] bg-white shadow-2xl flex flex-col"
-            style={{ borderLeft: '1px solid rgba(14,14,14,0.09)' }}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 shrink-0" style={{ borderBottom: '1px solid rgba(14,14,14,0.09)' }}>
-              <h2 className="text-lg font-semibold text-ink flex items-center gap-2">
-                {view === 'form' ? (
-                  <button onClick={() => setView('list')} className="text-ink/40 hover:text-ink transition-colors" aria-label="Back">
-                    <ArrowLeft size={18} />
-                  </button>
-                ) : (
-                  <ClipboardList size={18} strokeWidth={1.8} />
-                )}
-                {view === 'form' ? (editing ? 'Edit Shortcut' : 'Add Shortcut') : 'Shortcuts'}
-              </h2>
-              <button onClick={closeDrawer} className="text-ink/40 hover:text-ink transition-colors" aria-label="Close">
-                <X size={20} />
+      {/* Backdrop + panel are always mounted so the slide/fade can animate both
+          ways — conditionally mounting only `open && (...)` can't animate a close. */}
+      <div
+        className={`fixed inset-0 z-[60] bg-[#0E0E0E]/40 backdrop-blur-sm transition-opacity duration-300 ${
+          open ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={closeDrawer}
+      />
+      <div
+        className={`fixed inset-y-0 right-0 z-[60] w-full md:w-[600px] bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
+          open ? 'translate-x-0' : 'translate-x-full pointer-events-none'
+        }`}
+        style={{ borderLeft: '1px solid rgba(14,14,14,0.09)' }}
+      >
+        {/* Subtle colored accent bar reflecting the selected category */}
+        <div className="h-1 shrink-0 transition-colors duration-200" style={{ backgroundColor: headerBarColor }} />
+
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 shrink-0" style={{ borderBottom: '1px solid rgba(14,14,14,0.09)' }}>
+          <h2 className="text-lg font-semibold text-ink flex items-center gap-2">
+            {view === 'form' ? (
+              <button onClick={() => setView('list')} className="text-ink/40 hover:text-ink transition-colors" aria-label="Back">
+                <ArrowLeft size={18} />
+              </button>
+            ) : (
+              <ClipboardList size={18} strokeWidth={1.8} />
+            )}
+            {view === 'form' ? (editing ? 'Edit Shortcut' : 'Add Shortcut') : 'Shortcuts'}
+          </h2>
+          <button onClick={closeDrawer} className="text-ink/40 hover:text-ink transition-colors" aria-label="Close">
+            <X size={20} />
+          </button>
+        </div>
+
+        {view === 'form' ? (
+          <ShortcutForm
+            initial={editing}
+            categories={categories}
+            onCancel={() => setView('list')}
+            onSaved={() => { setView('list'); fetchShortcuts(); }}
+          />
+        ) : (
+          <>
+            {/* Search + add */}
+            <div className="p-4 space-y-3 shrink-0" style={{ borderBottom: '1px solid rgba(14,14,14,0.09)' }}>
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'rgba(14,14,14,0.35)' }} />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search shortcuts..."
+                  className="input pl-8 text-sm"
+                />
+              </div>
+
+              <button
+                onClick={() => { setEditing(null); setView('form'); }}
+                className="btn-accent w-full flex items-center justify-center gap-1.5"
+              >
+                <Plus size={14} strokeWidth={2} />
+                Add Shortcut
               </button>
             </div>
 
-            {view === 'form' ? (
-              <ShortcutForm
-                initial={editing}
-                categories={categories}
-                onCancel={() => setView('list')}
-                onSaved={() => { setView('list'); fetchShortcuts(); }}
-              />
-            ) : (
-              <>
-                {/* Search + add + categories */}
-                <div className="p-4 space-y-3 shrink-0" style={{ borderBottom: '1px solid rgba(14,14,14,0.09)' }}>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'rgba(14,14,14,0.35)' }} />
-                    <input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search shortcuts..."
-                      className="input pl-8 text-sm"
-                    />
+            {/* Category sidebar (own scroll, so it stays put while the cards scroll) + cards */}
+            <div className="flex flex-1 min-h-0">
+              <div
+                className="w-36 sm:w-44 shrink-0 overflow-y-auto py-3 px-2 space-y-0.5"
+                style={{ borderRight: '1px solid rgba(14,14,14,0.07)' }}
+              >
+                <CategorySidebarItem
+                  label="All"
+                  color={ALL_COLOR}
+                  count={shortcuts.length}
+                  active={!activeCategory}
+                  onClick={() => setActiveCategory(null)}
+                />
+                {categories.map((c) => (
+                  <CategorySidebarItem
+                    key={c}
+                    label={c}
+                    color={colorForCategory(c)}
+                    count={shortcuts.filter((s) => s.category === c).length}
+                    active={activeCategory === c}
+                    onClick={() => setActiveCategory(c)}
+                  />
+                ))}
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5">
+                {loading && <div className="flex justify-center py-8"><Spinner /></div>}
+
+                {!loading && activeCategory && filtered.length === 0 && (
+                  <EmptyState icon={<ClipboardList size={28} strokeWidth={1.3} />} message="No shortcuts found" />
+                )}
+                {!loading && activeCategory && filtered.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {filtered.map((s) => (
+                      <ShortcutCard
+                        key={s.id}
+                        shortcut={s}
+                        isAdmin={isAdmin}
+                        onEdit={() => { setEditing(s); setView('form'); }}
+                        onDelete={() => setDeleteTarget(s)}
+                      />
+                    ))}
                   </div>
+                )}
 
-                  <button
-                    onClick={() => { setEditing(null); setView('form'); }}
-                    className="btn-accent w-full flex items-center justify-center gap-1.5"
-                  >
-                    <Plus size={14} strokeWidth={2} />
-                    Add Shortcut
-                  </button>
-
-                  {categories.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        onClick={() => setActiveCategory(null)}
-                        className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                        style={
-                          !activeCategory
-                            ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
-                            : { color: 'rgba(14,14,14,0.45)', backgroundColor: 'rgba(14,14,14,0.05)' }
-                        }
-                      >
-                        All
-                      </button>
-                      {categories.map((c) => (
-                        <button
-                          key={c}
-                          onClick={() => setActiveCategory(c)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-medium capitalize transition-all"
-                          style={
-                            activeCategory === c
-                              ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
-                              : { color: 'rgba(14,14,14,0.45)', backgroundColor: 'rgba(14,14,14,0.05)' }
-                          }
+                {!loading && !activeCategory && groupedByCategory.length === 0 && (
+                  <EmptyState icon={<ClipboardList size={28} strokeWidth={1.3} />} message="No shortcuts found" />
+                )}
+                {!loading && !activeCategory && groupedByCategory.length > 0 && (
+                  <div className="space-y-5">
+                    {groupedByCategory.map((group) => (
+                      <div key={group.key}>
+                        <p
+                          className="text-[10px] uppercase tracking-widest font-semibold mb-2 px-0.5 flex items-center gap-1.5"
+                          style={{ color: 'rgba(14,14,14,0.40)' }}
                         >
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* List */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  {loading && <div className="flex justify-center py-8"><Spinner /></div>}
-                  {!loading && filtered.length === 0 && (
-                    <EmptyState icon={<ClipboardList size={28} strokeWidth={1.3} />} message="No shortcuts found" />
-                  )}
-                  {!loading && filtered.map((s) => (
-                    <ShortcutCard
-                      key={s.id}
-                      shortcut={s}
-                      isAdmin={isAdmin}
-                      onEdit={() => { setEditing(s); setView('form'); }}
-                      onDelete={() => setDeleteTarget(s)}
-                    />
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                          {group.label} ({group.items.length})
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {group.items.map((s) => (
+                            <ShortcutCard
+                              key={s.id}
+                              shortcut={s}
+                              isAdmin={isAdmin}
+                              onEdit={() => { setEditing(s); setView('form'); }}
+                              onDelete={() => setDeleteTarget(s)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -209,6 +292,32 @@ export function ShortcutsDrawer() {
         onCancel={() => setDeleteTarget(null)}
       />
     </>
+  );
+}
+
+// ─── Category sidebar item ────────────────────────────────────────────────────
+
+function CategorySidebarItem({ label, color, count, active, onClick }: {
+  label: string;
+  color: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-medium transition-all"
+      style={
+        active
+          ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+          : { color: 'rgba(14,14,14,0.55)' }
+      }
+    >
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+      <span className="flex-1 truncate capitalize">{label}</span>
+      <span className="text-[10px] shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{count}</span>
+    </button>
   );
 }
 
@@ -236,16 +345,17 @@ function ShortcutCard({ shortcut, isAdmin, onEdit, onDelete }: {
 
   const variants = shortcut.type === 'text' ? effectiveVariants(shortcut) : [];
   const primary = variants[0];
+  const categoryColor = colorForCategory(shortcut.category);
 
   return (
-    <div className="card">
+    <div className="card p-5" style={{ borderLeft: `4px solid ${categoryColor}` }}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-semibold text-sm text-ink truncate">{shortcut.title}</p>
           {shortcut.category && (
             <span
-              className="inline-block mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full capitalize"
-              style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+              className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-full capitalize font-medium"
+              style={{ backgroundColor: `${categoryColor}26`, color: categoryColor }}
             >
               {shortcut.category}
             </span>
@@ -283,7 +393,7 @@ function ShortcutCard({ shortcut, isAdmin, onEdit, onDelete }: {
               color: 'rgba(14,14,14,0.55)',
               whiteSpace: 'pre-wrap',
               display: '-webkit-box',
-              WebkitLineClamp: 3,
+              WebkitLineClamp: 5,
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
             }}
