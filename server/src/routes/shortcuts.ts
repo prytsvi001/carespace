@@ -164,4 +164,39 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH /api/shortcuts/category — rename a category across every shortcut in it (head/lead only)
+router.patch('/category', async (req: Request, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Not allowed' });
+    }
+    const { from, to } = req.body as { from?: string; to?: string };
+    if (!from?.trim() || !to?.trim()) {
+      return res.status(400).json({ error: 'from and to are required' });
+    }
+    const result = await (prisma as any).shortcut.updateMany({
+      where: { category: from },
+      data: { category: to.trim() },
+    });
+    return res.json({ success: true, updated: result.count });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to rename category' });
+  }
+});
+
+// DELETE /api/shortcuts/category/:name — delete a category AND every shortcut in it (head/lead only)
+router.delete('/category/:name', async (req: Request, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Not allowed' });
+    }
+    const result = await (prisma as any).shortcut.deleteMany({ where: { category: req.params.name } });
+    return res.json({ success: true, deleted: result.count });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to delete category' });
+  }
+});
+
 export default router;

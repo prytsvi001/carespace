@@ -7,7 +7,10 @@ import {
   ClipboardList, X, Search, Copy, Check, ExternalLink, Plus, Pencil, Trash2, ArrowLeft,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getShortcuts, createShortcut, updateShortcut, deleteShortcut } from '../api';
+import {
+  getShortcuts, createShortcut, updateShortcut, deleteShortcut,
+  renameShortcutCategory, deleteShortcutCategory,
+} from '../api';
 import { Shortcut, ShortcutType, ShortcutVariant } from '../types';
 import { Spinner, EmptyState, ConfirmDialog, AutoTextarea } from './ui';
 
@@ -50,6 +53,9 @@ export function ShortcutsDrawer() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [editing, setEditing] = useState<Shortcut | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Shortcut | null>(null);
+  const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<string | null>(null);
 
   const fetchShortcuts = async () => {
     setLoading(true);
@@ -115,6 +121,41 @@ export function ShortcutsDrawer() {
     setShortcuts(prev => prev.filter(s => s.id !== target.id));
     try {
       await deleteShortcut(target.id);
+    } catch (e) {
+      console.error(e);
+      fetchShortcuts();
+    }
+  };
+
+  const startRenameCategory = (cat: string) => {
+    setRenamingCategory(cat);
+    setRenameDraft(cat);
+  };
+
+  const commitRenameCategory = async () => {
+    if (!renamingCategory) return;
+    const from = renamingCategory;
+    const to = renameDraft.trim();
+    setRenamingCategory(null);
+    if (!to || to === from) return;
+    setShortcuts((prev) => prev.map((s) => (s.category === from ? { ...s, category: to } : s)));
+    if (activeCategory === from) setActiveCategory(to);
+    try {
+      await renameShortcutCategory(from, to);
+    } catch (e) {
+      console.error(e);
+      fetchShortcuts();
+    }
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!deleteCategoryTarget) return;
+    const target = deleteCategoryTarget;
+    setDeleteCategoryTarget(null);
+    if (activeCategory === target) setActiveCategory(null);
+    setShortcuts((prev) => prev.filter((s) => s.category !== target));
+    try {
+      await deleteShortcutCategory(target);
     } catch (e) {
       console.error(e);
       fetchShortcuts();
@@ -218,16 +259,34 @@ export function ShortcutsDrawer() {
                   active={!activeCategory}
                   onClick={() => setActiveCategory(null)}
                 />
-                {categories.map((c) => (
-                  <CategorySidebarItem
-                    key={c}
-                    label={c}
-                    color={colorForCategory(c)}
-                    count={shortcuts.filter((s) => s.category === c).length}
-                    active={activeCategory === c}
-                    onClick={() => setActiveCategory(c)}
-                  />
-                ))}
+                {categories.map((c) =>
+                  renamingCategory === c ? (
+                    <input
+                      key={c}
+                      autoFocus
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRenameCategory();
+                        if (e.key === 'Escape') setRenamingCategory(null);
+                      }}
+                      onBlur={commitRenameCategory}
+                      className="input text-xs py-1.5 px-2 w-full"
+                    />
+                  ) : (
+                    <CategorySidebarItem
+                      key={c}
+                      label={c}
+                      color={colorForCategory(c)}
+                      count={shortcuts.filter((s) => s.category === c).length}
+                      active={activeCategory === c}
+                      onClick={() => setActiveCategory(c)}
+                      isAdmin={isAdmin}
+                      onRename={() => startRenameCategory(c)}
+                      onDelete={() => setDeleteCategoryTarget(c)}
+                    />
+                  )
+                )}
               </div>
 
               <div className="flex-1 overflow-y-auto p-5">
@@ -291,33 +350,66 @@ export function ShortcutsDrawer() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      <ConfirmDialog
+        open={!!deleteCategoryTarget}
+        message={`Delete category "${deleteCategoryTarget}" and all ${
+          deleteCategoryTarget ? shortcuts.filter((s) => s.category === deleteCategoryTarget).length : 0
+        } shortcut(s) in it? This can't be undone.`}
+        onConfirm={handleDeleteCategory}
+        onCancel={() => setDeleteCategoryTarget(null)}
+      />
     </>
   );
 }
 
 // ─── Category sidebar item ────────────────────────────────────────────────────
 
-function CategorySidebarItem({ label, color, count, active, onClick }: {
+function CategorySidebarItem({ label, color, count, active, onClick, isAdmin, onRename, onDelete }: {
   label: string;
   color: string;
   count: number;
   active: boolean;
   onClick: () => void;
+  isAdmin?: boolean;
+  onRename?: () => void;
+  onDelete?: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-medium transition-all"
+    <div
+      className="group w-full flex items-center gap-0.5 rounded-lg text-xs font-medium transition-all"
       style={
         active
           ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
           : { color: 'rgba(14,14,14,0.55)' }
       }
     >
-      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-      <span className="flex-1 truncate capitalize">{label}</span>
-      <span className="text-[10px] shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{count}</span>
-    </button>
+      <button onClick={onClick} className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2 text-left">
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+        <span className="flex-1 truncate capitalize">{label}</span>
+        <span className="text-[10px] shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{count}</span>
+      </button>
+      {isAdmin && onRename && onDelete && (
+        <div className="flex items-center shrink-0 pr-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => { e.stopPropagation(); onRename(); }}
+            className="p-1 rounded hover:bg-black/5 transition-colors"
+            style={{ color: 'rgba(14,14,14,0.4)' }}
+            aria-label={`Rename ${label}`}
+          >
+            <Pencil size={11} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="p-1 rounded hover:bg-red-50 hover:text-red-600 transition-colors"
+            style={{ color: 'rgba(14,14,14,0.4)' }}
+            aria-label={`Delete ${label}`}
+          >
+            <Trash2 size={11} />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

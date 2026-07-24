@@ -375,6 +375,12 @@ export const updateShortcut = (id: string, data: {
 export const deleteShortcut = (id: string) =>
   api.delete(`/shortcuts/${id}`).then((r) => { invalidateCache('shortcuts'); return r.data; });
 
+export const renameShortcutCategory = (from: string, to: string) =>
+  api.patch('/shortcuts/category', { from, to }).then((r) => { invalidateCache('shortcuts'); return r.data; });
+
+export const deleteShortcutCategory = (name: string) =>
+  api.delete(`/shortcuts/category/${encodeURIComponent(name)}`).then((r) => { invalidateCache('shortcuts'); return r.data; });
+
 // ─── Duty status (Peek Requests) ────────────────────────────────────────────
 export interface DutyStatus {
   myOnDuty: boolean;
