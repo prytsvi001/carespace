@@ -1,5 +1,6 @@
 // client/src/api/index.ts
 import axios from 'axios';
+import { cached, invalidateCache } from './cache';
 
 const api = axios.create({
   baseURL: '/api',
@@ -8,7 +9,10 @@ const api = axios.create({
 });
 
 // ─── Agents ────────────────────────────────────────────────────────────────
-export const getAgents = () => api.get('/agents').then(r => r.data);
+// No client-side create/update/delete exists for agents, so a plain TTL is safe —
+// nothing in the app can make this stale mid-session besides an admin editing the
+// roster directly, which is rare enough that a 5-minute cache is an easy trade.
+export const getAgents = () => cached('agents', 5 * 60_000, () => api.get('/agents').then(r => r.data));
 
 // ─── Shift Logs ────────────────────────────────────────────────────────────
 export const getShiftLogs = (params?: { date?: string; dateFrom?: string; dateTo?: string; month?: number; year?: number; agentId?: string; limit?: number; offset?: number; includeArchived?: boolean }) =>
@@ -333,10 +337,10 @@ export const submitPDPFeedback = (planId: string) =>
 
 // ─── KPI Settings ──────────────────────────────────────────────────────────────
 export const getKpiSettings = () =>
-  api.get('/kpi').then((r) => r.data);
+  cached('kpi-settings', 60_000, () => api.get('/kpi').then((r) => r.data));
 
 export const updateKpiSettings = (data: unknown) =>
-  api.put('/kpi', data).then((r) => r.data);
+  api.put('/kpi', data).then((r) => { invalidateCache('kpi-settings'); return r.data; });
 
 // ─── Quick Links ───────────────────────────────────────────────────────────────
 export const getQuickLinks = () =>
@@ -350,7 +354,7 @@ export const deleteQuickLink = (id: string) =>
 
 // ─── Shortcuts (shared team-wide library) ──────────────────────────────────
 export const getShortcuts = () =>
-  api.get('/shortcuts').then((r) => r.data);
+  cached('shortcuts', 60_000, () => api.get('/shortcuts').then((r) => r.data));
 
 export const createShortcut = (data: {
   title: string;
@@ -358,7 +362,7 @@ export const createShortcut = (data: {
   content?: string;
   variants?: { label?: string; content: string }[];
   category?: string;
-}) => api.post('/shortcuts', data).then((r) => r.data);
+}) => api.post('/shortcuts', data).then((r) => { invalidateCache('shortcuts'); return r.data; });
 
 export const updateShortcut = (id: string, data: {
   title: string;
@@ -366,10 +370,10 @@ export const updateShortcut = (id: string, data: {
   content?: string;
   variants?: { label?: string; content: string }[];
   category?: string;
-}) => api.put(`/shortcuts/${id}`, data).then((r) => r.data);
+}) => api.put(`/shortcuts/${id}`, data).then((r) => { invalidateCache('shortcuts'); return r.data; });
 
 export const deleteShortcut = (id: string) =>
-  api.delete(`/shortcuts/${id}`).then((r) => r.data);
+  api.delete(`/shortcuts/${id}`).then((r) => { invalidateCache('shortcuts'); return r.data; });
 
 // ─── Duty status (Peek Requests) ────────────────────────────────────────────
 export interface DutyStatus {

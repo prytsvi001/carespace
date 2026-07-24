@@ -1,5 +1,5 @@
 // client/src/App.tsx
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import {
   ClipboardList, CalendarDays, Lightbulb, Bot, ChartBar,
   ListTodo, Star, TrendingUp, FileText, LogOut, User,
@@ -7,22 +7,34 @@ import {
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Modal } from './components/ui';
+import { Modal, Spinner } from './components/ui';
 import { getTelegramLinkCode, getTelegramStatus } from './api';
 import Login from './pages/Login';
-import DailyLog from './pages/DailyLog';
-import Statistics from './pages/Statistics';
-import ShiftCalendar from './pages/ShiftCalendar';
-import AIChatQA from './pages/AIChatQA';
-import PeakRequests from './pages/PeakRequests';
-import MyPlans from './pages/MyPlans';
-import Inbox from './pages/Inbox';
-import Reviews from './pages/Reviews';
-import PDP from './pages/PDP';
-import QAReports from './pages/QAReports';
-import MyKPI from './pages/MyKPI';
 import { ShortcutsDrawer } from './components/ShortcutsDrawer';
 import { getUnreadCount, getNewRequestsCount } from './api';
+
+// Every tab is code-split — only the active tab's chunk (plus its own
+// dependencies, e.g. recharts for Statistics, @dnd-kit for ShiftCalendar) is
+// fetched, instead of bundling all ten pages into the initial JS payload.
+const DailyLog = React.lazy(() => import('./pages/DailyLog'));
+const Statistics = React.lazy(() => import('./pages/Statistics'));
+const ShiftCalendar = React.lazy(() => import('./pages/ShiftCalendar'));
+const AIChatQA = React.lazy(() => import('./pages/AIChatQA'));
+const PeakRequests = React.lazy(() => import('./pages/PeakRequests'));
+const MyPlans = React.lazy(() => import('./pages/MyPlans'));
+const Inbox = React.lazy(() => import('./pages/Inbox'));
+const Reviews = React.lazy(() => import('./pages/Reviews'));
+const PDP = React.lazy(() => import('./pages/PDP'));
+const QAReports = React.lazy(() => import('./pages/QAReports'));
+const MyKPI = React.lazy(() => import('./pages/MyKPI'));
+
+function TabLoadingFallback() {
+  return (
+    <div className="flex justify-center py-16">
+      <Spinner size="lg" />
+    </div>
+  );
+}
 
 // ── Tab types ────────────────────────────────────────────────────────────────
 
@@ -356,17 +368,19 @@ function MainApp() {
 
       {/* ── Main content ── */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-5 pb-24 md:pb-5">
-        {activeTab === 'daily'      && <DailyLog onSyncStats={syncStatsMonth} onDataChanged={notifyStatsRefresh} />}
-        {activeTab === 'stats'      && <Statistics year={statsYear} month={statsMonth} onYearChange={setStatsYear} onMonthChange={setStatsMonth} refreshKey={statsRefreshKey} />}
-        {activeTab === 'calendar'   && <ShiftCalendar onDataChanged={notifyStatsRefresh} readOnly={isPeekHandler} />}
-        {activeTab === 'qa'         && <AIChatQA />}
-        {activeTab === 'requests'   && <PeakRequests onDataChanged={fetchNewRequestsCount} />}
-        {activeTab === 'plans'      && <MyPlans />}
-        {activeTab === 'inbox'      && <Inbox onRead={fetchUnreadCount} />}
-        {activeTab === 'reviews'    && <Reviews />}
-        {activeTab === 'pdp'        && <PDP />}
-        {activeTab === 'qa-reports' && <QAReports />}
-        {activeTab === 'kpi'        && <MyKPI />}
+        <Suspense fallback={<TabLoadingFallback />}>
+          {activeTab === 'daily'      && <DailyLog onSyncStats={syncStatsMonth} onDataChanged={notifyStatsRefresh} />}
+          {activeTab === 'stats'      && <Statistics year={statsYear} month={statsMonth} onYearChange={setStatsYear} onMonthChange={setStatsMonth} refreshKey={statsRefreshKey} />}
+          {activeTab === 'calendar'   && <ShiftCalendar onDataChanged={notifyStatsRefresh} readOnly={isPeekHandler} />}
+          {activeTab === 'qa'         && <AIChatQA />}
+          {activeTab === 'requests'   && <PeakRequests onDataChanged={fetchNewRequestsCount} />}
+          {activeTab === 'plans'      && <MyPlans />}
+          {activeTab === 'inbox'      && <Inbox onRead={fetchUnreadCount} />}
+          {activeTab === 'reviews'    && <Reviews />}
+          {activeTab === 'pdp'        && <PDP />}
+          {activeTab === 'qa-reports' && <QAReports />}
+          {activeTab === 'kpi'        && <MyKPI />}
+        </Suspense>
       </main>
 
       {/* ── Mobile bottom nav ── */}

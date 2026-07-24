@@ -9,7 +9,7 @@ import {
   getTodayLogs,
 } from '../api';
 import { PeakRequest, PeakRequestComment, RequestStatus, ShiftLog } from '../types';
-import { Modal, Spinner, EmptyState, ConfirmDialog, StatusStrip } from '../components/ui';
+import { Modal, EmptyState, ConfirmDialog, StatusStrip, CardListSkeleton } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
 
@@ -517,7 +517,11 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
 
       {/* Kanban board */}
       {loading ? (
-        <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <CardListSkeleton count={2} />
+          <CardListSkeleton count={1} />
+          <CardListSkeleton count={2} />
+        </div>
       ) : requests.length === 0 ? (
         <EmptyState icon={<ClipboardList size={44} strokeWidth={1} />} message="No requests yet" action={
           <button className="btn-accent" onClick={openNewForm}>Submit First Request</button>

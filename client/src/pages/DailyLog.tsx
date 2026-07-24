@@ -4,7 +4,7 @@ import { MessageCircle, Ticket, Phone, RefreshCcw, Sun, Moon, ClipboardList, Sav
 import { format } from 'date-fns';
 import { getAgents, createShiftLog, getShiftLogs, updateShiftLog, archiveShiftLog, deleteShiftLog } from '../api';
 import { Agent, ShiftLog, ShiftType } from '../types';
-import { Modal, Spinner, EmptyState, StatusBadge, ConfirmDialog, OnlineNowStrip } from '../components/ui';
+import { Modal, EmptyState, StatusBadge, ConfirmDialog, OnlineNowStrip, CardListSkeleton } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 
 const SHIFT_HOURS: Record<ShiftType, number> = { MORNING: 11, NIGHT: 8 };
@@ -329,7 +329,7 @@ export default function DailyLog({ onSyncStats, onDataChanged }: { onSyncStats?:
 
       {/* Logs */}
       {loading ? (
-        <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+        <CardListSkeleton />
       ) : logs.length === 0 ? (
         <EmptyState icon={<ClipboardList size={44} strokeWidth={1} />} message={showArchived ? 'No archived shifts found' : 'No shifts logged for today'} action={
           !showArchived ? (

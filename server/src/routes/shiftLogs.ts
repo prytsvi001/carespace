@@ -38,7 +38,7 @@ router.get('/', async (req: Request, res: Response) => {
     const [logs, total] = await Promise.all([
       prisma.shiftLog.findMany({
         where,
-        include: { agent: true },
+        include: { agent: { select: { id: true, name: true } } },
         orderBy: { shiftDate: 'desc' },
         take: Number(limit),
         skip: Number(offset),
@@ -66,7 +66,7 @@ router.get('/today', async (_req, res: Response) => {
         archived: false,
         shiftDate: { gte: today, lt: tomorrow },
       },
-      include: { agent: true },
+      include: { agent: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -109,7 +109,7 @@ router.post('/', async (req: Request, res: Response) => {
         refundRequestsCount: Number(refundRequestsCount) || 0,
         comments: comments || null,
       },
-      include: { agent: true },
+      include: { agent: { select: { id: true, name: true } } },
     });
 
     return res.status(201).json(log);
@@ -140,7 +140,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         refundRequestsCount: Number(refundRequestsCount) || 0,
         comments: comments || null,
       },
-      include: { agent: true },
+      include: { agent: { select: { id: true, name: true } } },
     });
 
     res.json(log);

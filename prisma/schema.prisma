@@ -48,6 +48,8 @@ model User {
   receivedMessages InboxMessage[] @relation("ReceivedMessages")
   reviews          ClientReview[]
   pdpPlan          PdpPlan?
+
+  @@index([peekOnDuty])
 }
 
 model Plan {
@@ -69,6 +71,7 @@ model Plan {
 
   @@index([userId])
   @@index([type, date])
+  @@index([completed, reminderSent])
 }
 
 model InboxMessage {
@@ -90,6 +93,7 @@ model InboxMessage {
 
   @@index([receiverId])
   @@index([senderId])
+  @@index([receiverId, read])
 }
 
 model ShiftLog {
@@ -335,6 +339,7 @@ model PeakRequest {
 
   @@index([agentId])
   @@index([status])
+  @@index([status, archived])
 }
 
 // Dedup log for the shift-reminder cron — the external scheduler that hits

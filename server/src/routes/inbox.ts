@@ -56,6 +56,7 @@ router.get('/', async (req: Request, res: Response) => {
         sender: { select: { id: true, name: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: 200, // bounds an otherwise ever-growing, unpaginated history
     });
 
     const withReplies = await attachReplyPreviews(messages);
@@ -92,6 +93,7 @@ router.get('/sent', async (req: Request, res: Response) => {
         receiver: { select: { id: true, name: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: 200, // bounds an otherwise ever-growing, unpaginated history
     });
     const withReplies = await attachReplyPreviews(messages);
     res.json(withReplies.map(formatMessage));

@@ -128,6 +128,13 @@ router.get('/task-reminders', async (_req: Request, res: Response) => {
       where: { completed: false, reminderSent: false, date: { not: null } },
     });
 
+    // Batch-resolve every candidate's owner in one query instead of one findUnique
+    // per plan — the per-row work below is now a Map lookup, not a DB round-trip.
+    const users = await prisma.user.findMany({
+      where: { id: { in: [...new Set(candidates.map((p) => p.userId))] } },
+    });
+    const userById = new Map(users.map((u) => [u.id, u]));
+
     for (const plan of candidates) {
       // Legacy "YYYY-MM" (month-only) values from the old monthly-goals view have no day component.
       if (!plan.date || plan.date.length < 10) continue;
@@ -147,7 +154,7 @@ router.get('/task-reminders', async (_req: Request, res: Response) => {
       const reminderAt = dueMs - TASK_REMINDER_LEAD_MS;
       if (now < reminderAt || now >= reminderAt + TASK_REMINDER_WINDOW_MS) continue;
 
-      const user = await prisma.user.findUnique({ where: { id: plan.userId } });
+      const user = userById.get(plan.userId);
       if (!user?.telegramChatId) continue;
 
       const claim = await prisma.plan.updateMany({
@@ -198,8 +205,15 @@ router.get('/proxy-reminders', async (_req: Request, res: Response) => {
         select: { agentId: true },
       });
 
+      // Batch-resolve all on-shift agents' users in one query instead of one
+      // findFirst per shift log.
+      const agentUsers = await prisma.user.findMany({
+        where: { agentId: { in: [...new Set(activeLogs.map((l) => l.agentId))] } },
+      });
+      const userByAgentId = new Map(agentUsers.map((u) => [u.agentId as string, u]));
+
       for (const log of activeLogs) {
-        const agentUser = await prisma.user.findFirst({ where: { agentId: log.agentId } });
+        const agentUser = userByAgentId.get(log.agentId);
         if (!agentUser?.telegramChatId) continue;
         if (agentUser.role === 'peek_handler') continue;
 
@@ -246,8 +260,15 @@ router.get('/shift-reminders', async (_req: Request, res: Response) => {
         },
       });
 
+      // Batch-resolve all scheduled agents' users in one query instead of one
+      // findFirst per calendar event.
+      const eventAgentUsers = await prisma.user.findMany({
+        where: { agentId: { in: [...new Set(events.map((e) => e.agentId))] } },
+      });
+      const eventUserByAgentId = new Map(eventAgentUsers.map((u) => [u.agentId as string, u]));
+
       for (const event of events) {
-        const agentUser = await prisma.user.findFirst({ where: { agentId: event.agentId } });
+        const agentUser = eventUserByAgentId.get(event.agentId);
         if (!agentUser?.telegramChatId) continue;
 
         try {

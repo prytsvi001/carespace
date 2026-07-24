@@ -48,15 +48,15 @@ function monthLabelFor(year: number, month: number) {
 async function refreshInboxMessage(reportId: string, agentId: string) {
   const [report, agentReport] = await Promise.all([
     prisma.qAReport.findUnique({ where: { id: reportId } }),
-    prisma.qAAgentReport.findUnique({ where: { reportId_agentId: { reportId, agentId } } }),
+    prisma.qAAgentReport.findUnique({
+      where: { reportId_agentId: { reportId, agentId } },
+      include: { agent: { select: { name: true } } },
+    }),
   ]);
   if (!report || !agentReport || !agentReport.inboxMessageId) return;
 
-  const [agentRecord, issues] = await Promise.all([
-    prisma.agent.findUnique({ where: { id: agentId }, select: { name: true } }),
-    prisma.qAIssue.findMany({ where: { reportId, agentId }, orderBy: { createdAt: 'asc' } }),
-  ]);
-  const agentName = agentRecord?.name ?? 'Unknown';
+  const issues = await prisma.qAIssue.findMany({ where: { reportId, agentId }, orderBy: { createdAt: 'asc' } });
+  const agentName = agentReport.agent?.name ?? 'Unknown';
   const monthLabel = monthLabelFor(report.year, report.month);
 
   const subject = agentReport.status === 'returned'

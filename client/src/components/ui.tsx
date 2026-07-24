@@ -55,6 +55,25 @@ export function OnlineNowStrip({
   return <StatusStrip active={activeLogs.length > 0} label="Online now" value={value} offlineText={emptyMessage} />;
 }
 
+// ─── Loading skeleton ─────────────────────────────────────────────────────────
+// A row of pulsing card-shaped placeholders — used in place of a bare spinner on
+// pages whose content is fundamentally a list of cards (Daily Log, Peak Requests,
+// Inbox), so the layout feels like it's already "there" while data loads instead
+// of a blank centered spinner.
+export function CardListSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="card animate-pulse">
+          <div className="h-4 w-1/3 rounded mb-3" style={{ backgroundColor: 'rgba(14,14,14,0.09)' }} />
+          <div className="h-3 w-full rounded mb-2" style={{ backgroundColor: 'rgba(14,14,14,0.06)' }} />
+          <div className="h-3 w-5/6 rounded" style={{ backgroundColor: 'rgba(14,14,14,0.06)' }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Auto-resize textarea ────────────────────────────────────────────────────
 export function useAutoResize(ref: React.RefObject<HTMLTextAreaElement>, value: string) {
   useEffect(() => {

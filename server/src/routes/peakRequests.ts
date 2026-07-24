@@ -54,7 +54,7 @@ router.get('/', async (req: Request, res: Response) => {
     const [requests, total] = await Promise.all([
       prisma.peakRequest.findMany({
         where,
-        include: { agent: true },
+        include: { agent: { select: { id: true, name: true } } },
         orderBy: { createdAt: 'desc' },
         take: Number(limit),
         skip: Number(offset),
@@ -100,7 +100,7 @@ router.post('/', async (req: Request, res: Response) => {
         requestText,
         status: 'NEW',
       },
-      include: { agent: true },
+      include: { agent: { select: { id: true, name: true } } },
     });
 
     // Only notify users currently toggled "on duty" via the dedicated Peek Duty status
@@ -142,7 +142,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         profileNickname: profileNickname || null,
         requestText,
       },
-      include: { agent: true },
+      include: { agent: { select: { id: true, name: true } } },
     });
 
     return res.json(formatRequest(request));
@@ -168,7 +168,7 @@ router.patch('/:id/fields', async (req: Request, res: Response) => {
     const request = await prisma.peakRequest.update({
       where: { id },
       data,
-      include: { agent: true },
+      include: { agent: { select: { id: true, name: true } } },
     });
 
     return res.json(formatRequest(request));
@@ -201,7 +201,7 @@ router.post('/:id/comments', async (req: Request, res: Response) => {
     const request = await prisma.peakRequest.update({
       where: { id },
       data: { comments: JSON.stringify(comments) },
-      include: { agent: true },
+      include: { agent: { select: { id: true, name: true } } },
     });
 
     const originalRequester = await prisma.user.findFirst({ where: { agentId: request.agentId } });
@@ -236,7 +236,7 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
         status,
         doneAt: status === 'DONE' ? (existing.status === 'DONE' ? undefined : new Date()) : null,
       },
-      include: { agent: true },
+      include: { agent: { select: { id: true, name: true } } },
     });
 
     return res.json(formatRequest(request));

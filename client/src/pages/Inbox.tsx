@@ -9,7 +9,7 @@ import {
 import { InboxMessage } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { QAReportPreview } from '../components/qaReport';
-import { ConfirmDialog } from '../components/ui';
+import { ConfirmDialog, CardListSkeleton } from '../components/ui';
 
 type InboxUser = { id: string; name: string; role: string };
 
@@ -319,7 +319,7 @@ export default function Inbox({ onRead }: InboxProps) {
 
       {/* Message list */}
       {loading ? (
-        <div className="py-10 text-center text-sm text-slate-400">Loading…</div>
+        <CardListSkeleton />
       ) : displayed.length === 0 ? (
         <div className="py-14 text-center">
           <MailOpen size={40} strokeWidth={1} className="mx-auto mb-3 text-slate-300" />
