@@ -1,7 +1,8 @@
 name: CareSpace reminder cron
 
 # Vercel Hobby doesn't offer reliable per-minute native cron, so this workflow pings the
-# app's reminder endpoints (shift start/end + My Plans task due-date) on a schedule instead.
+# app's reminder endpoints (shift start/end + My Plans task due-date + Proxy nudge) on a
+# schedule instead.
 # GitHub Actions' `schedule` trigger is best-effort (~5min practical granularity, no exact-
 # timing guarantee) — both endpoints tolerate this via a matching window plus a DB-backed
 # dedup guard, so a late or occasionally-skipped tick degrades to a late reminder (or, for
@@ -22,4 +23,8 @@ jobs:
       - name: Hit task-reminders endpoint
         run: |
           curl -sf -X GET "https://carespace.struktura.io/api/cron/task-reminders" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+      - name: Hit proxy-reminders endpoint
+        run: |
+          curl -sf -X GET "https://carespace.struktura.io/api/cron/proxy-reminders" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"

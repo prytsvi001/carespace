@@ -167,6 +167,63 @@ router.get('/task-reminders', async (_req: Request, res: Response) => {
   }
 });
 
+type ProxyReminderType = 'PROXY_10' | 'PROXY_16' | 'PROXY_20';
+
+const PROXY_REMINDER_MESSAGE = '🔒 Не забудь увімкнути Структура Проксі';
+
+const PROXY_REMINDERS: { type: ProxyReminderType; targetMinutes: number }[] = [
+  { type: 'PROXY_10', targetMinutes: 10 * 60 },
+  { type: 'PROXY_16', targetMinutes: 16 * 60 },
+  { type: 'PROXY_20', targetMinutes: 20 * 60 },
+];
+
+// GET /api/cron/proxy-reminders — nudges agents currently on an active (unarchived)
+// Daily Log shift to enable the Struktura Proxy, at 10:00/16:00/20:00 Kyiv. Only
+// agents actually on shift right now get it — never peek_handlers (who have no
+// shift to be "on" anyway, but excluded explicitly too per spec), never agents who
+// aren't currently clocked in.
+router.get('/proxy-reminders', async (_req: Request, res: Response) => {
+  try {
+    const kyiv = getKyivParts(new Date());
+    const sent: string[] = [];
+
+    for (const reminder of PROXY_REMINDERS) {
+      const diff = kyiv.minutesSinceMidnight - reminder.targetMinutes;
+      if (diff < 0 || diff >= TOLERANCE_MINUTES) continue;
+
+      const { dateStr, start, end } = kyivDateBoundary(kyiv.year, kyiv.month, kyiv.day, 0);
+
+      const activeLogs = await prisma.shiftLog.findMany({
+        where: { archived: false, shiftDate: { gte: start, lt: end } },
+        select: { agentId: true },
+      });
+
+      for (const log of activeLogs) {
+        const agentUser = await prisma.user.findFirst({ where: { agentId: log.agentId } });
+        if (!agentUser?.telegramChatId) continue;
+        if (agentUser.role === 'peek_handler') continue;
+
+        try {
+          await prisma.telegramReminderLog.create({
+            data: { agentId: log.agentId, reminderType: reminder.type, shiftDate: dateStr },
+          });
+        } catch (err: unknown) {
+          if ((err as { code?: string })?.code === 'P2002') continue; // already sent for this agent/time/day
+          throw err;
+        }
+
+        await sendTelegramMessage(agentUser.telegramChatId, PROXY_REMINDER_MESSAGE);
+        sent.push(`${log.agentId}:${reminder.type}:${dateStr}`);
+      }
+    }
+
+    res.json({ ok: true, sent });
+  } catch (err) {
+    console.error('Proxy reminder cron error:', err);
+    res.status(500).json({ error: 'Failed to process proxy reminders' });
+  }
+});
+
 // GET /api/cron/shift-reminders — hit by an external scheduler (see .github/workflows/shift-reminders.yml)
 router.get('/shift-reminders', async (_req: Request, res: Response) => {
   try {
