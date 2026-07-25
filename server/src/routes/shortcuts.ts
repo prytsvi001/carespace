@@ -47,6 +47,32 @@ function deriveFacets(category: string): { product: string; topic: string } {
   return { product: match?.product ?? '', topic: match?.topic ?? '' };
 }
 
+// Default palette for a tag's color the first time it's auto-created — an admin
+// can repaint it afterward via PATCH /tags/:kind/:name/color.
+const DEFAULT_TAG_COLORS = ['#85B7EB', '#97C459', '#F0997B', '#AFA9EC', '#D4A847', '#5DCAA5'];
+function defaultColorFor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return DEFAULT_TAG_COLORS[hash % DEFAULT_TAG_COLORS.length];
+}
+
+// Auto-creates a ShortcutTag the first time a product/topic value appears, so the
+// facet chip list is always self-consistent with what's actually on shortcuts —
+// no manual admin setup needed before a new tag can be filtered/colored/reordered.
+async function ensureTag(kind: 'product' | 'topic', name: string): Promise<void> {
+  if (!name) return;
+  const existing = await (prisma as any).shortcutTag.findUnique({ where: { kind_name: { kind, name } } });
+  if (existing) return;
+  const maxOrder = await (prisma as any).shortcutTag.aggregate({ where: { kind }, _max: { order: true } });
+  try {
+    await (prisma as any).shortcutTag.create({
+      data: { kind, name, color: defaultColorFor(name), order: (maxOrder._max.order ?? -1) + 1 },
+    });
+  } catch (err: unknown) {
+    if ((err as { code?: string })?.code !== 'P2002') throw err; // lost a create race — the other request's row already exists
+  }
+}
+
 // Builds the stored `variants` JSON (text shortcuts only) from the request body,
 // dropping blank entries and auto-labeling any variant the client didn't label.
 function buildVariants(input?: { label?: string; content: string }[]): Variant[] {
@@ -106,6 +132,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const finalCategory = category?.trim() || '';
+    const facets = deriveFacets(finalCategory);
     const shortcut = await (prisma as any).shortcut.create({
       data: {
         title: title.trim(),
@@ -113,11 +140,12 @@ router.post('/', async (req: Request, res: Response) => {
         content: finalContent,
         variants: JSON.stringify(finalVariants),
         category: finalCategory,
-        ...deriveFacets(finalCategory),
+        ...facets,
         createdById: user.id,
         createdByName: user.name,
       },
     });
+    await Promise.all([ensureTag('product', facets.product), ensureTag('topic', facets.topic)]);
     return res.status(201).json(formatShortcut(shortcut));
   } catch (error) {
     console.error(error);
@@ -160,7 +188,17 @@ router.put('/:id', async (req: Request, res: Response) => {
       finalContent = finalVariants[0].content;
     }
 
+    const before = await (prisma as any).shortcut.findUnique({ where: { id: req.params.id } });
+    if (!before) return res.status(404).json({ error: 'Shortcut not found' });
+
     const finalCategory = category?.trim() || '';
+    const categoryChanged = finalCategory !== before.category;
+    // Only re-derive when the category actually changed. Re-deriving on every save
+    // (even when category is untouched) would blow away an admin's tag rename the
+    // next time anyone edits the shortcut's title/content — the static mapping
+    // table has no idea "Android" was renamed to "Android App".
+    const facets = categoryChanged ? deriveFacets(finalCategory) : { product: before.product, topic: before.topic };
+
     const shortcut = await (prisma as any).shortcut.update({
       where: { id: req.params.id },
       data: {
@@ -169,9 +207,12 @@ router.put('/:id', async (req: Request, res: Response) => {
         content: finalContent,
         variants: JSON.stringify(finalVariants),
         category: finalCategory,
-        ...deriveFacets(finalCategory),
+        ...facets,
       },
     });
+    if (categoryChanged) {
+      await Promise.all([ensureTag('product', facets.product), ensureTag('topic', facets.topic)]);
+    }
     return res.json(formatShortcut(shortcut));
   } catch (error) {
     console.error(error);
@@ -238,10 +279,12 @@ router.patch('/category', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'from and to are required' });
     }
     const trimmedTo = to.trim();
+    const facets = deriveFacets(trimmedTo);
     const result = await (prisma as any).shortcut.updateMany({
       where: { category: from },
-      data: { category: trimmedTo, ...deriveFacets(trimmedTo) },
+      data: { category: trimmedTo, ...facets },
     });
+    await Promise.all([ensureTag('product', facets.product), ensureTag('topic', facets.topic)]);
     return res.json({ success: true, updated: result.count });
   } catch (error) {
     console.error(error);
@@ -260,6 +303,109 @@ router.delete('/category/:name', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to delete category' });
+  }
+});
+
+
+// GET /api/shortcuts/tags — product/topic facet metadata (color, display order)
+router.get('/tags', async (_req: Request, res: Response) => {
+  try {
+    const tags = await (prisma as any).shortcutTag.findMany({ orderBy: { order: 'asc' } });
+    return res.json({
+      products: tags.filter((t: { kind: string }) => t.kind === 'product'),
+      topics: tags.filter((t: { kind: string }) => t.kind === 'topic'),
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch tags' });
+  }
+});
+
+// PATCH /api/shortcuts/tags/reorder — head/lead only
+router.patch('/tags/reorder', async (req: Request, res: Response) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Not allowed' });
+    const { kind, names } = req.body as { kind?: string; names?: string[] };
+    if (kind !== 'product' && kind !== 'topic') {
+      return res.status(400).json({ error: 'kind must be "product" or "topic"' });
+    }
+    if (!Array.isArray(names)) {
+      return res.status(400).json({ error: 'names must be an array' });
+    }
+    await prisma.$transaction(
+      names.map((name, index) =>
+        (prisma as any).shortcutTag.updateMany({ where: { kind, name }, data: { order: index } })
+      )
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to reorder tags' });
+  }
+});
+
+// PATCH /api/shortcuts/tags/:kind/:name/color — head/lead only
+router.patch('/tags/:kind/:name/color', async (req: Request, res: Response) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Not allowed' });
+    const { kind } = req.params;
+    if (kind !== 'product' && kind !== 'topic') {
+      return res.status(400).json({ error: 'invalid kind' });
+    }
+    const name = decodeURIComponent(req.params.name);
+    const { color } = req.body as { color?: string };
+    if (!color || !/^#[0-9A-Fa-f]{6}$/.test(color)) {
+      return res.status(400).json({ error: 'color must be a hex value like #85B7EB' });
+    }
+    // No contrast-based rejection here — the drawer always renders a computed
+    // ink/white text color against this as a tinted background (never the raw
+    // color as text), so any hex stays readable regardless of what's picked.
+    const tag = await (prisma as any).shortcutTag.update({
+      where: { kind_name: { kind, name } },
+      data: { color },
+    });
+    return res.json(tag);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update color' });
+  }
+});
+
+// PATCH /api/shortcuts/tags/:kind/rename — head/lead only. Renames the tag AND every
+// shortcut using it. If `to` already exists as a tag for this kind, this is a merge:
+// shortcuts move over, the old tag row is dropped, and the surviving tag keeps its
+// own color/order rather than adopting the merged-away tag's.
+router.patch('/tags/:kind/rename', async (req: Request, res: Response) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Not allowed' });
+    const { kind } = req.params;
+    if (kind !== 'product' && kind !== 'topic') {
+      return res.status(400).json({ error: 'invalid kind' });
+    }
+    const { from, to } = req.body as { from?: string; to?: string };
+    if (!from?.trim() || !to?.trim()) {
+      return res.status(400).json({ error: 'from and to are required' });
+    }
+    const trimmedTo = to.trim();
+    if (trimmedTo === from) return res.json({ success: true, updated: 0 });
+
+    const existingTarget = await (prisma as any).shortcutTag.findUnique({ where: { kind_name: { kind, name: trimmedTo } } });
+
+    const result = await (prisma as any).shortcut.updateMany({
+      where: { [kind]: from },
+      data: { [kind]: trimmedTo },
+    });
+
+    if (existingTarget) {
+      await (prisma as any).shortcutTag.deleteMany({ where: { kind, name: from } });
+    } else {
+      await (prisma as any).shortcutTag.updateMany({ where: { kind, name: from }, data: { name: trimmedTo } });
+    }
+
+    return res.json({ success: true, updated: result.count });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to rename tag' });
   }
 });
 

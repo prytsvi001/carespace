@@ -332,6 +332,25 @@ model Shortcut {
   @@index([pinned])
 }
 
+// Per-tag metadata (display order, color) for the product/topic facets. Kept
+// separate from Shortcut itself — order and color are properties of the tag
+// ("Android" displays 2nd and is blue), not of any individual shortcut row, and
+// storing them redundantly on every row sharing that tag would mean keeping N
+// rows in sync on every reorder/recolor/rename instead of updating one row here.
+// Shortcut.product/topic stay plain strings, matching the tag's `name` exactly.
+model ShortcutTag {
+  id        String   @id @default(cuid())
+  kind      String   // "product" | "topic"
+  name      String   // matches Shortcut.product or Shortcut.topic exactly
+  color     String   // hex, e.g. "#85B7EB"
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([kind, name], name: "kind_name")
+  @@index([kind, order])
+}
+
 model PeakRequest {
   id            String        @id @default(cuid())
   agentId       String

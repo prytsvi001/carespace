@@ -7,14 +7,20 @@ import {
   ClipboardList, X, Search, Copy, Check, ExternalLink, Plus, Pencil, Trash2, ArrowLeft,
   ChevronDown, ChevronUp, Star, Clock, Settings,
 } from 'lucide-react';
+import {
+  DndContext, DragEndEvent, PointerSensor, useSensor, useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useAuth } from '../context/AuthContext';
 import {
   getShortcuts, createShortcut, updateShortcut, deleteShortcut,
   renameShortcutCategory, deleteShortcutCategory, pinShortcut, recordShortcutUsage,
+  getShortcutTags, reorderShortcutTags, recolorShortcutTag, renameShortcutTag,
 } from '../api';
-import { Shortcut, ShortcutType, ShortcutVariant } from '../types';
+import { Shortcut, ShortcutType, ShortcutVariant, ShortcutTag, ShortcutTagKind } from '../types';
 import { Spinner, EmptyState, ConfirmDialog, AutoTextarea } from './ui';
 
 // Single-line breaks (not just blank-line paragraph breaks) should render as <br>,
@@ -31,22 +37,35 @@ function renderMarkdown(text: string): string {
 
 type View = 'list' | 'form';
 
-// Muted accent palette for tag color-coding (product/topic facet badges, and the
-// legacy raw-category list in Manage Categories) — deliberately soft, not the
-// bright/primary hues elsewhere in the app, so they read as organizational
-// labels rather than status/priority indicators.
-const TAG_COLORS = ['#85B7EB', '#97C459', '#F0997B', '#AFA9EC', '#D4A847', '#5DCAA5'];
 const ALL_COLOR = '#A1F96E'; // matches the app's lime brand accent, used when no facet is active
 
-// Deterministic hash so the same tag always gets the same color (no persistence
-// needed), cycling through the palette for any number of distinct values.
-function colorForTag(tag: string): string {
-  if (!tag) return 'rgba(14,14,14,0.25)';
+// Deterministic hash → color, used only for the legacy raw-category dots in
+// Manage Categories (categories aren't real tags, so they have no persisted
+// color of their own). Product/topic facet colors come from ShortcutTag.color.
+const HASH_COLORS = ['#85B7EB', '#97C459', '#F0997B', '#AFA9EC', '#D4A847', '#5DCAA5'];
+function hashColor(value: string): string {
+  if (!value) return 'rgba(14,14,14,0.25)';
   let hash = 0;
-  for (let i = 0; i < tag.length; i++) {
-    hash = (hash * 31 + tag.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
   }
-  return TAG_COLORS[hash % TAG_COLORS.length];
+  return HASH_COLORS[hash % HASH_COLORS.length];
+}
+
+// A tag's persisted color is used as a chip/badge background (always a light
+// tint, never solid), so the text color has to be computed rather than assumed
+// — WCAG relative luminance against white vs the app's near-black ink, whichever
+// gives more contrast. This lets an admin pick literally any hex via the color
+// picker below without ever producing unreadable chip text.
+function textColorForBackground(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const linearize = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const luminance = 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
+  const contrastWithWhite = 1.05 / (luminance + 0.05);
+  const contrastWithInk = (luminance + 0.05) / (0.0044 + 0.05); // 0.0044 ≈ luminance of #0E0E0E
+  return contrastWithWhite >= contrastWithInk ? '#FFFFFF' : '#0E0E0E';
 }
 
 // Shortcuts created before variants existed have an empty `variants` array —
@@ -77,6 +96,7 @@ export function ShortcutsDrawer() {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>('list');
   const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
+  const [tags, setTags] = useState<{ products: ShortcutTag[]; topics: ShortcutTag[] }>({ products: [], topics: [] });
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Shortcut | null>(null);
@@ -86,6 +106,8 @@ export function ShortcutsDrawer() {
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<string | null>(null);
+
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   // Facet filter selections persist across sessions (localStorage), matching how
   // the app already persists other lightweight UI preferences (e.g. the active
@@ -123,8 +145,16 @@ export function ShortcutsDrawer() {
     }
   };
 
+  const fetchTags = async () => {
+    try {
+      setTags(await getShortcutTags());
+    } catch {
+      // ignore — facet chips just render without persisted order/color until next fetch
+    }
+  };
+
   useEffect(() => {
-    if (open) fetchShortcuts();
+    if (open) { fetchShortcuts(); fetchTags(); }
   }, [open]);
 
   // peek_handler users never see the button at all
@@ -139,17 +169,22 @@ export function ShortcutsDrawer() {
     return Array.from(set).sort();
   }, [shortcuts]);
 
-  const products = useMemo(() => {
-    const set = new Set<string>();
-    shortcuts.forEach((s) => { if (s.product) set.add(s.product); });
-    return Array.from(set).sort();
-  }, [shortcuts]);
+  // Persisted tags (order + color), filtered to ones actually in use right now —
+  // an empty facet with 0 matching shortcuts would just be visual clutter.
+  const visibleProductTags = useMemo(
+    () => tags.products.filter((t) => shortcuts.some((s) => s.product === t.name)),
+    [tags.products, shortcuts]
+  );
+  const visibleTopicTags = useMemo(
+    () => tags.topics.filter((t) => shortcuts.some((s) => s.topic === t.name)),
+    [tags.topics, shortcuts]
+  );
 
-  const topics = useMemo(() => {
-    const set = new Set<string>();
-    shortcuts.forEach((s) => { if (s.topic) set.add(s.topic); });
-    return Array.from(set).sort();
-  }, [shortcuts]);
+  const tagColorFor = (s: Shortcut): string | undefined => {
+    if (s.product) return tags.products.find((t) => t.name === s.product)?.color;
+    if (s.topic) return tags.topics.find((t) => t.name === s.topic)?.color;
+    return undefined;
+  };
 
   const matchesSearch = (s: Shortcut) => {
     if (!search.trim()) return true;
@@ -158,14 +193,19 @@ export function ShortcutsDrawer() {
     return effectiveVariants(s).some((v) => v.content.toLowerCase().includes(q));
   };
 
+  // A search always looks across every shortcut, ignoring whatever product/topic
+  // is selected — the chip selection itself is untouched, so filters silently
+  // reapply the moment the search box is cleared.
+  const isSearching = search.trim().length > 0;
+
   const filtered = useMemo(
     () => shortcuts.filter((s) =>
       matchesSearch(s) &&
-      (!activeProduct || s.product === activeProduct) &&
-      (!activeTopic || s.topic === activeTopic)
+      (isSearching || !activeProduct || s.product === activeProduct) &&
+      (isSearching || !activeTopic || s.topic === activeTopic)
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shortcuts, search, activeProduct, activeTopic]
+    [shortcuts, search, activeProduct, activeTopic, isSearching]
   );
 
   // Pinned & Recent cut across whatever product/topic facet is active (by design —
@@ -228,6 +268,54 @@ export function ShortcutsDrawer() {
     }
   };
 
+  // Reorders against the FULL persisted list (not just the visible subset being
+  // dragged), looked up by id — a drag can only ever involve rendered (visible)
+  // items, but the resulting order still applies to the whole stored list.
+  const handleReorderTags = (kind: ShortcutTagKind, event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const key = kind === 'product' ? 'products' : 'topics';
+    setTags((prev) => {
+      const list = prev[key];
+      const oldIndex = list.findIndex((t) => t.id === active.id);
+      const newIndex = list.findIndex((t) => t.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      const reordered = arrayMove(list, oldIndex, newIndex);
+      reorderShortcutTags(kind, reordered.map((t) => t.name)).catch((e) => { console.error(e); fetchTags(); });
+      return { ...prev, [key]: reordered };
+    });
+  };
+
+  const handleRecolorTag = async (kind: ShortcutTagKind, tag: ShortcutTag, color: string) => {
+    const key = kind === 'product' ? 'products' : 'topics';
+    setTags((prev) => ({ ...prev, [key]: prev[key].map((t) => (t.id === tag.id ? { ...t, color } : t)) }));
+    try {
+      await recolorShortcutTag(kind, tag.name, color);
+    } catch (e) {
+      console.error(e);
+      fetchTags();
+    }
+  };
+
+  // Renames the tag itself AND every shortcut carrying it. If `to` collides with
+  // an existing tag, the server merges them (keeping the target's own color) —
+  // fetchTags() afterward picks up that collapse rather than assuming a 1:1 rename.
+  const handleRenameTag = async (kind: ShortcutTagKind, tag: ShortcutTag, newName: string) => {
+    const key = kind === 'product' ? 'products' : 'topics';
+    setTags((prev) => ({ ...prev, [key]: prev[key].map((t) => (t.id === tag.id ? { ...t, name: newName } : t)) }));
+    setShortcuts((prev) => prev.map((s) => (s[kind] === tag.name ? { ...s, [kind]: newName } : s)));
+    if (kind === 'product' && activeProduct === tag.name) setActiveProduct(newName);
+    if (kind === 'topic' && activeTopic === tag.name) setActiveTopic(newName);
+    try {
+      await renameShortcutTag(kind, tag.name, newName);
+      fetchTags();
+    } catch (e) {
+      console.error(e);
+      fetchTags();
+      fetchShortcuts();
+    }
+  };
+
   const startRenameCategory = (cat: string) => {
     setRenamingCategory(cat);
     setRenameDraft(cat);
@@ -265,11 +353,15 @@ export function ShortcutsDrawer() {
     setView('list');
   };
 
-  const headerBarColor = activeProduct ? colorForTag(activeProduct) : activeTopic ? colorForTag(activeTopic) : ALL_COLOR;
+  const activeProductTag = activeProduct ? tags.products.find((t) => t.name === activeProduct) : undefined;
+  const activeTopicTag = activeTopic ? tags.topics.find((t) => t.name === activeTopic) : undefined;
+  const headerBarColor = activeProductTag?.color ?? activeTopicTag?.color ?? ALL_COLOR;
 
-  const facetLabel = activeProduct && activeTopic
-    ? `${activeProduct} · ${activeTopic}`
-    : activeProduct || activeTopic || 'All shortcuts';
+  const facetLabel = isSearching
+    ? 'Search results'
+    : activeProduct && activeTopic
+      ? `${activeProduct} · ${activeTopic}`
+      : activeProduct || activeTopic || 'All shortcuts';
 
   return (
     <>
@@ -359,23 +451,47 @@ export function ShortcutsDrawer() {
                 Add Shortcut
               </button>
 
-              {/* Product/Brand facet */}
-              {products.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
+              {/* Product/Brand facet — drag chips to reorder within this facet only */}
+              {visibleProductTags.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
                   <FacetChip label="All products" active={!activeProduct} color={ALL_COLOR} onClick={() => setActiveProduct(null)} />
-                  {products.map((p) => (
-                    <FacetChip key={p} label={p} active={activeProduct === p} color={colorForTag(p)} onClick={() => setActiveProduct(activeProduct === p ? null : p)} />
-                  ))}
+                  <DndContext sensors={dndSensors} onDragEnd={(e) => handleReorderTags('product', e)}>
+                    <SortableContext items={visibleProductTags.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
+                      {visibleProductTags.map((t) => (
+                        <SortableFacetChip
+                          key={t.id}
+                          tag={t}
+                          active={activeProduct === t.name}
+                          isAdmin={isAdmin}
+                          onSelect={() => setActiveProduct(activeProduct === t.name ? null : t.name)}
+                          onRename={(newName) => handleRenameTag('product', t, newName)}
+                          onRecolor={(newColor) => handleRecolorTag('product', t, newColor)}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 </div>
               )}
 
-              {/* Topic facet */}
-              {topics.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
+              {/* Topic facet — separate DnD context, so dragging never crosses into products */}
+              {visibleTopicTags.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
                   <FacetChip label="All topics" active={!activeTopic} color={ALL_COLOR} onClick={() => setActiveTopic(null)} />
-                  {topics.map((t) => (
-                    <FacetChip key={t} label={t} active={activeTopic === t} color={colorForTag(t)} onClick={() => setActiveTopic(activeTopic === t ? null : t)} />
-                  ))}
+                  <DndContext sensors={dndSensors} onDragEnd={(e) => handleReorderTags('topic', e)}>
+                    <SortableContext items={visibleTopicTags.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
+                      {visibleTopicTags.map((t) => (
+                        <SortableFacetChip
+                          key={t.id}
+                          tag={t}
+                          active={activeTopic === t.name}
+                          isAdmin={isAdmin}
+                          onSelect={() => setActiveTopic(activeTopic === t.name ? null : t.name)}
+                          onRename={(newName) => handleRenameTag('topic', t, newName)}
+                          onRecolor={(newColor) => handleRecolorTag('topic', t, newColor)}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 </div>
               )}
 
@@ -400,6 +516,7 @@ export function ShortcutsDrawer() {
                           <ShortcutRow
                             key={s.id}
                             shortcut={s}
+                            tagColor={tagColorFor(s)}
                             isAdmin={isAdmin}
                             onEdit={() => { setEditing(s); setView('form'); }}
                             onDelete={() => setDeleteTarget(s)}
@@ -421,6 +538,7 @@ export function ShortcutsDrawer() {
                           <ShortcutRow
                             key={s.id}
                             shortcut={s}
+                            tagColor={tagColorFor(s)}
                             isAdmin={isAdmin}
                             onEdit={() => { setEditing(s); setView('form'); }}
                             onDelete={() => setDeleteTarget(s)}
@@ -438,9 +556,11 @@ export function ShortcutsDrawer() {
                 <EmptyState
                   icon={<ClipboardList size={28} strokeWidth={1.3} />}
                   message={
-                    activeProduct && activeTopic
-                      ? `No shortcuts tagged with both "${activeProduct}" and "${activeTopic}" — try clearing one filter.`
-                      : 'No shortcuts found'
+                    isSearching
+                      ? 'No shortcuts match your search'
+                      : activeProduct && activeTopic
+                        ? `No shortcuts tagged with both "${activeProduct}" and "${activeTopic}" — try clearing one filter.`
+                        : 'No shortcuts found'
                   }
                 />
               )}
@@ -450,6 +570,7 @@ export function ShortcutsDrawer() {
                     <ShortcutRow
                       key={s.id}
                       shortcut={s}
+                      tagColor={tagColorFor(s)}
                       isAdmin={isAdmin}
                       onEdit={() => { setEditing(s); setView('form'); }}
                       onDelete={() => setDeleteTarget(s)}
@@ -534,6 +655,100 @@ function FacetChip({ label, color, active, onClick }: {
   );
 }
 
+// ─── Sortable, editable facet chip (real product/topic tags) ──────────────────
+// Drag reorders within its own facet (the DndContext/SortableContext at the call
+// site never mixes products and topics together). Admin-only pencil affordance
+// swaps the chip into inline rename + native color-picker mode.
+
+function SortableFacetChip({ tag, active, isAdmin, onSelect, onRename, onRecolor }: {
+  tag: ShortcutTag;
+  active: boolean;
+  isAdmin: boolean;
+  onSelect: () => void;
+  onRename: (newName: string) => void;
+  onRecolor: (newColor: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tag.id });
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState(tag.name);
+
+  useEffect(() => {
+    if (!editing) setDraftName(tag.name);
+  }, [tag.name, editing]);
+
+  const dragStyle: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  const textColor = textColorForBackground(tag.color);
+
+  const commitRename = () => {
+    setEditing(false);
+    const trimmed = draftName.trim();
+    if (trimmed && trimmed !== tag.name) onRename(trimmed);
+    else setDraftName(tag.name);
+  };
+
+  if (editing) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={{ ...dragStyle, border: `1px solid ${tag.color}55` }}
+        className="inline-flex items-center gap-1 px-1.5 py-1 rounded-full"
+      >
+        <input
+          type="color"
+          value={tag.color}
+          onChange={(e) => onRecolor(e.target.value)}
+          className="w-4 h-4 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0"
+          title="Change color"
+          aria-label={`Change color for ${tag.name}`}
+        />
+        <input
+          autoFocus
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename();
+            if (e.key === 'Escape') { setDraftName(tag.name); setEditing(false); }
+          }}
+          onBlur={commitRename}
+          className="text-xs bg-transparent outline-none w-20"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div ref={setNodeRef} style={dragStyle} {...attributes} {...listeners} className="group inline-flex items-center rounded-full">
+      <button
+        onClick={onSelect}
+        className="px-2 py-1 rounded-full text-xs font-medium transition-all"
+        style={
+          active
+            ? { backgroundColor: `${tag.color}40`, color: textColor, border: `1px solid ${tag.color}` }
+            : { backgroundColor: `${tag.color}20`, color: textColor, border: `1px solid ${tag.color}40` }
+        }
+      >
+        {tag.name}
+      </button>
+      {isAdmin && (
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+          className="-ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded"
+          style={{ color: 'rgba(14,14,14,0.4)' }}
+          aria-label={`Edit ${tag.name}`}
+          title={`Edit ${tag.name}`}
+        >
+          <Pencil size={9} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Manage Categories (admin) ─────────────────────────────────────────────────
 // The legacy flat category taxonomy still backs the Add/Edit form and the
 // product/topic derivation, so renaming/deleting it stays available — just
@@ -593,7 +808,7 @@ function ManageCategoriesModal({
               />
             ) : (
               <div key={c} className="group flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-black/[0.02] transition-colors">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colorForTag(c) }} />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: hashColor(c) }} />
                 <span className="flex-1 min-w-0 truncate text-sm text-ink capitalize">{c}</span>
                 <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>
                   {shortcuts.filter((s) => s.category === c).length}
@@ -617,8 +832,9 @@ function ManageCategoriesModal({
 
 // ─── Shortcut row (compact list item) ──────────────────────────────────────────
 
-function ShortcutRow({ shortcut, isAdmin, onEdit, onDelete, onCopy, onTogglePin }: {
+function ShortcutRow({ shortcut, tagColor, isAdmin, onEdit, onDelete, onCopy, onTogglePin }: {
   shortcut: Shortcut;
+  tagColor?: string;
   isAdmin: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -632,12 +848,15 @@ function ShortcutRow({ shortcut, isAdmin, onEdit, onDelete, onCopy, onTogglePin 
   const previewText = shortcut.type === 'link' ? shortcut.content : (primary?.content ?? '').split('\n')[0];
   const expandable = isExpandable(shortcut);
   const tag = shortcut.product || shortcut.topic;
-  const tagColor = tag ? colorForTag(tag) : null;
+  const badgeTextColor = tagColor ? textColorForBackground(tagColor) : undefined;
 
   return (
-    <div className="rounded-lg" style={{ border: '1px solid rgba(14,14,14,0.08)' }}>
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{ border: '1px solid rgba(14,14,14,0.08)', borderLeft: tagColor ? `3px solid ${tagColor}` : undefined }}
+    >
       <div
-        className={`flex items-center gap-2 px-2.5 py-2 rounded-lg transition-colors hover:bg-black/[0.015] ${expandable ? 'cursor-pointer' : ''}`}
+        className={`flex items-center gap-2 px-2.5 py-2 transition-colors hover:bg-black/[0.015] ${expandable ? 'cursor-pointer' : ''}`}
         onClick={() => { if (expandable) setExpanded((v) => !v); }}
       >
         <button
@@ -658,7 +877,7 @@ function ShortcutRow({ shortcut, isAdmin, onEdit, onDelete, onCopy, onTogglePin 
         {tag && (
           <span
             className="shrink-0 hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-            style={tagColor ? { backgroundColor: `${tagColor}26`, color: tagColor } : undefined}
+            style={tagColor ? { backgroundColor: `${tagColor}26`, color: badgeTextColor } : undefined}
           >
             {tag}
           </span>

@@ -310,6 +310,16 @@ export interface ShortcutVariant {
   content: string;
 }
 
+export type ShortcutTagKind = 'product' | 'topic';
+
+export interface ShortcutTag {
+  id: string;
+  kind: ShortcutTagKind;
+  name: string;
+  color: string;
+  order: number;
+}
+
 export interface Shortcut {
   id: string;
   title: string;

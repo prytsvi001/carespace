@@ -406,6 +406,20 @@ export const pinShortcut = (id: string, pinned: boolean) =>
 export const recordShortcutUsage = (id: string) =>
   api.post(`/shortcuts/${id}/copy`).then((r) => { invalidateCache('shortcuts'); return r.data; });
 
+export const getShortcutTags = () =>
+  cached('shortcut-tags', 60_000, () => api.get('/shortcuts/tags').then((r) => r.data));
+
+export const reorderShortcutTags = (kind: 'product' | 'topic', names: string[]) =>
+  api.patch('/shortcuts/tags/reorder', { kind, names }).then((r) => { invalidateCache('shortcut-tags'); return r.data; });
+
+export const recolorShortcutTag = (kind: 'product' | 'topic', name: string, color: string) =>
+  api.patch(`/shortcuts/tags/${kind}/${encodeURIComponent(name)}/color`, { color })
+    .then((r) => { invalidateCache('shortcut-tags'); return r.data; });
+
+export const renameShortcutTag = (kind: 'product' | 'topic', from: string, to: string) =>
+  api.patch(`/shortcuts/tags/${kind}/rename`, { from, to })
+    .then((r) => { invalidateCache('shortcuts'); invalidateCache('shortcut-tags'); return r.data; });
+
 // ─── Duty status (Peek Requests) ────────────────────────────────────────────
 export interface DutyStatus {
   myOnDuty: boolean;
