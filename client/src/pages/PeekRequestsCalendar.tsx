@@ -23,9 +23,9 @@ import { PeekCalendarEntry } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
 
 const ASSIGNEE_COLORS: Record<string, string> = {
-  'Iryna Kolodienko': '#4A90D9',
-  'Victoria Horopeka': '#E8634A',
-  'Julia Manson': '#8B5CF6',
+  'Iryna Kolodienko': '#6AAEE8',
+  'Victoria Horopeka': '#E8896A',
+  'Julia Manson': '#9B89D4',
 };
 const DEFAULT_COLOR = '#64748B';
 const colorForAssignee = (name: string) => ASSIGNEE_COLORS[name] ?? DEFAULT_COLOR;
