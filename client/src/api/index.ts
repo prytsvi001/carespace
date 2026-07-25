@@ -400,6 +400,12 @@ export const renameShortcutCategory = (from: string, to: string) =>
 export const deleteShortcutCategory = (name: string) =>
   api.delete(`/shortcuts/category/${encodeURIComponent(name)}`).then((r) => { invalidateCache('shortcuts'); return r.data; });
 
+export const pinShortcut = (id: string, pinned: boolean) =>
+  api.patch(`/shortcuts/${id}/pin`, { pinned }).then((r) => { invalidateCache('shortcuts'); return r.data; });
+
+export const recordShortcutUsage = (id: string) =>
+  api.post(`/shortcuts/${id}/copy`).then((r) => { invalidateCache('shortcuts'); return r.data; });
+
 // ─── Duty status (Peek Requests) ────────────────────────────────────────────
 export interface DutyStatus {
   myOnDuty: boolean;

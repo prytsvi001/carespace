@@ -5,14 +5,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ClipboardList, X, Search, Copy, Check, ExternalLink, Plus, Pencil, Trash2, ArrowLeft,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Star, Clock, Settings,
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useAuth } from '../context/AuthContext';
 import {
   getShortcuts, createShortcut, updateShortcut, deleteShortcut,
-  renameShortcutCategory, deleteShortcutCategory,
+  renameShortcutCategory, deleteShortcutCategory, pinShortcut, recordShortcutUsage,
 } from '../api';
 import { Shortcut, ShortcutType, ShortcutVariant } from '../types';
 import { Spinner, EmptyState, ConfirmDialog, AutoTextarea } from './ui';
@@ -31,22 +31,22 @@ function renderMarkdown(text: string): string {
 
 type View = 'list' | 'form';
 
-// Muted accent palette for category color-coding — deliberately soft, not the
+// Muted accent palette for tag color-coding (product/topic facet badges, and the
+// legacy raw-category list in Manage Categories) — deliberately soft, not the
 // bright/primary hues elsewhere in the app, so they read as organizational
 // labels rather than status/priority indicators.
-const CATEGORY_COLORS = ['#85B7EB', '#97C459', '#F0997B', '#AFA9EC', '#D4A847', '#5DCAA5'];
-const NO_CATEGORY_COLOR = 'rgba(14,14,14,0.25)';
-const ALL_COLOR = '#A1F96E'; // matches the app's lime brand accent, used for the "All" filter only
+const TAG_COLORS = ['#85B7EB', '#97C459', '#F0997B', '#AFA9EC', '#D4A847', '#5DCAA5'];
+const ALL_COLOR = '#A1F96E'; // matches the app's lime brand accent, used when no facet is active
 
-// Deterministic hash so the same category name always gets the same color
-// (no persistence needed), cycling through the palette for any number of categories.
-function colorForCategory(category: string): string {
-  if (!category) return NO_CATEGORY_COLOR;
+// Deterministic hash so the same tag always gets the same color (no persistence
+// needed), cycling through the palette for any number of distinct values.
+function colorForTag(tag: string): string {
+  if (!tag) return 'rgba(14,14,14,0.25)';
   let hash = 0;
-  for (let i = 0; i < category.length; i++) {
-    hash = (hash * 31 + category.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < tag.length; i++) {
+    hash = (hash * 31 + tag.charCodeAt(i)) >>> 0;
   }
-  return CATEGORY_COLORS[hash % CATEGORY_COLORS.length];
+  return TAG_COLORS[hash % TAG_COLORS.length];
 }
 
 // Shortcuts created before variants existed have an empty `variants` array —
@@ -55,6 +55,20 @@ function effectiveVariants(s: Shortcut): ShortcutVariant[] {
   if (s.variants.length > 0) return s.variants;
   return [{ id: 'legacy', label: 'Variant 1', content: s.content }];
 }
+
+// A row is only made expandable if there's actually more to reveal than the
+// single-line preview already shows — a short one-liner has nothing to expand to.
+const PREVIEW_CHAR_THRESHOLD = 80;
+function isExpandable(shortcut: Shortcut): boolean {
+  if (shortcut.type === 'link') return false;
+  const variants = effectiveVariants(shortcut);
+  if (variants.length > 1) return true;
+  const content = variants[0]?.content ?? '';
+  return content.includes('\n') || content.length > PREVIEW_CHAR_THRESHOLD;
+}
+
+const RECENT_LIMIT = 5;
+const FILTER_STORAGE_KEY = 'carespace_shortcuts_filters';
 
 export function ShortcutsDrawer() {
   const { user } = useAuth();
@@ -65,12 +79,38 @@ export function ShortcutsDrawer() {
   const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [editing, setEditing] = useState<Shortcut | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Shortcut | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showManageCategories, setShowManageCategories] = useState(false);
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<string | null>(null);
+
+  // Facet filter selections persist across sessions (localStorage), matching how
+  // the app already persists other lightweight UI preferences (e.g. the active
+  // tab). Search itself resets each time — a stale search term silently hiding
+  // everything on next open would be more confusing than helpful.
+  const [activeProduct, setActiveProduct] = useState<string | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) ?? '{}').product ?? null;
+    } catch { return null; }
+  });
+  const [activeTopic, setActiveTopic] = useState<string | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) ?? '{}').topic ?? null;
+    } catch { return null; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify({ product: activeProduct, topic: activeTopic }));
+  }, [activeProduct, activeTopic]);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const t = setTimeout(() => setToastMessage(null), 2000);
+    return () => clearTimeout(t);
+  }, [toastMessage]);
 
   const fetchShortcuts = async () => {
     setLoading(true);
@@ -90,9 +130,24 @@ export function ShortcutsDrawer() {
   // peek_handler users never see the button at all
   if (user?.role === 'peek_handler') return null;
 
+  // Legacy flat categories — no longer used for filtering (superseded by the
+  // product/topic facets below), but still what the unchanged Add/Edit form
+  // writes to, and still manageable (rename/delete) via the Manage Categories panel.
   const categories = useMemo(() => {
     const set = new Set<string>();
     shortcuts.forEach((s) => { if (s.category) set.add(s.category); });
+    return Array.from(set).sort();
+  }, [shortcuts]);
+
+  const products = useMemo(() => {
+    const set = new Set<string>();
+    shortcuts.forEach((s) => { if (s.product) set.add(s.product); });
+    return Array.from(set).sort();
+  }, [shortcuts]);
+
+  const topics = useMemo(() => {
+    const set = new Set<string>();
+    shortcuts.forEach((s) => { if (s.topic) set.add(s.topic); });
     return Array.from(set).sort();
   }, [shortcuts]);
 
@@ -103,31 +158,62 @@ export function ShortcutsDrawer() {
     return effectiveVariants(s).some((v) => v.content.toLowerCase().includes(q));
   };
 
-  // Used when one specific category is selected in the sidebar.
-  const filtered = shortcuts.filter((s) => (!activeCategory || s.category === activeCategory) && matchesSearch(s));
-
-  // Used for the "All" view — grouped by category so the library reads as an
-  // organized reference rather than one long flat list.
-  const groupedByCategory = useMemo(() => {
-    const searched = shortcuts.filter(matchesSearch);
-    const byCategory = new Map<string, Shortcut[]>();
-    for (const s of searched) {
-      const key = s.category || '';
-      if (!byCategory.has(key)) byCategory.set(key, []);
-      byCategory.get(key)!.push(s);
-    }
-    const groups: { key: string; label: string; color: string; items: Shortcut[] }[] = [];
-    for (const c of categories) {
-      const items = byCategory.get(c);
-      if (items?.length) groups.push({ key: c, label: c, color: colorForCategory(c), items });
-    }
-    const uncategorized = byCategory.get('');
-    if (uncategorized?.length) {
-      groups.push({ key: '__none', label: 'Uncategorized', color: NO_CATEGORY_COLOR, items: uncategorized });
-    }
-    return groups;
+  const filtered = useMemo(
+    () => shortcuts.filter((s) =>
+      matchesSearch(s) &&
+      (!activeProduct || s.product === activeProduct) &&
+      (!activeTopic || s.topic === activeTopic)
+    ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shortcuts, search, categories]);
+    [shortcuts, search, activeProduct, activeTopic]
+  );
+
+  // Pinned & Recent cut across whatever product/topic facet is active (by design —
+  // they're a fast-access shortcut area, not a browsing view), but still respect
+  // an active search since showing unrelated results while searching would be noisy.
+  const pinnedItems = useMemo(
+    () => shortcuts.filter((s) => s.pinned && matchesSearch(s)).sort((a, b) => a.title.localeCompare(b.title)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shortcuts, search]
+  );
+  const recentItems = useMemo(() => {
+    return shortcuts
+      .filter((s) => !s.pinned && s.usageCount > 0 && matchesSearch(s))
+      .sort((a, b) => {
+        const at = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+        const bt = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+        return bt - at;
+      })
+      .slice(0, RECENT_LIMIT);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortcuts, search]);
+
+  const handleCopy = async (shortcut: Shortcut, content: string) => {
+    await navigator.clipboard.writeText(content);
+    setToastMessage('Copied to clipboard');
+    const nowIso = new Date().toISOString();
+    setShortcuts((prev) => prev.map((s) =>
+      s.id === shortcut.id ? { ...s, usageCount: s.usageCount + 1, lastUsedAt: nowIso } : s
+    ));
+    try {
+      await recordShortcutUsage(shortcut.id);
+    } catch (e) {
+      // The copy itself already succeeded — a failed usage-tracking ping shouldn't
+      // surface as an error to the user, just fall out of sync until next refetch.
+      console.error(e);
+    }
+  };
+
+  const handleTogglePin = async (shortcut: Shortcut) => {
+    const next = !shortcut.pinned;
+    setShortcuts((prev) => prev.map((s) => (s.id === shortcut.id ? { ...s, pinned: next } : s)));
+    try {
+      await pinShortcut(shortcut.id, next);
+    } catch (e) {
+      console.error(e);
+      fetchShortcuts();
+    }
+  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -153,13 +239,11 @@ export function ShortcutsDrawer() {
     const to = renameDraft.trim();
     setRenamingCategory(null);
     if (!to || to === from) return;
-    setShortcuts((prev) => prev.map((s) => (s.category === from ? { ...s, category: to } : s)));
-    if (activeCategory === from) setActiveCategory(to);
     try {
       await renameShortcutCategory(from, to);
+      fetchShortcuts();
     } catch (e) {
       console.error(e);
-      fetchShortcuts();
     }
   };
 
@@ -167,7 +251,6 @@ export function ShortcutsDrawer() {
     if (!deleteCategoryTarget) return;
     const target = deleteCategoryTarget;
     setDeleteCategoryTarget(null);
-    if (activeCategory === target) setActiveCategory(null);
     setShortcuts((prev) => prev.filter((s) => s.category !== target));
     try {
       await deleteShortcutCategory(target);
@@ -182,7 +265,11 @@ export function ShortcutsDrawer() {
     setView('list');
   };
 
-  const headerBarColor = activeCategory ? colorForCategory(activeCategory) : ALL_COLOR;
+  const headerBarColor = activeProduct ? colorForTag(activeProduct) : activeTopic ? colorForTag(activeTopic) : ALL_COLOR;
+
+  const facetLabel = activeProduct && activeTopic
+    ? `${activeProduct} · ${activeTopic}`
+    : activeProduct || activeTopic || 'All shortcuts';
 
   return (
     <>
@@ -211,7 +298,7 @@ export function ShortcutsDrawer() {
         }`}
         style={{ borderLeft: '1px solid rgba(14,14,14,0.09)' }}
       >
-        {/* Subtle colored accent bar reflecting the selected category */}
+        {/* Subtle colored accent bar reflecting the active facet */}
         <div className="h-1 shrink-0 transition-colors duration-200" style={{ backgroundColor: headerBarColor }} />
 
         {/* Header */}
@@ -226,9 +313,21 @@ export function ShortcutsDrawer() {
             )}
             {view === 'form' ? (editing ? 'Edit Shortcut' : 'Add Shortcut') : 'Shortcuts'}
           </h2>
-          <button onClick={closeDrawer} className="text-ink/40 hover:text-ink transition-colors" aria-label="Close">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-1">
+            {view === 'list' && isAdmin && (
+              <button
+                onClick={() => setShowManageCategories(true)}
+                className="text-ink/40 hover:text-ink transition-colors"
+                aria-label="Manage categories"
+                title="Manage categories"
+              >
+                <Settings size={17} />
+              </button>
+            )}
+            <button onClick={closeDrawer} className="text-ink/40 hover:text-ink transition-colors" aria-label="Close">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {view === 'form' ? (
@@ -259,105 +358,139 @@ export function ShortcutsDrawer() {
                 <Plus size={14} strokeWidth={2} />
                 Add Shortcut
               </button>
+
+              {/* Product/Brand facet */}
+              {products.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  <FacetChip label="All products" active={!activeProduct} color={ALL_COLOR} onClick={() => setActiveProduct(null)} />
+                  {products.map((p) => (
+                    <FacetChip key={p} label={p} active={activeProduct === p} color={colorForTag(p)} onClick={() => setActiveProduct(activeProduct === p ? null : p)} />
+                  ))}
+                </div>
+              )}
+
+              {/* Topic facet */}
+              {topics.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  <FacetChip label="All topics" active={!activeTopic} color={ALL_COLOR} onClick={() => setActiveTopic(null)} />
+                  {topics.map((t) => (
+                    <FacetChip key={t} label={t} active={activeTopic === t} color={colorForTag(t)} onClick={() => setActiveTopic(activeTopic === t ? null : t)} />
+                  ))}
+                </div>
+              )}
+
+              <p className="text-xs font-medium" style={{ color: 'rgba(14,14,14,0.40)' }}>
+                {facetLabel} ({filtered.length})
+              </p>
             </div>
 
-            {/* Category sidebar (own scroll, so it stays put while the cards scroll) + cards */}
-            <div className="flex flex-1 min-h-0">
-              <div
-                className="w-36 sm:w-44 shrink-0 overflow-y-auto py-3 px-2 space-y-0.5"
-                style={{ borderRight: '1px solid rgba(14,14,14,0.07)' }}
-              >
-                <CategorySidebarItem
-                  label="All"
-                  color={ALL_COLOR}
-                  count={shortcuts.length}
-                  active={!activeCategory}
-                  onClick={() => setActiveCategory(null)}
-                />
-                {categories.map((c) =>
-                  renamingCategory === c ? (
-                    <input
-                      key={c}
-                      autoFocus
-                      value={renameDraft}
-                      onChange={(e) => setRenameDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitRenameCategory();
-                        if (e.key === 'Escape') setRenamingCategory(null);
-                      }}
-                      onBlur={commitRenameCategory}
-                      className="input text-xs py-1.5 px-2 w-full"
-                    />
-                  ) : (
-                    <CategorySidebarItem
-                      key={c}
-                      label={c}
-                      color={colorForCategory(c)}
-                      count={shortcuts.filter((s) => s.category === c).length}
-                      active={activeCategory === c}
-                      onClick={() => setActiveCategory(c)}
-                      isAdmin={isAdmin}
-                      onRename={() => startRenameCategory(c)}
-                      onDelete={() => setDeleteCategoryTarget(c)}
-                    />
-                  )
-                )}
-              </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {loading && <div className="flex justify-center py-8"><Spinner /></div>}
 
-              <div className="flex-1 overflow-y-auto p-5">
-                {loading && <div className="flex justify-center py-8"><Spinner /></div>}
-
-                {!loading && activeCategory && filtered.length === 0 && (
-                  <EmptyState icon={<ClipboardList size={28} strokeWidth={1.3} />} message="No shortcuts found" />
-                )}
-                {!loading && activeCategory && filtered.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {filtered.map((s) => (
-                      <ShortcutCard
-                        key={s.id}
-                        shortcut={s}
-                        isAdmin={isAdmin}
-                        onEdit={() => { setEditing(s); setView('form'); }}
-                        onDelete={() => setDeleteTarget(s)}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {!loading && !activeCategory && groupedByCategory.length === 0 && (
-                  <EmptyState icon={<ClipboardList size={28} strokeWidth={1.3} />} message="No shortcuts found" />
-                )}
-                {!loading && !activeCategory && groupedByCategory.length > 0 && (
-                  <div className="space-y-5">
-                    {groupedByCategory.map((group) => (
-                      <div key={group.key}>
-                        <p
-                          className="text-[10px] uppercase tracking-widest font-semibold mb-2 px-0.5 flex items-center gap-1.5"
-                          style={{ color: 'rgba(14,14,14,0.40)' }}
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-                          {group.label} ({group.items.length})
-                        </p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {group.items.map((s) => (
-                            <ShortcutCard
-                              key={s.id}
-                              shortcut={s}
-                              isAdmin={isAdmin}
-                              onEdit={() => { setEditing(s); setView('form'); }}
-                              onDelete={() => setDeleteTarget(s)}
-                            />
-                          ))}
-                        </div>
+              {!loading && (pinnedItems.length > 0 || recentItems.length > 0) && (
+                <div className="space-y-3 pb-3" style={{ borderBottom: '1px solid rgba(14,14,14,0.09)' }}>
+                  {pinnedItems.length > 0 && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest font-semibold mb-1.5 px-0.5 flex items-center gap-1.5" style={{ color: 'rgba(14,14,14,0.40)' }}>
+                        <Star size={11} strokeWidth={2} fill="currentColor" />
+                        Pinned
+                      </p>
+                      <div className="space-y-1">
+                        {pinnedItems.map((s) => (
+                          <ShortcutRow
+                            key={s.id}
+                            shortcut={s}
+                            isAdmin={isAdmin}
+                            onEdit={() => { setEditing(s); setView('form'); }}
+                            onDelete={() => setDeleteTarget(s)}
+                            onCopy={(content) => handleCopy(s, content)}
+                            onTogglePin={() => handleTogglePin(s)}
+                          />
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                    </div>
+                  )}
+                  {recentItems.length > 0 && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest font-semibold mb-1.5 px-0.5 flex items-center gap-1.5" style={{ color: 'rgba(14,14,14,0.40)' }}>
+                        <Clock size={11} strokeWidth={2} />
+                        Recent
+                      </p>
+                      <div className="space-y-1">
+                        {recentItems.map((s) => (
+                          <ShortcutRow
+                            key={s.id}
+                            shortcut={s}
+                            isAdmin={isAdmin}
+                            onEdit={() => { setEditing(s); setView('form'); }}
+                            onDelete={() => setDeleteTarget(s)}
+                            onCopy={(content) => handleCopy(s, content)}
+                            onTogglePin={() => handleTogglePin(s)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!loading && filtered.length === 0 && (
+                <EmptyState
+                  icon={<ClipboardList size={28} strokeWidth={1.3} />}
+                  message={
+                    activeProduct && activeTopic
+                      ? `No shortcuts tagged with both "${activeProduct}" and "${activeTopic}" — try clearing one filter.`
+                      : 'No shortcuts found'
+                  }
+                />
+              )}
+              {!loading && filtered.length > 0 && (
+                <div className="space-y-1">
+                  {filtered.map((s) => (
+                    <ShortcutRow
+                      key={s.id}
+                      shortcut={s}
+                      isAdmin={isAdmin}
+                      onEdit={() => { setEditing(s); setView('form'); }}
+                      onDelete={() => setDeleteTarget(s)}
+                      onCopy={(content) => handleCopy(s, content)}
+                      onTogglePin={() => handleTogglePin(s)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
       </div>
+
+      {/* "Copied" toast */}
+      <div
+        className={`fixed bottom-24 md:bottom-8 right-4 md:right-8 z-[70] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 transition-all duration-200 ${
+          toastMessage ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1 pointer-events-none'
+        }`}
+        style={{ backgroundColor: '#0E0E0E', color: '#fff' }}
+      >
+        <Check size={14} />
+        {toastMessage}
+      </div>
+
+      {/* Rendered before the ConfirmDialogs below so, at equal z-index, DOM order
+          puts the delete-category confirmation (triggered from within this modal)
+          on top of it rather than hidden behind it. */}
+      <ManageCategoriesModal
+        open={showManageCategories}
+        onClose={() => setShowManageCategories(false)}
+        categories={categories}
+        shortcuts={shortcuts}
+        renamingCategory={renamingCategory}
+        renameDraft={renameDraft}
+        onRenameDraftChange={setRenameDraft}
+        onStartRename={startRenameCategory}
+        onCommitRename={commitRenameCategory}
+        onCancelRename={() => setRenamingCategory(null)}
+        onRequestDelete={setDeleteCategoryTarget}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -378,165 +511,224 @@ export function ShortcutsDrawer() {
   );
 }
 
-// ─── Category sidebar item ────────────────────────────────────────────────────
+// ─── Facet chip ────────────────────────────────────────────────────────────────
 
-function CategorySidebarItem({ label, color, count, active, onClick, isAdmin, onRename, onDelete }: {
+function FacetChip({ label, color, active, onClick }: {
   label: string;
   color: string;
-  count: number;
   active: boolean;
   onClick: () => void;
-  isAdmin?: boolean;
-  onRename?: () => void;
-  onDelete?: () => void;
 }) {
   return (
-    <div
-      className="group w-full flex items-center gap-0.5 rounded-lg text-xs font-medium transition-all"
+    <button
+      onClick={onClick}
+      className="px-2 py-1 rounded-full text-xs font-medium transition-all"
       style={
         active
-          ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
-          : { color: 'rgba(14,14,14,0.55)' }
+          ? { backgroundColor: `${color}26`, color, border: `1px solid ${color}55` }
+          : { color: 'rgba(14,14,14,0.45)', backgroundColor: 'rgba(14,14,14,0.05)', border: '1px solid transparent' }
       }
     >
-      <button onClick={onClick} className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2 text-left">
-        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-        <span className="flex-1 truncate capitalize">{label}</span>
-        <span className="text-[10px] shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{count}</span>
-      </button>
-      {isAdmin && onRename && onDelete && (
-        <div className="flex items-center shrink-0 pr-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={(e) => { e.stopPropagation(); onRename(); }}
-            className="p-1 rounded hover:bg-black/5 transition-colors"
-            style={{ color: 'rgba(14,14,14,0.4)' }}
-            aria-label={`Rename ${label}`}
-          >
-            <Pencil size={11} />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="p-1 rounded hover:bg-red-50 hover:text-red-600 transition-colors"
-            style={{ color: 'rgba(14,14,14,0.4)' }}
-            aria-label={`Delete ${label}`}
-          >
-            <Trash2 size={11} />
+      {label}
+    </button>
+  );
+}
+
+// ─── Manage Categories (admin) ─────────────────────────────────────────────────
+// The legacy flat category taxonomy still backs the Add/Edit form and the
+// product/topic derivation, so renaming/deleting it stays available — just
+// relocated out of the main filter UI, which is now facet-driven.
+
+function ManageCategoriesModal({
+  open, onClose, categories, shortcuts, renamingCategory, renameDraft,
+  onRenameDraftChange, onStartRename, onCommitRename, onCancelRename, onRequestDelete,
+}: {
+  open: boolean;
+  onClose: () => void;
+  categories: string[];
+  shortcuts: Shortcut[];
+  renamingCategory: string | null;
+  renameDraft: string;
+  onRenameDraftChange: (v: string) => void;
+  onStartRename: (cat: string) => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  onRequestDelete: (cat: string) => void;
+}) {
+  if (!open) return null;
+  // Not the shared <Modal> (z-50) — this needs to sit above the drawer itself
+  // (z-[60]), so it's a matching z-[60] overlay instead; DOM order (rendered
+  // before the delete-category ConfirmDialog in the parent) keeps that
+  // confirmation visible on top of this when triggered from within it.
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-[#0E0E0E]/40 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto"
+        style={{ border: '1px solid rgba(14,14,14,0.09)' }}
+      >
+        <div className="flex items-center justify-between p-5" style={{ borderBottom: '1px solid rgba(14,14,14,0.09)' }}>
+          <h2 className="text-lg font-semibold text-ink">Manage Categories</h2>
+          <button onClick={onClose} className="text-ink/40 hover:text-ink transition-colors" aria-label="Close">
+            <X size={20} />
           </button>
         </div>
-      )}
+        <div className="p-5 space-y-1">
+          {categories.length === 0 && (
+            <p className="text-sm" style={{ color: 'rgba(14,14,14,0.45)' }}>No categories yet.</p>
+          )}
+          {categories.map((c) =>
+            renamingCategory === c ? (
+              <input
+                key={c}
+                autoFocus
+                value={renameDraft}
+                onChange={(e) => onRenameDraftChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onCommitRename();
+                  if (e.key === 'Escape') onCancelRename();
+                }}
+                onBlur={onCommitRename}
+                className="input text-sm py-1.5 px-2 w-full"
+              />
+            ) : (
+              <div key={c} className="group flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-black/[0.02] transition-colors">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colorForTag(c) }} />
+                <span className="flex-1 min-w-0 truncate text-sm text-ink capitalize">{c}</span>
+                <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>
+                  {shortcuts.filter((s) => s.category === c).length}
+                </span>
+                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => onStartRename(c)} className="p-1 rounded hover:bg-black/5" style={{ color: 'rgba(14,14,14,0.4)' }} aria-label={`Rename ${c}`}>
+                    <Pencil size={13} />
+                  </button>
+                  <button onClick={() => onRequestDelete(c)} className="p-1 rounded hover:bg-red-50 hover:text-red-600" style={{ color: 'rgba(14,14,14,0.4)' }} aria-label={`Delete ${c}`}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            )
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-// ─── Shortcut card ────────────────────────────────────────────────────────────
+// ─── Shortcut row (compact list item) ──────────────────────────────────────────
 
-function ShortcutCard({ shortcut, isAdmin, onEdit, onDelete }: {
+function ShortcutRow({ shortcut, isAdmin, onEdit, onDelete, onCopy, onTogglePin }: {
   shortcut: Shortcut;
   isAdmin: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onCopy: (content: string) => void;
+  onTogglePin: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [copiedVariantId, setCopiedVariantId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!copiedVariantId) return;
-    const t = setTimeout(() => setCopiedVariantId(null), 1500);
-    return () => clearTimeout(t);
-  }, [copiedVariantId]);
-
-  const handleCopy = async (variantId: string, content: string) => {
-    await navigator.clipboard.writeText(content);
-    setCopiedVariantId(variantId);
-  };
 
   const variants = shortcut.type === 'text' ? effectiveVariants(shortcut) : [];
-  const categoryColor = colorForCategory(shortcut.category);
+  const primary = variants[0];
+  const previewText = shortcut.type === 'link' ? shortcut.content : (primary?.content ?? '').split('\n')[0];
+  const expandable = isExpandable(shortcut);
+  const tag = shortcut.product || shortcut.topic;
+  const tagColor = tag ? colorForTag(tag) : null;
 
   return (
-    <div
-      className="card p-5 cursor-pointer transition-colors hover:bg-black/[0.015]"
-      style={{ borderLeft: `4px solid ${categoryColor}` }}
-      onClick={() => setExpanded((v) => !v)}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-semibold text-sm text-ink break-words">{shortcut.title}</p>
-          {shortcut.category && (
-            <span
-              className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-full capitalize font-medium"
-              style={{ backgroundColor: `${categoryColor}26`, color: categoryColor }}
-            >
-              {shortcut.category}
-            </span>
-          )}
+    <div className="rounded-lg" style={{ border: '1px solid rgba(14,14,14,0.08)' }}>
+      <div
+        className={`flex items-center gap-2 px-2.5 py-2 rounded-lg transition-colors hover:bg-black/[0.015] ${expandable ? 'cursor-pointer' : ''}`}
+        onClick={() => { if (expandable) setExpanded((v) => !v); }}
+      >
+        <button
+          onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+          className="shrink-0 transition-colors"
+          style={{ color: shortcut.pinned ? '#D4A847' : 'rgba(14,14,14,0.25)' }}
+          aria-label={shortcut.pinned ? 'Unpin' : 'Pin'}
+          title={shortcut.pinned ? 'Unpin' : 'Pin'}
+        >
+          <Star size={14} fill={shortcut.pinned ? 'currentColor' : 'none'} />
+        </button>
+
+        <div className="min-w-0 flex-1 truncate text-sm">
+          <span className="font-semibold text-ink">{shortcut.title}</span>
+          {previewText && <span style={{ color: 'rgba(14,14,14,0.45)' }}>: {previewText}</span>}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {isAdmin && (
-            <>
-              <button
-                onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                className="p-1 rounded hover:bg-black/5 transition-colors"
-                style={{ color: 'rgba(14,14,14,0.4)' }}
-                aria-label="Edit"
-              >
-                <Pencil size={13} />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="p-1 rounded hover:bg-red-50 hover:text-red-600 transition-colors"
-                style={{ color: 'rgba(14,14,14,0.4)' }}
-                aria-label="Delete"
-              >
-                <Trash2 size={13} />
-              </button>
-            </>
-          )}
-          <span style={{ color: 'rgba(14,14,14,0.35)' }}>
-            {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+
+        {tag && (
+          <span
+            className="shrink-0 hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+            style={tagColor ? { backgroundColor: `${tagColor}26`, color: tagColor } : undefined}
+          >
+            {tag}
           </span>
-        </div>
+        )}
+
+        {shortcut.type === 'link' ? (
+          <a
+            href={shortcut.content}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="btn-secondary shrink-0 inline-flex items-center gap-1 text-xs"
+          >
+            <ExternalLink size={12} />
+            Open
+          </a>
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); if (primary) onCopy(primary.content); }}
+            className="btn-secondary shrink-0 inline-flex items-center gap-1 text-xs"
+          >
+            <Copy size={12} />
+            Copy
+          </button>
+        )}
+
+        {isAdmin && (
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-1 rounded hover:bg-black/5 transition-colors" style={{ color: 'rgba(14,14,14,0.4)' }} aria-label="Edit">
+              <Pencil size={12} />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-1 rounded hover:bg-red-50 hover:text-red-600 transition-colors" style={{ color: 'rgba(14,14,14,0.4)' }} aria-label="Delete">
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
+
+        {expandable && (
+          <span className="shrink-0" style={{ color: 'rgba(14,14,14,0.30)' }}>
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </span>
+        )}
       </div>
 
-      {expanded && (
-        shortcut.type === 'link' ? (
-          <div className="mt-3">
-            <a
-              href={shortcut.content}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="btn-secondary inline-flex items-center gap-1.5 text-xs"
-            >
-              <ExternalLink size={12} />
-              Open link
-            </a>
-          </div>
-        ) : (
-          <div className="mt-2 space-y-2">
-            {variants.map((v) => (
-              <div key={v.id} className="rounded-lg p-2" style={{ backgroundColor: 'rgba(14,14,14,0.025)' }}>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'rgba(14,14,14,0.40)' }}>
-                    {variants.length > 1 ? v.label : 'Text'}
-                  </span>
+      {expanded && shortcut.type === 'text' && (
+        <div className="px-2.5 pb-2.5 space-y-2">
+          {variants.map((v) => (
+            <div key={v.id} className="rounded-lg p-2" style={{ backgroundColor: 'rgba(14,14,14,0.025)' }}>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'rgba(14,14,14,0.40)' }}>
+                  {variants.length > 1 ? v.label : 'Text'}
+                </span>
+                {variants.length > 1 && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleCopy(v.id, v.content); }}
+                    onClick={(e) => { e.stopPropagation(); onCopy(v.content); }}
                     className="btn-secondary inline-flex items-center gap-1.5 text-xs shrink-0"
                   >
-                    {copiedVariantId === v.id ? <Check size={12} /> : <Copy size={12} />}
-                    {copiedVariantId === v.id ? 'Copied!' : 'Copy'}
+                    <Copy size={12} />
+                    Copy
                   </button>
-                </div>
-                <div
-                  className="shortcut-content text-xs"
-                  style={{ color: 'rgba(14,14,14,0.55)' }}
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(v.content) }}
-                />
+                )}
               </div>
-            ))}
-          </div>
-        )
+              <div
+                className="shortcut-content text-xs"
+                style={{ color: 'rgba(14,14,14,0.55)' }}
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(v.content) }}
+              />
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

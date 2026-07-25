@@ -314,7 +314,12 @@ model Shortcut {
   type          String   @default("text") // "text" | "link"
   content       String   // the URL for "link"; for "text", kept in sync with variants[0] (legacy single-variant fallback)
   variants      String   @default("[]") // JSON: [{id, label, content}] — multiple response variants for "text" shortcuts only
-  category      String   @default("")
+  category      String   @default("") // legacy flat tag — still the only field the Add/Edit form writes to; product/topic are derived from it server-side
+  product       String   @default("") // facet: Android | iOS | Geofinder | Glassagram | Знайомства | Premium | "" (derived from category)
+  topic         String   @default("") // facet: Billing | General | Sales | Common ticket answers | Common requests | "" (derived from category)
+  pinned        Boolean  @default(false) // team-wide pin, toggleable by any authenticated user
+  usageCount    Int      @default(0) // bumped each time any user copies this shortcut's text
+  lastUsedAt    DateTime? // last time any user copied this shortcut's text
   createdById   String?
   createdBy     User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdByName String?
@@ -322,6 +327,9 @@ model Shortcut {
   updatedAt     DateTime @updatedAt
 
   @@index([category])
+  @@index([product])
+  @@index([topic])
+  @@index([pinned])
 }
 
 model PeakRequest {

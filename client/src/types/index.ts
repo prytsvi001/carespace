@@ -316,7 +316,12 @@ export interface Shortcut {
   type: ShortcutType;
   content: string;
   variants: ShortcutVariant[]; // "text" shortcuts only — empty for legacy rows and all "link" shortcuts
-  category: string;
+  category: string; // legacy flat tag — still the only field the Add/Edit form writes to
+  product: string; // facet, derived server-side from category — "" if uncategorized
+  topic: string; // facet, derived server-side from category — "" if uncategorized
+  pinned: boolean;
+  usageCount: number;
+  lastUsedAt: string | null;
   createdById: string | null;
   createdByName: string | null;
   createdAt: string;
