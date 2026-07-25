@@ -5,7 +5,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ClipboardList, X, Search, Copy, Check, ExternalLink, Plus, Pencil, Trash2, ArrowLeft,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { useAuth } from '../context/AuthContext';
 import {
   getShortcuts, createShortcut, updateShortcut, deleteShortcut,
@@ -13,6 +16,18 @@ import {
 } from '../api';
 import { Shortcut, ShortcutType, ShortcutVariant } from '../types';
 import { Spinner, EmptyState, ConfirmDialog, AutoTextarea } from './ui';
+
+// Single-line breaks (not just blank-line paragraph breaks) should render as <br>,
+// since shortcut text is closer to a chat reply than a document — most line breaks
+// in these templates aren't meant to start a new paragraph.
+marked.setOptions({ breaks: true, gfm: true });
+
+// Shortcut text is free-typed by any authenticated user (not just admins — see
+// POST /api/shortcuts), so it's stored-XSS-reachable if rendered unsanitized —
+// DOMPurify strips anything marked's HTML-passthrough would otherwise let through.
+function renderMarkdown(text: string): string {
+  return DOMPurify.sanitize(marked.parse(text, { async: false }) as string);
+}
 
 type View = 'list' | 'form';
 
@@ -436,14 +451,17 @@ function ShortcutCard({ shortcut, isAdmin, onEdit, onDelete }: {
   };
 
   const variants = shortcut.type === 'text' ? effectiveVariants(shortcut) : [];
-  const primary = variants[0];
   const categoryColor = colorForCategory(shortcut.category);
 
   return (
-    <div className="card p-5" style={{ borderLeft: `4px solid ${categoryColor}` }}>
+    <div
+      className="card p-5 cursor-pointer transition-colors hover:bg-black/[0.015]"
+      style={{ borderLeft: `4px solid ${categoryColor}` }}
+      onClick={() => setExpanded((v) => !v)}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-semibold text-sm text-ink truncate">{shortcut.title}</p>
+          <p className="font-semibold text-sm text-ink break-words">{shortcut.title}</p>
           {shortcut.category && (
             <span
               className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-full capitalize font-medium"
@@ -453,91 +471,72 @@ function ShortcutCard({ shortcut, isAdmin, onEdit, onDelete }: {
             </span>
           )}
         </div>
-        {isAdmin && (
-          <div className="flex items-center gap-1 shrink-0">
-            <button onClick={onEdit} className="p-1 rounded hover:bg-black/5 transition-colors" style={{ color: 'rgba(14,14,14,0.4)' }} aria-label="Edit">
-              <Pencil size={13} />
-            </button>
-            <button onClick={onDelete} className="p-1 rounded hover:bg-red-50 hover:text-red-600 transition-colors" style={{ color: 'rgba(14,14,14,0.4)' }} aria-label="Delete">
-              <Trash2 size={13} />
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {isAdmin && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                className="p-1 rounded hover:bg-black/5 transition-colors"
+                style={{ color: 'rgba(14,14,14,0.4)' }}
+                aria-label="Edit"
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                className="p-1 rounded hover:bg-red-50 hover:text-red-600 transition-colors"
+                style={{ color: 'rgba(14,14,14,0.4)' }}
+                aria-label="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+          <span style={{ color: 'rgba(14,14,14,0.35)' }}>
+            {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          </span>
+        </div>
       </div>
 
-      {shortcut.type === 'link' ? (
-        <div className="mt-3">
-          <a
-            href={shortcut.content}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-secondary inline-flex items-center gap-1.5 text-xs"
-          >
-            <ExternalLink size={12} />
-            Open link
-          </a>
-        </div>
-      ) : !expanded ? (
-        <>
-          <p
-            className="text-xs mt-2"
-            style={{
-              color: 'rgba(14,14,14,0.55)',
-              whiteSpace: 'pre-wrap',
-              display: '-webkit-box',
-              WebkitLineClamp: 5,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}
-          >
-            {primary?.content}
-          </p>
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
-            {primary && (
-              <button
-                onClick={() => handleCopy(primary.id, primary.content)}
-                className="btn-secondary inline-flex items-center gap-1.5 text-xs"
-              >
-                {copiedVariantId === primary.id ? <Check size={12} /> : <Copy size={12} />}
-                {copiedVariantId === primary.id ? 'Copied!' : 'Copy'}
-              </button>
-            )}
-            <button
-              onClick={() => setExpanded(true)}
-              className="text-xs font-medium hover:underline"
-              style={{ color: 'rgba(14,14,14,0.55)' }}
+      {expanded && (
+        shortcut.type === 'link' ? (
+          <div className="mt-3">
+            <a
+              href={shortcut.content}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="btn-secondary inline-flex items-center gap-1.5 text-xs"
             >
-              {variants.length > 1 ? `Show more (${variants.length} variants)` : 'Show more'}
-            </button>
+              <ExternalLink size={12} />
+              Open link
+            </a>
           </div>
-        </>
-      ) : (
-        <div className="mt-2 space-y-2">
-          {variants.map((v) => (
-            <div key={v.id} className="rounded-lg p-2" style={{ backgroundColor: 'rgba(14,14,14,0.025)' }}>
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'rgba(14,14,14,0.40)' }}>
-                  {variants.length > 1 ? v.label : 'Text'}
-                </span>
-                <button
-                  onClick={() => handleCopy(v.id, v.content)}
-                  className="btn-secondary inline-flex items-center gap-1.5 text-xs shrink-0"
-                >
-                  {copiedVariantId === v.id ? <Check size={12} /> : <Copy size={12} />}
-                  {copiedVariantId === v.id ? 'Copied!' : 'Copy'}
-                </button>
+        ) : (
+          <div className="mt-2 space-y-2">
+            {variants.map((v) => (
+              <div key={v.id} className="rounded-lg p-2" style={{ backgroundColor: 'rgba(14,14,14,0.025)' }}>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'rgba(14,14,14,0.40)' }}>
+                    {variants.length > 1 ? v.label : 'Text'}
+                  </span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleCopy(v.id, v.content); }}
+                    className="btn-secondary inline-flex items-center gap-1.5 text-xs shrink-0"
+                  >
+                    {copiedVariantId === v.id ? <Check size={12} /> : <Copy size={12} />}
+                    {copiedVariantId === v.id ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                <div
+                  className="shortcut-content text-xs"
+                  style={{ color: 'rgba(14,14,14,0.55)' }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(v.content) }}
+                />
               </div>
-              <p className="text-xs" style={{ color: 'rgba(14,14,14,0.55)', whiteSpace: 'pre-wrap' }}>{v.content}</p>
-            </div>
-          ))}
-          <button
-            onClick={() => setExpanded(false)}
-            className="text-xs font-medium hover:underline"
-            style={{ color: 'rgba(14,14,14,0.55)' }}
-          >
-            Show less
-          </button>
-        </div>
+            ))}
+          </div>
+        )
       )}
     </div>
   );

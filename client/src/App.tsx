@@ -10,7 +10,11 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Modal, Spinner } from './components/ui';
 import { getTelegramLinkCode, getTelegramStatus } from './api';
 import Login from './pages/Login';
-import { ShortcutsDrawer } from './components/ShortcutsDrawer';
+// Lazy — pulls in marked/DOMPurify for markdown rendering, no need to block the
+// initial page load with that for users who never open the drawer.
+const ShortcutsDrawer = React.lazy(() =>
+  import('./components/ShortcutsDrawer').then((m) => ({ default: m.ShortcutsDrawer }))
+);
 import { getUnreadCount, getNewRequestsCount } from './api';
 
 // Every tab is code-split — only the active tab's chunk (plus its own
@@ -435,7 +439,9 @@ function MainApp() {
         </div>
       </nav>
 
-      <ShortcutsDrawer />
+      <Suspense fallback={null}>
+        <ShortcutsDrawer />
+      </Suspense>
 
       <TelegramModal
         open={showTelegramModal}

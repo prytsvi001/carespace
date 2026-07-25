@@ -134,4 +134,31 @@
     background-color: rgba(14, 14, 14, 0.07);
     color: rgba(14, 14, 14, 0.58);
   }
+
+  /* ── Rendered markdown (Shortcuts drawer) ─────────────────────── */
+  /* Tailwind's preflight zeroes out list-style/margin on ul/ol — restore just
+     enough for shortcut text (bold, bullet/numbered lists, paragraphs) to read
+     as formatted content instead of a wall of raw markdown syntax. */
+  .shortcut-content p {
+    margin: 0 0 0.5em 0;
+  }
+  .shortcut-content p:last-child {
+    margin-bottom: 0;
+  }
+  .shortcut-content ul {
+    list-style: disc;
+    padding-left: 1.25em;
+    margin: 0 0 0.5em 0;
+  }
+  .shortcut-content ol {
+    list-style: decimal;
+    padding-left: 1.25em;
+    margin: 0 0 0.5em 0;
+  }
+  .shortcut-content li {
+    margin: 0.15em 0;
+  }
+  .shortcut-content strong {
+    font-weight: 600;
+  }
 }
