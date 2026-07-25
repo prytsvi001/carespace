@@ -23,12 +23,26 @@ import { PeekCalendarEntry } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
 
 const ASSIGNEE_COLORS: Record<string, string> = {
-  'Iryna Kolodienko': '#85B7EB',
-  'Victoria Horopeka': '#F0997B',
-  'Julia Manson': '#AFA9EC',
+  'Iryna Kolodienko': '#4A90D9',
+  'Victoria Horopeka': '#E8634A',
+  'Julia Manson': '#8B5CF6',
 };
-const DEFAULT_COLOR = '#94A3B8';
+const DEFAULT_COLOR = '#64748B';
 const colorForAssignee = (name: string) => ASSIGNEE_COLORS[name] ?? DEFAULT_COLOR;
+
+// These are now solid, fairly saturated fills (not pale tints), so the text color
+// has to be picked per-color rather than assumed — WCAG relative luminance against
+// white text vs the app's near-black ink (#0E0E0E), whichever gives more contrast.
+function textColorForBackground(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const linearize = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const luminance = 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
+  const contrastWithWhite = 1.05 / (luminance + 0.05);
+  const contrastWithInk = (luminance + 0.05) / (0.0044 + 0.05); // 0.0044 ≈ luminance of #0E0E0E
+  return contrastWithWhite >= contrastWithInk ? '#FFFFFF' : '#0E0E0E';
+}
 
 const MAX_PER_DAY = 2;
 
@@ -58,11 +72,12 @@ function EntryChip({ entry, onDelete, onEdit }: {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: entry.id });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
   const color = colorForAssignee(entry.user.name);
+  const textColor = textColorForBackground(color);
 
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, backgroundColor: `${color}26`, color, border: `1px solid ${color}55` }}
+      style={{ ...style, backgroundColor: color, color: textColor }}
       {...listeners}
       {...attributes}
       onClick={(e) => { e.stopPropagation(); onEdit(); }}
@@ -266,10 +281,9 @@ export default function PeekRequestsCalendar() {
           return (
             <span
               key={name}
-              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium"
-              style={{ backgroundColor: `${color}26`, color, border: `1px solid ${color}55` }}
+              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+              style={{ backgroundColor: color, color: textColorForBackground(color) }}
             >
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
               {name}
             </span>
           );
@@ -303,17 +317,17 @@ export default function PeekRequestsCalendar() {
           </div>
 
           <DragOverlay>
-            {activeEntry && (
-              <div
-                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium shadow-lg"
-                style={{
-                  backgroundColor: `${colorForAssignee(activeEntry.user.name)}26`,
-                  color: colorForAssignee(activeEntry.user.name),
-                }}
-              >
-                {activeEntry.user.name.split(' ')[0]}{activeEntry.hours ? ` · ${activeEntry.hours}` : ''}
-              </div>
-            )}
+            {activeEntry && (() => {
+              const color = colorForAssignee(activeEntry.user.name);
+              return (
+                <div
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium shadow-lg"
+                  style={{ backgroundColor: color, color: textColorForBackground(color) }}
+                >
+                  {activeEntry.user.name.split(' ')[0]}{activeEntry.hours ? ` · ${activeEntry.hours}` : ''}
+                </div>
+              );
+            })()}
           </DragOverlay>
         </DndContext>
       )}
