@@ -30,9 +30,11 @@ const ASSIGNEE_COLORS: Record<string, string> = {
 const DEFAULT_COLOR = '#64748B';
 const colorForAssignee = (name: string) => ASSIGNEE_COLORS[name] ?? DEFAULT_COLOR;
 
-// These are now solid, fairly saturated fills (not pale tints), so the text color
-// has to be picked per-color rather than assumed — WCAG relative luminance against
-// white text vs the app's near-black ink (#0E0E0E), whichever gives more contrast.
+// Tiles/legend render these as a light tint (~15% alpha over white), matching the
+// Support Calendar's own tint level (e.g. bg-amber-100) rather than a solid fill —
+// so the raw accent hue alone isn't dark enough to use as text. Picked via WCAG
+// relative luminance against white vs the app's near-black ink (#0E0E0E), whichever
+// gives more contrast; against a background this light, ink wins by a wide margin.
 function textColorForBackground(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -77,7 +79,7 @@ function EntryChip({ entry, onDelete, onEdit }: {
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, backgroundColor: color, color: textColor }}
+      style={{ ...style, backgroundColor: `${color}26`, color: textColor, border: `1px solid ${color}55` }}
       {...listeners}
       {...attributes}
       onClick={(e) => { e.stopPropagation(); onEdit(); }}
@@ -282,7 +284,7 @@ export default function PeekRequestsCalendar() {
             <span
               key={name}
               className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-              style={{ backgroundColor: color, color: textColorForBackground(color) }}
+              style={{ backgroundColor: `${color}26`, color: textColorForBackground(color), border: `1px solid ${color}55` }}
             >
               {name}
             </span>
@@ -322,7 +324,7 @@ export default function PeekRequestsCalendar() {
               return (
                 <div
                   className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium shadow-lg"
-                  style={{ backgroundColor: color, color: textColorForBackground(color) }}
+                  style={{ backgroundColor: `${color}26`, color: textColorForBackground(color), border: `1px solid ${color}55` }}
                 >
                   {activeEntry.user.name.split(' ')[0]}{activeEntry.hours ? ` · ${activeEntry.hours}` : ''}
                 </div>
