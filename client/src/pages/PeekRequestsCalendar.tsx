@@ -22,29 +22,19 @@ import {
 import { PeekCalendarEntry } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
 
-const ASSIGNEE_COLORS: Record<string, string> = {
-  'Iryna Kolodienko': '#6AAEE8',
-  'Victoria Horopeka': '#E8896A',
-  'Julia Manson': '#9B89D4',
-};
-const DEFAULT_COLOR = '#64748B';
-const colorForAssignee = (name: string) => ASSIGNEE_COLORS[name] ?? DEFAULT_COLOR;
+// Each agent's color is pinned to an existing Support Calendar event color, per
+// request — Iryna = Night Shift, Victoria H. = Sick leave without note, Julia =
+// Birthday off (see LEAVE_COLORS / getEventColor in ShiftCalendar.tsx) — so these
+// reuse the exact same Tailwind classes rather than approximating with hex values.
+interface AssigneeStyle { bg: string; text: string; border: string; dot: string }
 
-// Tiles/legend render these as a light tint (~15% alpha over white), matching the
-// Support Calendar's own tint level (e.g. bg-amber-100) rather than a solid fill —
-// so the raw accent hue alone isn't dark enough to use as text. Picked via WCAG
-// relative luminance against white vs the app's near-black ink (#0E0E0E), whichever
-// gives more contrast; against a background this light, ink wins by a wide margin.
-function textColorForBackground(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const linearize = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
-  const luminance = 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
-  const contrastWithWhite = 1.05 / (luminance + 0.05);
-  const contrastWithInk = (luminance + 0.05) / (0.0044 + 0.05); // 0.0044 ≈ luminance of #0E0E0E
-  return contrastWithWhite >= contrastWithInk ? '#FFFFFF' : '#0E0E0E';
-}
+const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
+  'Iryna Kolodienko': { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-400' },
+  'Victoria Horopeka': { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-400' },
+  'Julia Manson': { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-200', dot: 'bg-violet-400' },
+};
+const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
+const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
 
 const MAX_PER_DAY = 2;
 
@@ -73,17 +63,16 @@ function EntryChip({ entry, onDelete, onEdit }: {
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: entry.id });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
-  const color = colorForAssignee(entry.user.name);
-  const textColor = textColorForBackground(color);
+  const s = styleForAssignee(entry.user.name);
 
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, backgroundColor: `${color}26`, color: textColor, border: `1px solid ${color}55` }}
+      style={style}
       {...listeners}
       {...attributes}
       onClick={(e) => { e.stopPropagation(); onEdit(); }}
-      className={`group flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium select-none cursor-pointer ${isDragging ? 'opacity-50' : ''}`}
+      className={`group flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium select-none cursor-pointer border ${s.bg} ${s.text} ${s.border} ${isDragging ? 'opacity-50' : ''}`}
     >
       <span className="truncate min-w-0 flex-1" title={entry.user.name}>
         {entry.user.name.split(' ')[0]}{entry.hours ? ` · ${entry.hours}` : ''}
@@ -279,12 +268,11 @@ export default function PeekRequestsCalendar() {
       {/* Legend */}
       <div className="flex flex-wrap gap-2">
         {(['Iryna Kolodienko', 'Victoria Horopeka', 'Julia Manson']).map((name) => {
-          const color = colorForAssignee(name);
+          const s = styleForAssignee(name);
           return (
             <span
               key={name}
-              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-              style={{ backgroundColor: `${color}26`, color: textColorForBackground(color), border: `1px solid ${color}55` }}
+              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${s.bg} ${s.text} ${s.border}`}
             >
               {name}
             </span>
@@ -320,11 +308,10 @@ export default function PeekRequestsCalendar() {
 
           <DragOverlay>
             {activeEntry && (() => {
-              const color = colorForAssignee(activeEntry.user.name);
+              const s = styleForAssignee(activeEntry.user.name);
               return (
                 <div
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium shadow-lg"
-                  style={{ backgroundColor: `${color}26`, color: textColorForBackground(color), border: `1px solid ${color}55` }}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium shadow-lg border ${s.bg} ${s.text} ${s.border}`}
                 >
                   {activeEntry.user.name.split(' ')[0]}{activeEntry.hours ? ` · ${activeEntry.hours}` : ''}
                 </div>
@@ -349,19 +336,18 @@ export default function PeekRequestsCalendar() {
               <label className="label">Agent *</label>
               <div className="grid grid-cols-1 gap-2">
                 {assignees.map((a) => {
-                  const color = colorForAssignee(a.name);
+                  const s = styleForAssignee(a.name);
                   const active = form.userId === a.id;
                   return (
                     <button
                       key={a.id}
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, userId: a.id }))}
-                      className="p-2 rounded-lg border-2 text-xs font-medium transition-all text-left flex items-center gap-2"
-                      style={active
-                        ? { borderColor: color, backgroundColor: `${color}20`, color: '#0E0E0E' }
-                        : { borderColor: 'rgba(14,14,14,0.12)', color: 'rgba(14,14,14,0.55)' }}
+                      className={`p-2 rounded-lg border-2 text-xs font-medium transition-all text-left flex items-center gap-2 ${
+                        active ? `${s.bg} ${s.text} ${s.border}` : 'border-slate-200 text-slate-500'
+                      }`}
                     >
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.dot}`} />
                       {a.name}
                     </button>
                   );
