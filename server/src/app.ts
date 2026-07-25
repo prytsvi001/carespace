@@ -23,6 +23,7 @@ import qaReportsRouter from './routes/qaReports';
 import pdpRouter from './routes/pdp';
 import quickLinksRouter from './routes/quickLinks';
 import shortcutsRouter from './routes/shortcuts';
+import peekCalendarRouter from './routes/peekCalendar';
 import kpiRouter from './routes/kpi';
 import dutyRouter from './routes/duty';
 import telegramRouter from './routes/telegram';
@@ -93,6 +94,7 @@ app.use('/api/qa-reports', qaReportsRouter); // requireAuth applied inside route
 app.use('/api/pdp',         pdpRouter);        // requireAuth applied inside router
 app.use('/api/quick-links', quickLinksRouter); // requireAuth applied inside router
 app.use('/api/shortcuts',   shortcutsRouter);   // requireAuth applied inside router
+app.use('/api/peek-calendar', peekCalendarRouter); // requireAuth + per-user access check applied inside router
 app.use('/api/kpi',         kpiRouter);        // requireAuth applied inside router
 app.use('/api/duty',        dutyRouter);       // requireAuth applied inside router
 app.use('/api/telegram',    telegramRouter);   // requireAuth applied per-route (webhook has none)

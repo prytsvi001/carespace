@@ -71,6 +71,25 @@ export const archiveCalendarEvent = (id: string) =>
 export const deleteCalendarEvent = (id: string) =>
   api.delete(`/calendar/delete/${id}`).then(r => r.data);
 
+// ─── Peek Requests Calendar ──────────────────────────────────────────────────
+export const getPeekCalendarAccess = (): Promise<{ canAccess: boolean }> =>
+  api.get('/peek-calendar/access').then(r => r.data);
+
+export const getPeekCalendarAssignees = () =>
+  api.get('/peek-calendar/assignees').then(r => r.data);
+
+export const getPeekCalendarEntries = (params?: { year?: number; month?: number }) =>
+  api.get('/peek-calendar', { params }).then(r => r.data);
+
+export const createPeekCalendarEntry = (data: { userId: string; eventDate: string; hours?: string }) =>
+  api.post('/peek-calendar', data).then(r => r.data);
+
+export const updatePeekCalendarEntry = (id: string, data: Partial<{ eventDate: string; hours: string }>) =>
+  api.put(`/peek-calendar/${id}`, data).then(r => r.data);
+
+export const deletePeekCalendarEntry = (id: string) =>
+  api.delete(`/peek-calendar/${id}`).then(r => r.data);
+
 // ─── QA ────────────────────────────────────────────────────────────────────
 export const getQAEntries = (params?: { channel?: string; dateFrom?: string; dateTo?: string; limit?: number; offset?: number; includeArchived?: boolean }) =>
   api.get('/qa', { params }).then(r => r.data);

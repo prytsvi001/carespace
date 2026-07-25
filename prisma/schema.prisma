@@ -35,6 +35,7 @@ model User {
   agent     Agent?   @relation(fields: [agentId], references: [id])
   peekOnDuty       Boolean @default(false) // manually toggled "I'm online" status for Peek Requests duty
   peekDutyEligible Boolean @default(false) // extra non-peek_handler users allowed to toggle peekOnDuty (e.g. an agent who sometimes covers Peek)
+  peekCalendarAccess Boolean @default(false) // extra non-peek_handler user allowed to view/edit + be scheduled on the Peek Requests Calendar (e.g. Julia Manson)
   telegramChatId     String?   @unique // set once the user completes the Telegram link flow
   telegramLinkCode   String?   @unique // short-lived pending code shown in the Connect Telegram modal
   telegramLinkExpiry DateTime? // telegramLinkCode becomes invalid after this
@@ -48,6 +49,7 @@ model User {
   receivedMessages InboxMessage[] @relation("ReceivedMessages")
   reviews          ClientReview[]
   pdpPlan          PdpPlan?
+  peekCalendarEntries PeekCalendarEntry[]
 
   @@index([peekOnDuty])
 }
@@ -356,4 +358,21 @@ model TelegramReminderLog {
 
   @@unique([agentId, reminderType, shiftDate])
   @@index([agentId])
+}
+
+// Who's covering Peek Requests each day — separate from the Support Agents Shift
+// Calendar (CalendarEvent) since assignees here are Users directly (Iryna Kolodienko
+// and Victoria Horopeka are peek_handlers with no Agent record at all), not Agents,
+// and there's no leave-type/shift-type structure, just an optional free-form hours string.
+model PeekCalendarEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  eventDate DateTime // UTC date marker (day-only), same convention as CalendarEvent.eventDate
+  hours     String?  // optional free-form working hours, e.g. "09:00-17:00"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([eventDate])
 }

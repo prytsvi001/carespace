@@ -14,11 +14,11 @@ import { ShortcutsDrawer } from './components/ShortcutsDrawer';
 import { getUnreadCount, getNewRequestsCount } from './api';
 
 // Every tab is code-split — only the active tab's chunk (plus its own
-// dependencies, e.g. recharts for Statistics, @dnd-kit for ShiftCalendar) is
+// dependencies, e.g. recharts for Statistics, @dnd-kit for CalendarTab) is
 // fetched, instead of bundling all ten pages into the initial JS payload.
 const DailyLog = React.lazy(() => import('./pages/DailyLog'));
 const Statistics = React.lazy(() => import('./pages/Statistics'));
-const ShiftCalendar = React.lazy(() => import('./pages/ShiftCalendar'));
+const CalendarTab = React.lazy(() => import('./pages/CalendarTab'));
 const AIChatQA = React.lazy(() => import('./pages/AIChatQA'));
 const PeakRequests = React.lazy(() => import('./pages/PeakRequests'));
 const MyPlans = React.lazy(() => import('./pages/MyPlans'));
@@ -117,9 +117,10 @@ function MainApp() {
 
   const inSpace = !SHARED_TAB_IDS.has(activeTab);
   const spaceTabsForRole = ALL_SPACE_TABS.filter((t) => t.roles.includes(userRole));
-  const visibleSharedTabs = isPeekHandler
+  const visibleSharedTabs = (isPeekHandler
     ? SHARED_TABS.filter((t) => PEEK_HANDLER_TABS.has(t.id))
-    : SHARED_TABS;
+    : SHARED_TABS
+  ).map((t) => (isPeekHandler && t.id === 'calendar' ? { ...t, label: 'Peek Calendar', shortLabel: 'Peek Cal' } : t));
 
   // Keep dismissedCount in sync when newRequestsCount drops below it
   // (e.g. a request was processed), so the next new request shows a badge
@@ -371,7 +372,7 @@ function MainApp() {
         <Suspense fallback={<TabLoadingFallback />}>
           {activeTab === 'daily'      && <DailyLog onSyncStats={syncStatsMonth} onDataChanged={notifyStatsRefresh} />}
           {activeTab === 'stats'      && <Statistics year={statsYear} month={statsMonth} onYearChange={setStatsYear} onMonthChange={setStatsMonth} refreshKey={statsRefreshKey} />}
-          {activeTab === 'calendar'   && <ShiftCalendar onDataChanged={notifyStatsRefresh} readOnly={isPeekHandler} />}
+          {activeTab === 'calendar'   && <CalendarTab onDataChanged={notifyStatsRefresh} />}
           {activeTab === 'qa'         && <AIChatQA />}
           {activeTab === 'requests'   && <PeakRequests onDataChanged={fetchNewRequestsCount} />}
           {activeTab === 'plans'      && <MyPlans />}

@@ -80,6 +80,16 @@ export interface PeakRequest {
   archived: boolean;
 }
 
+export interface PeekCalendarEntry {
+  id: string;
+  userId: string;
+  user: { id: string; name: string };
+  eventDate: string;
+  hours: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AgentStats {
   agentId: string;
   agentName: string;
