@@ -15,7 +15,9 @@ function requireCronSecret(req: Request, res: Response, next: NextFunction) {
 }
 router.use(requireCronSecret);
 
-type ReminderType = 'MORNING_START' | 'MORNING_END' | 'NIGHT_START' | 'NIGHT_END';
+type ReminderType =
+  | 'MORNING_LOGIN' | 'MORNING_PROXY_1' | 'MORNING_PROXY_2' | 'MORNING_PROXY_3' | 'MORNING_LOGOUT'
+  | 'NIGHT_LOGIN' | 'NIGHT_PROXY_1' | 'NIGHT_PROXY_2' | 'NIGHT_PROXY_3' | 'NIGHT_LOGOUT';
 
 interface ReminderDef {
   type: ReminderType;
@@ -43,14 +45,26 @@ interface ReminderDef {
 // message hours late would be actively misleading in a way a shift/proxy nudge would not be.
 const TOLERANCE_MINUTES = 240;
 
+const LOGIN_MESSAGE = 'бро, ти вже на зміні? залогуйся в CareSpace, будь ласка 🙏';
+const LOGOUT_MESSAGE = 'бро, зміна майже закінчилась! не забудь заповнити звіт і натиснути End Shift в CareSpace ✅';
+const PROXY_MESSAGE = '🔒 Не забудь увімкнути Структура Проксі';
+
 const REMINDERS: ReminderDef[] = [
-  { type: 'MORNING_START', targetMinutes: 9 * 60 + 10, shiftType: 'MORNING', dayOffset: 0, message: "Don't forget to log your shift in CareSpace Daily Log 📋" },
-  { type: 'MORNING_END', targetMinutes: 16 * 60 + 50, shiftType: 'MORNING', dayOffset: 0, message: 'Time to fill in your end-of-shift report and end your shift in CareSpace ✅' },
-  { type: 'NIGHT_START', targetMinutes: 17 * 60 + 10, shiftType: 'NIGHT', dayOffset: 0, message: "Don't forget to log your shift in CareSpace Daily Log 📋" },
-  // 00:50 — by the time this fires, the Kyiv calendar day has already rolled over past midnight,
-  // but the night shift ending "now" was scheduled against YESTERDAY's CalendarEvent.eventDate,
-  // not today's. This is the one reminder type that looks a day back.
-  { type: 'NIGHT_END', targetMinutes: 0 * 60 + 50, shiftType: 'NIGHT', dayOffset: -1, message: 'Time to fill in your end-of-shift report and end your shift in CareSpace ✅' },
+  // Morning shift (09:00–17:00 Kyiv)
+  { type: 'MORNING_LOGIN', targetMinutes: 9 * 60 + 20, shiftType: 'MORNING', dayOffset: 0, message: LOGIN_MESSAGE },
+  { type: 'MORNING_PROXY_1', targetMinutes: 9 * 60 + 20, shiftType: 'MORNING', dayOffset: 0, message: PROXY_MESSAGE },
+  { type: 'MORNING_PROXY_2', targetMinutes: 13 * 60, shiftType: 'MORNING', dayOffset: 0, message: PROXY_MESSAGE },
+  { type: 'MORNING_PROXY_3', targetMinutes: 16 * 60 + 50, shiftType: 'MORNING', dayOffset: 0, message: PROXY_MESSAGE },
+  { type: 'MORNING_LOGOUT', targetMinutes: 16 * 60 + 40, shiftType: 'MORNING', dayOffset: 0, message: LOGOUT_MESSAGE },
+  // Night shift (17:00–01:00 Kyiv)
+  { type: 'NIGHT_LOGIN', targetMinutes: 17 * 60 + 20, shiftType: 'NIGHT', dayOffset: 0, message: LOGIN_MESSAGE },
+  { type: 'NIGHT_PROXY_1', targetMinutes: 17 * 60 + 20, shiftType: 'NIGHT', dayOffset: 0, message: PROXY_MESSAGE },
+  { type: 'NIGHT_PROXY_2', targetMinutes: 21 * 60, shiftType: 'NIGHT', dayOffset: 0, message: PROXY_MESSAGE },
+  // 00:40/00:50 — by the time these fire, the Kyiv calendar day has already rolled over past
+  // midnight, but the night shift ending "now" was scheduled against YESTERDAY's
+  // CalendarEvent.eventDate, not today's. These are the reminder types that look a day back.
+  { type: 'NIGHT_LOGOUT', targetMinutes: 0 * 60 + 40, shiftType: 'NIGHT', dayOffset: -1, message: LOGOUT_MESSAGE },
+  { type: 'NIGHT_PROXY_3', targetMinutes: 0 * 60 + 50, shiftType: 'NIGHT', dayOffset: -1, message: PROXY_MESSAGE },
 ];
 
 function getKyivParts(date: Date): { minutesSinceMidnight: number; year: number; month: number; day: number } {
@@ -191,91 +205,10 @@ router.get('/task-reminders', async (_req: Request, res: Response) => {
   }
 });
 
-type ProxyReminderType = 'PROXY_10' | 'PROXY_16' | 'PROXY_20';
-
-const PROXY_REMINDER_MESSAGE = '🔒 Не забудь увімкнути Структура Проксі';
-
-const PROXY_REMINDERS: { type: ProxyReminderType; targetMinutes: number }[] = [
-  { type: 'PROXY_10', targetMinutes: 10 * 60 },
-  { type: 'PROXY_16', targetMinutes: 16 * 60 },
-  { type: 'PROXY_20', targetMinutes: 20 * 60 },
-];
-
-// GET /api/cron/proxy-reminders — nudges agents currently on an active (unarchived)
-// Daily Log shift to enable the Struktura Proxy, at 10:00/16:00/20:00 Kyiv. Only
-// agents actually on shift right now get it — never peek_handlers (who have no
-// shift to be "on" anyway, but excluded explicitly too per spec), never agents who
-// aren't currently clocked in.
-router.get('/proxy-reminders', async (_req: Request, res: Response) => {
-  try {
-    const kyiv = getKyivParts(new Date());
-    const kyivHH = String(Math.floor(kyiv.minutesSinceMidnight / 60)).padStart(2, '0');
-    const kyivMM = String(kyiv.minutesSinceMidnight % 60).padStart(2, '0');
-    console.log(`[proxy-reminders] fired at ${new Date().toISOString()} (UTC) = ${kyivHH}:${kyivMM} Kyiv, ${kyiv.year}-${kyiv.month}-${kyiv.day}`);
-    const sent: string[] = [];
-
-    for (const reminder of PROXY_REMINDERS) {
-      const diff = kyiv.minutesSinceMidnight - reminder.targetMinutes;
-      const inWindow = diff >= 0 && diff < TOLERANCE_MINUTES;
-      console.log(`[proxy-reminders] ${reminder.type}: target ${Math.floor(reminder.targetMinutes / 60)}:${String(reminder.targetMinutes % 60).padStart(2, '0')} Kyiv, diff=${diff}min, inWindow=${inWindow}`);
-      if (!inWindow) continue;
-
-      const { dateStr, start, end } = kyivDateBoundary(kyiv.year, kyiv.month, kyiv.day, 0);
-
-      const activeLogs = await prisma.shiftLog.findMany({
-        where: { archived: false, shiftDate: { gte: start, lt: end } },
-        select: { agentId: true },
-      });
-      console.log(`[proxy-reminders] ${reminder.type}: ${activeLogs.length} active shift(s) found for ${dateStr}`);
-
-      // Batch-resolve all on-shift agents' users in one query instead of one
-      // findFirst per shift log.
-      const agentUsers = await prisma.user.findMany({
-        where: { agentId: { in: [...new Set(activeLogs.map((l) => l.agentId))] } },
-      });
-      const userByAgentId = new Map(agentUsers.map((u) => [u.agentId as string, u]));
-
-      for (const log of activeLogs) {
-        const agentUser = userByAgentId.get(log.agentId);
-        if (!agentUser) {
-          console.log(`[proxy-reminders] ${reminder.type}: agent ${log.agentId} has no linked User, skipping`);
-          continue;
-        }
-        if (!agentUser.telegramChatId) {
-          console.log(`[proxy-reminders] ${reminder.type}: ${agentUser.name} has no Telegram connected, skipping`);
-          continue;
-        }
-        if (agentUser.role === 'peek_handler') {
-          console.log(`[proxy-reminders] ${reminder.type}: ${agentUser.name} is peek_handler, excluded by design`);
-          continue;
-        }
-
-        try {
-          await prisma.telegramReminderLog.create({
-            data: { agentId: log.agentId, reminderType: reminder.type, shiftDate: dateStr },
-          });
-        } catch (err: unknown) {
-          if ((err as { code?: string })?.code === 'P2002') {
-            console.log(`[proxy-reminders] ${reminder.type}: already sent to ${agentUser.name} for ${dateStr}, skipping`);
-            continue;
-          }
-          throw err;
-        }
-
-        console.log(`[proxy-reminders] ${reminder.type}: sending to ${agentUser.name} (chatId ${agentUser.telegramChatId})`);
-        await sendTelegramMessage(agentUser.telegramChatId, PROXY_REMINDER_MESSAGE);
-        sent.push(`${log.agentId}:${reminder.type}:${dateStr}`);
-      }
-    }
-
-    res.json({ ok: true, sent });
-  } catch (err) {
-    console.error('Proxy reminder cron error:', err);
-    res.status(500).json({ error: 'Failed to process proxy reminders' });
-  }
-});
-
-// GET /api/cron/shift-reminders — hit by an external scheduler (see .github/workflows/shift-reminders.yml)
+// GET /api/cron/shift-reminders — hit by an external scheduler (see .github/workflows/shift-reminders.yml).
+// Covers login, logout, and proxy-enable nudges for both shifts — all sourced from the Shift
+// Calendar (CalendarEvent), since proxy reminders are no longer tied to an active Daily Log entry:
+// they go to whoever is *scheduled* for a shift that day, same as the login/logout reminders.
 router.get('/shift-reminders', async (_req: Request, res: Response) => {
   try {
     const now = new Date();
@@ -313,6 +246,7 @@ router.get('/shift-reminders', async (_req: Request, res: Response) => {
       for (const event of events) {
         const agentUser = eventUserByAgentId.get(event.agentId);
         if (!agentUser?.telegramChatId) continue;
+        if (agentUser.role === 'peek_handler') continue; // support-agent reminders only
 
         try {
           await prisma.telegramReminderLog.create({
