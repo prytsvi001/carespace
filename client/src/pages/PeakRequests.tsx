@@ -1,6 +1,6 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useState } from 'react';
-import { ClipboardList, Copy, Check } from 'lucide-react';
+import { ClipboardList, Copy, Check, ChevronDown } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
@@ -54,6 +54,63 @@ const STATUS_COLS: { status: RequestStatus; label: string; icon: string; bg: str
   { status: 'IN_PROGRESS', label: 'In Progress',  icon: '⚡', bg: 'bg-amber-50' },
   { status: 'DONE',        label: 'Done',          icon: '✅', bg: 'bg-emerald-50' },
 ];
+
+// Same NEW/IN_PROGRESS/DONE vocabulary + colors as StatusBadge in ui.tsx (badge-new/
+// badge-progress/badge-done, already defined in index.css) — reused here directly
+// since this dropdown needs each option individually clickable, not just one static span.
+const STATUS_ORDER: RequestStatus[] = ['NEW', 'IN_PROGRESS', 'DONE'];
+const STATUS_BADGE_CLASS: Record<RequestStatus, string> = {
+  NEW: 'badge-new',
+  IN_PROGRESS: 'badge-progress',
+  DONE: 'badge-done',
+};
+const STATUS_LABEL: Record<RequestStatus, string> = {
+  NEW: 'New',
+  IN_PROGRESS: 'In Progress',
+  DONE: 'Done',
+};
+
+// ── StatusDropdownBadge ───────────────────────────────────────────────────────
+// Click the badge to jump to any status directly, in either direction — not just
+// the one-step-forward "→ Start/Done" shortcut this card already has (kept as-is
+// alongside this, since nothing asked for it to be removed).
+
+function StatusDropdownBadge({ status, onChange }: { status: RequestStatus; onChange: (s: RequestStatus) => void }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        className={`${STATUS_BADGE_CLASS[status]} inline-flex items-center gap-0.5 cursor-pointer hover:brightness-95 transition-all`}
+      >
+        {STATUS_LABEL[status]}
+        <ChevronDown size={11} strokeWidth={2.5} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-slate-100 py-1 min-w-[132px]">
+            {STATUS_ORDER.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => { setOpen(false); if (s !== status) onChange(s); }}
+                className="w-full flex items-center px-2 py-1 hover:bg-slate-50 transition-colors"
+              >
+                <span className={`${STATUS_BADGE_CLASS[s]} ${s === status ? 'ring-1 ring-slate-300' : ''}`}>
+                  {STATUS_LABEL[s]}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ── RequestCard ───────────────────────────────────────────────────────────────
 
@@ -192,10 +249,13 @@ function RequestCard({
         </div>
       )}
 
-      {/* Header: agent + actions */}
+      {/* Header: agent + status + actions */}
       <div className="flex items-start justify-between gap-2 mb-2">
-        <span className="text-xs font-medium text-slate-500">{req.agent.name}</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-xs font-medium text-slate-500 truncate">{req.agent.name}</span>
+          <StatusDropdownBadge status={req.status} onChange={(s) => onStatusChange(req.id, s)} />
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           {isArchivedDone && (
             <button onClick={() => setExpanded(false)} className="text-xs text-slate-400 hover:text-slate-600">Collapse</button>
           )}
