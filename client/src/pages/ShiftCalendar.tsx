@@ -189,7 +189,7 @@ function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentM
       }}
     >
       <div className="flex items-center justify-between mb-1">
-        <span className={`text-xs font-medium ${isToday(date) ? 'text-ink font-bold' : ''}`}
+        <span className={`text-xs font-semibold ${isToday(date) ? 'text-ink font-bold' : ''}`}
               style={!isToday(date) ? { color: 'rgba(14,14,14,0.45)' } : undefined}>
           {format(date, 'd')}
         </span>
@@ -465,7 +465,7 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
           {/* Day headers */}
           <div className="grid grid-cols-7 gap-1 mb-1">
             {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-              <div key={d} className="text-center text-xs font-medium py-1" style={{ color: 'rgba(14,14,14,0.38)' }}>{d}</div>
+              <div key={d} className="text-center text-xs font-bold py-1" style={{ color: 'rgba(14,14,14,0.38)' }}>{d}</div>
             ))}
           </div>
 
