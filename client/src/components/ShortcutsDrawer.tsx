@@ -370,10 +370,10 @@ export function ShortcutsDrawer() {
         onClick={() => setOpen(true)}
         className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-2 pl-3 pr-4 py-3 rounded-full shadow-lg font-semibold text-sm transition-transform hover:scale-105"
         style={{ backgroundColor: '#A1F96E', color: '#0E0E0E', border: '1px solid rgba(14,14,14,0.14)' }}
-        aria-label="Shortcuts"
+        aria-label="Quick Actions"
       >
         <ClipboardList size={18} strokeWidth={1.8} />
-        <span className="hidden sm:inline">Shortcuts</span>
+        <span className="hidden sm:inline">Quick Actions</span>
       </button>
 
       {/* Backdrop + panel are always mounted so the slide/fade can animate both
@@ -403,7 +403,7 @@ export function ShortcutsDrawer() {
             ) : (
               <ClipboardList size={18} strokeWidth={1.8} />
             )}
-            {view === 'form' ? (editing ? 'Edit Shortcut' : 'Add Shortcut') : 'Shortcuts'}
+            {view === 'form' ? (editing ? 'Edit Shortcut' : 'Add Shortcut') : 'Quick Actions'}
           </h2>
           <div className="flex items-center gap-1">
             {view === 'list' && isAdmin && (
