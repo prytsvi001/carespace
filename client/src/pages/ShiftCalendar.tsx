@@ -189,8 +189,8 @@ function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentM
       }}
     >
       <div className="flex items-center justify-between mb-1">
-        <span className={`text-xs font-semibold ${isToday(date) ? 'text-ink font-bold' : ''}`}
-              style={!isToday(date) ? { color: 'rgba(14,14,14,0.45)' } : undefined}>
+        <span className={`text-xs font-bold ${isToday(date) ? 'text-ink' : ''}`}
+              style={!isToday(date) ? { color: 'rgba(14,14,14,0.55)' } : undefined}>
           {format(date, 'd')}
         </span>
         {!readOnly && (
