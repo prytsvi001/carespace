@@ -465,7 +465,7 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
           {/* Day headers */}
           <div className="grid grid-cols-7 gap-1 mb-1">
             {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-              <div key={d} className="text-center text-xs font-bold py-1" style={{ color: 'rgba(14,14,14,0.38)' }}>{d}</div>
+              <div key={d} className="text-center text-xs font-bold py-1" style={{ color: 'rgba(14,14,14,0.55)' }}>{d}</div>
             ))}
           </div>
 
