@@ -330,10 +330,26 @@ export interface Shortcut {
   product: string; // facet, derived server-side from category — "" if uncategorized
   topic: string; // facet, derived server-side from category — "" if uncategorized
   pinned: boolean;
-  usageCount: number;
-  lastUsedAt: string | null;
+  imageData: string | null; // full data URL of a pasted/resized image, e.g. "data:image/jpeg;base64,..."
   createdById: string | null;
   createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Private, per-agent shortcuts — same shape as Shortcut minus the legacy
+// category field (product/topic are assigned directly, not derived).
+export interface PersonalShortcut {
+  id: string;
+  userId: string;
+  title: string;
+  type: ShortcutType;
+  content: string;
+  variants: ShortcutVariant[];
+  product: string;
+  topic: string;
+  pinned: boolean;
+  imageData: string | null;
   createdAt: string;
   updatedAt: string;
 }

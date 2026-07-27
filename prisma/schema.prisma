@@ -50,6 +50,8 @@ model User {
   reviews          ClientReview[]
   pdpPlan          PdpPlan?
   peekCalendarEntries PeekCalendarEntry[]
+  personalShortcuts    PersonalShortcut[]
+  personalShortcutTags PersonalShortcutTag[]
 
   @@index([peekOnDuty])
 }
@@ -318,8 +320,7 @@ model Shortcut {
   product       String   @default("") // facet: Android | iOS | Geofinder | Glassagram | Знайомства | Premium | "" (derived from category)
   topic         String   @default("") // facet: Billing | General | Sales | Common ticket answers | Common requests | "" (derived from category)
   pinned        Boolean  @default(false) // team-wide pin, toggleable by any authenticated user
-  usageCount    Int      @default(0) // bumped each time any user copies this shortcut's text
-  lastUsedAt    DateTime? // last time any user copied this shortcut's text
+  imageData     String?  // full data URL of a pasted/resized image, e.g. "data:image/jpeg;base64,..."
   createdById   String?
   createdBy     User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdByName String?
@@ -336,7 +337,7 @@ model Shortcut {
 // separate from Shortcut itself — order and color are properties of the tag
 // ("Android" displays 2nd and is blue), not of any individual shortcut row, and
 // storing them redundantly on every row sharing that tag would mean keeping N
-// rows in sync on every reorder/recolor/rename instead of updating one row here.
+// rows in sync on every reorder/recolor instead of updating one row here.
 // Shortcut.product/topic stay plain strings, matching the tag's `name` exactly.
 model ShortcutTag {
   id        String   @id @default(cuid())
@@ -349,6 +350,52 @@ model ShortcutTag {
 
   @@unique([kind, name], name: "kind_name")
   @@index([kind, order])
+}
+
+// Private, per-agent shortcuts — same shape as Shortcut/ShortcutTag but every
+// query is scoped by userId with no admin override at all (confirmed: fully
+// private, no exceptions). Kept as separate models rather than a visibility
+// flag on Shortcut/ShortcutTag: createdById there is an audit field (nullable,
+// SetNull on delete), the opposite of what an access-control boundary needs,
+// and a shared table means every future query must remember to filter by
+// owner correctly forever. A separate table makes a missing userId filter an
+// immediately obvious bug instead of a silent leak. Also has no `category`
+// field — there's no team-wide mapping that makes sense for one agent's own
+// organization, so product/topic are assigned directly on the form.
+model PersonalShortcut {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  type      String   @default("text") // "text" | "link"
+  content   String
+  variants  String   @default("[]") // JSON: [{id, label, content}]
+  imageData String?
+  product   String   @default("")
+  topic     String   @default("")
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, product])
+  @@index([userId, topic])
+  @@index([userId, pinned])
+}
+
+model PersonalShortcutTag {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String   // "product" | "topic"
+  name      String
+  color     String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, kind, name], name: "userId_kind_name")
+  @@index([userId, kind, order])
 }
 
 model PeakRequest {

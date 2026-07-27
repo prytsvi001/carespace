@@ -371,9 +371,12 @@ export const createQuickLink = (data: { title: string; url: string; category?: s
 export const deleteQuickLink = (id: string) =>
   api.delete(`/quick-links/${id}`).then((r) => r.data);
 
-// ─── Shortcuts (shared team-wide library) ──────────────────────────────────
+// ─── Shortcuts — Templates (shared team-wide library) ──────────────────────
+// Cache keys are namespaced ":shared" vs ":personal" (see the Personal Shortcuts
+// section below) — sharing one key between the two tabs would let switching
+// tabs within the TTL window silently serve the other tab's cached data.
 export const getShortcuts = () =>
-  cached('shortcuts', 60_000, () => api.get('/shortcuts').then((r) => r.data));
+  cached('shortcuts:shared', 60_000, () => api.get('/shortcuts').then((r) => r.data));
 
 export const createShortcut = (data: {
   title: string;
@@ -381,7 +384,8 @@ export const createShortcut = (data: {
   content?: string;
   variants?: { label?: string; content: string }[];
   category?: string;
-}) => api.post('/shortcuts', data).then((r) => { invalidateCache('shortcuts'); return r.data; });
+  imageData?: string | null;
+}) => api.post('/shortcuts', data).then((r) => { invalidateCache('shortcuts:shared'); return r.data; });
 
 export const updateShortcut = (id: string, data: {
   title: string;
@@ -389,36 +393,70 @@ export const updateShortcut = (id: string, data: {
   content?: string;
   variants?: { label?: string; content: string }[];
   category?: string;
-}) => api.put(`/shortcuts/${id}`, data).then((r) => { invalidateCache('shortcuts'); return r.data; });
+  imageData?: string | null;
+}) => api.put(`/shortcuts/${id}`, data).then((r) => { invalidateCache('shortcuts:shared'); return r.data; });
 
 export const deleteShortcut = (id: string) =>
-  api.delete(`/shortcuts/${id}`).then((r) => { invalidateCache('shortcuts'); return r.data; });
+  api.delete(`/shortcuts/${id}`).then((r) => { invalidateCache('shortcuts:shared'); return r.data; });
 
 export const renameShortcutCategory = (from: string, to: string) =>
-  api.patch('/shortcuts/category', { from, to }).then((r) => { invalidateCache('shortcuts'); return r.data; });
+  api.patch('/shortcuts/category', { from, to }).then((r) => { invalidateCache('shortcuts:shared'); return r.data; });
 
 export const deleteShortcutCategory = (name: string) =>
-  api.delete(`/shortcuts/category/${encodeURIComponent(name)}`).then((r) => { invalidateCache('shortcuts'); return r.data; });
+  api.delete(`/shortcuts/category/${encodeURIComponent(name)}`).then((r) => { invalidateCache('shortcuts:shared'); return r.data; });
 
 export const pinShortcut = (id: string, pinned: boolean) =>
-  api.patch(`/shortcuts/${id}/pin`, { pinned }).then((r) => { invalidateCache('shortcuts'); return r.data; });
-
-export const recordShortcutUsage = (id: string) =>
-  api.post(`/shortcuts/${id}/copy`).then((r) => { invalidateCache('shortcuts'); return r.data; });
+  api.patch(`/shortcuts/${id}/pin`, { pinned }).then((r) => { invalidateCache('shortcuts:shared'); return r.data; });
 
 export const getShortcutTags = () =>
-  cached('shortcut-tags', 60_000, () => api.get('/shortcuts/tags').then((r) => r.data));
+  cached('shortcut-tags:shared', 60_000, () => api.get('/shortcuts/tags').then((r) => r.data));
 
 export const reorderShortcutTags = (kind: 'product' | 'topic', names: string[]) =>
-  api.patch('/shortcuts/tags/reorder', { kind, names }).then((r) => { invalidateCache('shortcut-tags'); return r.data; });
+  api.patch('/shortcuts/tags/reorder', { kind, names }).then((r) => { invalidateCache('shortcut-tags:shared'); return r.data; });
 
 export const recolorShortcutTag = (kind: 'product' | 'topic', name: string, color: string) =>
   api.patch(`/shortcuts/tags/${kind}/${encodeURIComponent(name)}/color`, { color })
-    .then((r) => { invalidateCache('shortcut-tags'); return r.data; });
+    .then((r) => { invalidateCache('shortcut-tags:shared'); return r.data; });
 
-export const renameShortcutTag = (kind: 'product' | 'topic', from: string, to: string) =>
-  api.patch(`/shortcuts/tags/${kind}/rename`, { from, to })
-    .then((r) => { invalidateCache('shortcuts'); invalidateCache('shortcut-tags'); return r.data; });
+// ─── Personal Shortcuts (private, per-agent library) ───────────────────────
+export const getPersonalShortcuts = () =>
+  cached('shortcuts:personal', 60_000, () => api.get('/personal-shortcuts').then((r) => r.data));
+
+export const createPersonalShortcut = (data: {
+  title: string;
+  type: 'text' | 'link';
+  content?: string;
+  variants?: { label?: string; content: string }[];
+  product?: string;
+  topic?: string;
+  imageData?: string | null;
+}) => api.post('/personal-shortcuts', data).then((r) => { invalidateCache('shortcuts:personal'); return r.data; });
+
+export const updatePersonalShortcut = (id: string, data: {
+  title: string;
+  type: 'text' | 'link';
+  content?: string;
+  variants?: { label?: string; content: string }[];
+  product?: string;
+  topic?: string;
+  imageData?: string | null;
+}) => api.put(`/personal-shortcuts/${id}`, data).then((r) => { invalidateCache('shortcuts:personal'); return r.data; });
+
+export const deletePersonalShortcut = (id: string) =>
+  api.delete(`/personal-shortcuts/${id}`).then((r) => { invalidateCache('shortcuts:personal'); return r.data; });
+
+export const pinPersonalShortcut = (id: string, pinned: boolean) =>
+  api.patch(`/personal-shortcuts/${id}/pin`, { pinned }).then((r) => { invalidateCache('shortcuts:personal'); return r.data; });
+
+export const getPersonalShortcutTags = () =>
+  cached('shortcut-tags:personal', 60_000, () => api.get('/personal-shortcuts/tags').then((r) => r.data));
+
+export const reorderPersonalShortcutTags = (kind: 'product' | 'topic', names: string[]) =>
+  api.patch('/personal-shortcuts/tags/reorder', { kind, names }).then((r) => { invalidateCache('shortcut-tags:personal'); return r.data; });
+
+export const recolorPersonalShortcutTag = (kind: 'product' | 'topic', name: string, color: string) =>
+  api.patch(`/personal-shortcuts/tags/${kind}/${encodeURIComponent(name)}/color`, { color })
+    .then((r) => { invalidateCache('shortcut-tags:personal'); return r.data; });
 
 // ─── Duty status (Peek Requests) ────────────────────────────────────────────
 export interface DutyStatus {

@@ -1,6 +1,6 @@
 // server/src/routes/shortcuts.ts
 import { randomUUID } from 'crypto';
-import { Router, Request, Response } from 'express';
+import express, { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
 import prisma from '../prisma';
 
@@ -98,16 +98,18 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/shortcuts — any authenticated user can add
-router.post('/', async (req: Request, res: Response) => {
+// POST /api/shortcuts — any authenticated user can add. Larger body limit to
+// fit a resized pasted image (see client/src/utils/imagePaste.ts).
+router.post('/', express.json({ limit: '6mb' }), async (req: Request, res: Response) => {
   try {
     const user = req.user as Express.User;
-    const { title, type, content, category, variants } = req.body as {
+    const { title, type, content, category, variants, imageData } = req.body as {
       title?: string;
       type?: string;
       content?: string;
       category?: string;
       variants?: { label?: string; content: string }[];
+      imageData?: string | null;
     };
 
     if (!title?.trim()) {
@@ -141,6 +143,7 @@ router.post('/', async (req: Request, res: Response) => {
         variants: JSON.stringify(finalVariants),
         category: finalCategory,
         ...facets,
+        imageData: imageData || null,
         createdById: user.id,
         createdByName: user.name,
       },
@@ -153,18 +156,20 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/shortcuts/:id — head/lead only
-router.put('/:id', async (req: Request, res: Response) => {
+// PUT /api/shortcuts/:id — head/lead only. Larger body limit to fit a resized
+// pasted image.
+router.put('/:id', express.json({ limit: '6mb' }), async (req: Request, res: Response) => {
   try {
     if (!isAdmin(req)) {
       return res.status(403).json({ error: 'Not allowed' });
     }
-    const { title, type, content, category, variants } = req.body as {
+    const { title, type, content, category, variants, imageData } = req.body as {
       title?: string;
       type?: string;
       content?: string;
       category?: string;
       variants?: { label?: string; content: string }[];
+      imageData?: string | null;
     };
 
     if (!title?.trim()) {
@@ -188,16 +193,12 @@ router.put('/:id', async (req: Request, res: Response) => {
       finalContent = finalVariants[0].content;
     }
 
-    const before = await (prisma as any).shortcut.findUnique({ where: { id: req.params.id } });
-    if (!before) return res.status(404).json({ error: 'Shortcut not found' });
-
+    // Product/topic are recomputed fresh from category on every save — safe now
+    // that tag rename no longer exists (that was the one way they could diverge
+    // from the static category mapping; Manage Categories' bulk category-rename
+    // already keeps every affected row in sync the same way).
     const finalCategory = category?.trim() || '';
-    const categoryChanged = finalCategory !== before.category;
-    // Only re-derive when the category actually changed. Re-deriving on every save
-    // (even when category is untouched) would blow away an admin's tag rename the
-    // next time anyone edits the shortcut's title/content — the static mapping
-    // table has no idea "Android" was renamed to "Android App".
-    const facets = categoryChanged ? deriveFacets(finalCategory) : { product: before.product, topic: before.topic };
+    const facets = deriveFacets(finalCategory);
 
     const shortcut = await (prisma as any).shortcut.update({
       where: { id: req.params.id },
@@ -208,11 +209,10 @@ router.put('/:id', async (req: Request, res: Response) => {
         variants: JSON.stringify(finalVariants),
         category: finalCategory,
         ...facets,
+        ...(imageData !== undefined && { imageData: imageData || null }),
       },
     });
-    if (categoryChanged) {
-      await Promise.all([ensureTag('product', facets.product), ensureTag('topic', facets.topic)]);
-    }
+    await Promise.all([ensureTag('product', facets.product), ensureTag('topic', facets.topic)]);
     return res.json(formatShortcut(shortcut));
   } catch (error) {
     console.error(error);
@@ -249,22 +249,6 @@ router.patch('/:id/pin', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update pin status' });
-  }
-});
-
-// POST /api/shortcuts/:id/copy — records that a shortcut's text was copied, for the
-// "Recent" section. Any authenticated user; fire-and-forget from the client's
-// perspective (a failure here should never block the copy the user already made).
-router.post('/:id/copy', async (req: Request, res: Response) => {
-  try {
-    const shortcut = await (prisma as any).shortcut.update({
-      where: { id: req.params.id },
-      data: { usageCount: { increment: 1 }, lastUsedAt: new Date() },
-    });
-    return res.json(formatShortcut(shortcut));
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to record usage' });
   }
 });
 
@@ -368,44 +352,6 @@ router.patch('/tags/:kind/:name/color', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update color' });
-  }
-});
-
-// PATCH /api/shortcuts/tags/:kind/rename — head/lead only. Renames the tag AND every
-// shortcut using it. If `to` already exists as a tag for this kind, this is a merge:
-// shortcuts move over, the old tag row is dropped, and the surviving tag keeps its
-// own color/order rather than adopting the merged-away tag's.
-router.patch('/tags/:kind/rename', async (req: Request, res: Response) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: 'Not allowed' });
-    const { kind } = req.params;
-    if (kind !== 'product' && kind !== 'topic') {
-      return res.status(400).json({ error: 'invalid kind' });
-    }
-    const { from, to } = req.body as { from?: string; to?: string };
-    if (!from?.trim() || !to?.trim()) {
-      return res.status(400).json({ error: 'from and to are required' });
-    }
-    const trimmedTo = to.trim();
-    if (trimmedTo === from) return res.json({ success: true, updated: 0 });
-
-    const existingTarget = await (prisma as any).shortcutTag.findUnique({ where: { kind_name: { kind, name: trimmedTo } } });
-
-    const result = await (prisma as any).shortcut.updateMany({
-      where: { [kind]: from },
-      data: { [kind]: trimmedTo },
-    });
-
-    if (existingTarget) {
-      await (prisma as any).shortcutTag.deleteMany({ where: { kind, name: from } });
-    } else {
-      await (prisma as any).shortcutTag.updateMany({ where: { kind, name: from }, data: { name: trimmedTo } });
-    }
-
-    return res.json({ success: true, updated: result.count });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to rename tag' });
   }
 });
 
