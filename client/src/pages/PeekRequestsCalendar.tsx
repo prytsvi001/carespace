@@ -117,8 +117,8 @@ function DayCell({ date, entries, onAdd, onRequestDelete, onEditEntry, isCurrent
       }}
     >
       <div className="flex items-center justify-between mb-1">
-        <span className={`text-xs font-medium ${isToday(date) ? 'text-ink font-bold' : ''}`}
-              style={!isToday(date) ? { color: 'rgba(14,14,14,0.45)' } : undefined}>
+        <span className={`text-xs font-bold ${isToday(date) ? 'text-ink' : ''}`}
+              style={!isToday(date) ? { color: 'rgba(14,14,14,0.55)' } : undefined}>
           {format(date, 'd')}
         </span>
         <span className="text-[10px] transition-colors" style={{ color: 'rgba(14,14,14,0.15)' }}
@@ -286,7 +286,7 @@ export default function PeekRequestsCalendar() {
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="grid grid-cols-7 gap-1 mb-1">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-              <div key={d} className="text-center text-xs font-medium py-1" style={{ color: 'rgba(14,14,14,0.38)' }}>{d}</div>
+              <div key={d} className="text-center text-xs font-bold py-1" style={{ color: 'rgba(14,14,14,0.55)' }}>{d}</div>
             ))}
           </div>
 
