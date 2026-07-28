@@ -136,7 +136,7 @@ function ShiftLogCard({ log, onSave, onEndShift, onArchive, onDelete }: {
             Comments
             <textarea
               rows={2}
-              className="input mt-1 resize-none"
+              className="input mt-1 resize-y min-h-[4.5rem]"
               placeholder="Notes, escalations…"
               value={draft.comments}
               onChange={e => setDraft(prev => ({ ...prev, comments: e.target.value }))}
@@ -169,7 +169,7 @@ function ShiftLogCard({ log, onSave, onEndShift, onArchive, onDelete }: {
             Comments
             <textarea
               rows={2}
-              className="input mt-1 resize-none"
+              className="input mt-1 resize-y min-h-[4.5rem]"
               placeholder="Notes, escalations…"
               value={draft.comments}
               onChange={e => setDraft(prev => ({ ...prev, comments: e.target.value }))}
@@ -476,7 +476,7 @@ export default function DailyLog({ onSyncStats, onDataChanged }: { onSyncStats?:
           <div>
             <label className="label">Comments / Important Cases</label>
             <textarea
-              className="input resize-none"
+              className="input resize-y min-h-[5.5rem]"
               rows={3}
               placeholder="Any notable events, escalations, or important cases..."
               value={form.comments}
