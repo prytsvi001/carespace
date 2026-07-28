@@ -1,6 +1,6 @@
 // client/src/pages/DailyLog.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { MessageCircle, Ticket, Phone, RefreshCcw, Sun, Moon, ClipboardList, Save } from 'lucide-react';
+import { MessageCircle, Ticket, Phone, RefreshCcw, Sun, Moon, ClipboardList, Save, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { getAgents, createShiftLog, getShiftLogs, updateShiftLog, archiveShiftLog, deleteShiftLog } from '../api';
 import { Agent, ShiftLog, ShiftType } from '../types';
@@ -30,6 +30,12 @@ function ShiftLogCard({ log, onSave, onEndShift, onArchive, onDelete }: {
   const [draft, setDraft] = useState<DraftStats>({ chatsCount: log.chatsCount, ticketsCount: log.ticketsCount, callsCount: log.callsCount, refundRequestsCount: log.refundRequestsCount, comments: log.comments || '' });
   const [confirm, setConfirm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Archived (ended) shifts are read-only by default — this toggles into the
+  // same field grid used while active, but with an explicit Save/Cancel
+  // instead of the auto-save debounce, since editing a closed record should
+  // be a deliberate action rather than something that silently commits.
+  const [editingArchived, setEditingArchived] = useState(false);
+  const [savingArchived, setSavingArchived] = useState(false);
 
   // Auto-save, debounced 1.5s after the user stops typing/changing a field.
   const isFirstRun = useRef(true);
@@ -57,6 +63,26 @@ function ShiftLogCard({ log, onSave, onEndShift, onArchive, onDelete }: {
 
   useEffect(() => () => { if (savedMessageTimeout.current) clearTimeout(savedMessageTimeout.current); }, []);
 
+  const handleStartEditArchived = () => {
+    setDraft({ chatsCount: log.chatsCount, ticketsCount: log.ticketsCount, callsCount: log.callsCount, refundRequestsCount: log.refundRequestsCount, comments: log.comments || '' });
+    setEditingArchived(true);
+  };
+
+  const handleCancelEditArchived = () => setEditingArchived(false);
+
+  const handleSaveArchived = async () => {
+    if (!onSave) return;
+    setSavingArchived(true);
+    try {
+      await onSave(log.id, draft);
+      setEditingArchived(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingArchived(false);
+    }
+  };
+
   return (
     <div className="card flex flex-col gap-2"
          style={isActive ? { borderColor: 'rgba(161,249,110,0.50)', backgroundColor: 'rgba(161,249,110,0.07)' } : {}}>
@@ -74,10 +100,17 @@ function ShiftLogCard({ log, onSave, onEndShift, onArchive, onDelete }: {
           <span className="text-xs text-slate-400">{log.hoursWorked}h</span>
           {isActive ? (
             <button onClick={() => setConfirm(true)} className="text-xs font-semibold px-3 py-1.5 rounded-md transition-colors" style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}>End Shift</button>
-          ) : (
-            <button onClick={() => setConfirm(true)} className="text-xs text-amber-600 hover:text-amber-700">Archive</button>
+          ) : !editingArchived ? (
+            <>
+              <button onClick={handleStartEditArchived} className="text-xs font-medium flex items-center gap-1" style={{ color: 'rgba(14,14,14,0.55)' }}>
+                <Pencil size={12} strokeWidth={1.5} />Edit
+              </button>
+              <button onClick={() => setConfirm(true)} className="text-xs text-amber-600 hover:text-amber-700">Archive</button>
+            </>
+          ) : null}
+          {!editingArchived && (
+            <button onClick={() => setConfirmDelete(true)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
           )}
-          <button onClick={() => setConfirmDelete(true)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
         </div>
       </div>
 
@@ -114,8 +147,43 @@ function ShiftLogCard({ log, onSave, onEndShift, onArchive, onDelete }: {
             {saveState === 'saved' && <span style={{ color: '#0E0E0E' }}>Saved</span>}
           </div>
         </>
+      ) : editingArchived ? (
+        /* Archived shift, edit mode: same field grid as active, explicit Save/Cancel */
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            {STAT_FIELDS.map(f => (
+              <label key={f.key} className="text-xs text-slate-600">
+                <span className="flex items-center gap-1 mb-1"><f.Icon size={12} strokeWidth={1.5} style={{ color: 'rgba(14,14,14,0.40)' }} />{f.label}</span>
+                <input
+                  type="number"
+                  min="0"
+                  className="input mt-1"
+                  value={(draft[f.key] as number) === 0 ? '' : (draft[f.key] as number)}
+                  placeholder="0"
+                  onChange={e => setDraft(prev => ({ ...prev, [f.key]: Number(e.target.value) || 0 }))}
+                />
+              </label>
+            ))}
+          </div>
+          <label className="text-xs text-slate-600 block">
+            Comments
+            <textarea
+              rows={2}
+              className="input mt-1 resize-none"
+              placeholder="Notes, escalations…"
+              value={draft.comments}
+              onChange={e => setDraft(prev => ({ ...prev, comments: e.target.value }))}
+            />
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={handleCancelEditArchived} className="btn-secondary text-xs px-3 py-1.5">Cancel</button>
+            <button onClick={handleSaveArchived} disabled={savingArchived} className="btn-accent text-xs px-3 py-1.5">
+              {savingArchived ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </>
       ) : (
-        /* Archived shifts: read-only */
+        /* Archived shifts: read-only until Edit is clicked */
         <>
           <div className="grid grid-cols-4 gap-2 mt-1">
             {STAT_FIELDS.map(f => (
