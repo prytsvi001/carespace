@@ -1,14 +1,15 @@
 // client/src/App.tsx
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ClipboardList, CalendarDays, Lightbulb, Bot, ChartBar,
   ListTodo, Star, TrendingUp, FileText, LogOut, User,
-  ChevronDown, Bell, BarChart3, Send, CheckCircle2,
+  ChevronDown, Bell, BarChart3, Send, CheckCircle2, Camera,
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Modal, Spinner } from './components/ui';
 import { getTelegramLinkCode, getTelegramStatus } from './api';
+import { readImageFile } from './utils/imagePaste';
 import Login from './pages/Login';
 // Lazy — pulls in marked/DOMPurify for markdown rendering, no need to block the
 // initial page load with that for users who never open the drawer.
@@ -90,12 +91,37 @@ function getInitialTab(userRole: string): Tab {
 // ── Main authenticated app ───────────────────────────────────────────────────
 
 function MainApp() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateAvatar } = useAuth();
 
   const userRole = user?.role ?? 'agent';
   const isPeekHandler = userRole === 'peek_handler';
 
   const [activeTab, setActiveTab] = useState<Tab>(() => getInitialTab(userRole));
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file again later
+    if (!file) return;
+    setAvatarUploading(true);
+    try {
+      const dataUrl = await readImageFile(file, 256, 0.85);
+      await updateAvatar(dataUrl);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    try {
+      await updateAvatar(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
@@ -295,10 +321,14 @@ function MainApp() {
                 className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
               >
                 <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                  style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden"
+                  style={!user?.avatarUrl ? { backgroundColor: '#A1F96E', color: '#0E0E0E' } : undefined}
                 >
-                  {userInitial}
+                  {user?.avatarUrl ? (
+                    <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    userInitial
+                  )}
                 </div>
                 <span className="text-xs font-medium text-slate-600 hidden sm:block max-w-[80px] truncate">
                   {user?.name?.split(' ')[0]}
@@ -310,14 +340,60 @@ function MainApp() {
                   <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
                   <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 w-52 z-50">
                     <div className="px-3 py-2 border-b border-slate-50">
-                      <p className="text-sm font-medium text-slate-800 truncate">{user?.name}</p>
-                      <p className="text-xs text-slate-400 truncate">{user?.email}</p>
-                      <span
-                        className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full capitalize"
-                        style={{ backgroundColor: 'rgba(14,14,14,0.07)', color: 'rgba(14,14,14,0.60)' }}
-                      >
-                        {user?.role}
-                      </span>
+                      <div className="flex items-center gap-2.5 mb-1.5">
+                        <div className="relative shrink-0">
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold overflow-hidden"
+                            style={!user?.avatarUrl ? { backgroundColor: '#A1F96E', color: '#0E0E0E' } : undefined}
+                          >
+                            {avatarUploading ? (
+                              <Spinner size="sm" />
+                            ) : user?.avatarUrl ? (
+                              <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              userInitial
+                            )}
+                          </div>
+                          <button
+                            onClick={() => avatarInputRef.current?.click()}
+                            disabled={avatarUploading}
+                            className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center border border-white"
+                            style={{ backgroundColor: '#0E0E0E' }}
+                            aria-label="Change photo"
+                            title="Change photo"
+                          >
+                            <Camera size={9} strokeWidth={2} color="#fff" />
+                          </button>
+                          <input
+                            ref={avatarInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleAvatarFileChange}
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-800 truncate">{user?.name}</p>
+                          <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="inline-block text-xs px-2 py-0.5 rounded-full capitalize"
+                          style={{ backgroundColor: 'rgba(14,14,14,0.07)', color: 'rgba(14,14,14,0.60)' }}
+                        >
+                          {user?.role}
+                        </span>
+                        {user?.avatarUrl && (
+                          <button
+                            onClick={handleRemoveAvatar}
+                            className="text-xs hover:underline"
+                            style={{ color: 'rgba(14,14,14,0.40)' }}
+                          >
+                            Remove photo
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <button
                       onClick={() => { setShowUserMenu(false); setShowTelegramModal(true); }}

@@ -29,6 +29,16 @@ export async function readPastedImage(e: ClipboardEvent): Promise<string | null>
   return resizeDataUrl(rawDataUrl, MAX_DIMENSION, JPEG_QUALITY);
 }
 
+// Same read-resize-recompress pipeline as readPastedImage, but for a File
+// picked via a file input rather than lifted out of a clipboard event — used
+// by the profile-photo upload. Takes its own dimension/quality since an
+// avatar is shown much smaller than a shortcut card image and doesn't need
+// anywhere near 900px to look sharp.
+export async function readImageFile(file: File, maxDimension = MAX_DIMENSION, quality = JPEG_QUALITY): Promise<string> {
+  const rawDataUrl = await fileToDataUrl(file);
+  return resizeDataUrl(rawDataUrl, maxDimension, quality);
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

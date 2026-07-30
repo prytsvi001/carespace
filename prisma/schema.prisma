@@ -30,6 +30,7 @@ model User {
   email     String   @unique
   name      String
   role      String   // "head" | "lead" | "agent" | "peek_handler"
+  avatarUrl String?  // data URL of a small uploaded profile photo, e.g. "data:image/jpeg;base64,..." — shown instead of the initial-letter avatar when set
   googleId  String?  @unique
   agentId   String?  @unique
   agent     Agent?   @relation(fields: [agentId], references: [id])

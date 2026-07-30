@@ -112,6 +112,7 @@ export interface AuthUser {
   role: UserRole;
   agentId: string | null;
   telegramChatId: string | null;
+  avatarUrl: string | null;
 }
 
 export interface Plan {

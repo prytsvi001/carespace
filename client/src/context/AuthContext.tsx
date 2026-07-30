@@ -11,18 +11,21 @@ export interface AuthUser {
   role: UserRole;
   agentId: string | null;
   telegramChatId: string | null;
+  avatarUrl: string | null;
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   logout: () => Promise<void>;
+  updateAvatar: (avatarUrl: string | null) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
   logout: async () => {},
+  updateAvatar: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -42,8 +45,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
+  const updateAvatar = async (avatarUrl: string | null) => {
+    const res = await api.put<AuthUser>('/auth/avatar', { avatarUrl });
+    setUser(res.data);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider value={{ user, loading, logout, updateAvatar }}>
       {children}
     </AuthContext.Provider>
   );

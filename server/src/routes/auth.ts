@@ -14,6 +14,7 @@ declare global {
       role: string;
       agentId: string | null;
       telegramChatId: string | null;
+      avatarUrl: string | null;
     }
   }
 }
@@ -47,6 +48,7 @@ passport.use(
           role: user.role,
           agentId: user.agentId,
           telegramChatId: user.telegramChatId,
+          avatarUrl: user.avatarUrl,
         });
       } catch (err) {
         return done(err as Error);
@@ -68,6 +70,7 @@ passport.deserializeUser(async (id: string, done) => {
       role: user.role,
       agentId: user.agentId,
       telegramChatId: user.telegramChatId,
+      avatarUrl: user.avatarUrl,
     });
   } catch (err) {
     done(err);
@@ -94,6 +97,37 @@ router.get(
 router.get('/me', (req: Request, res: Response) => {
   if (!req.isAuthenticated()) return res.status(401).json({ error: 'Not authenticated' });
   res.json(req.user);
+});
+
+// Sets or clears (avatarUrl: null) the current user's profile photo. The 2mb
+// body limit (client already resizes/recompresses to a small JPEG data URL
+// before sending, so this is generous headroom) is applied in app.ts, not
+// here — see the comment there for why a route-level express.json() override
+// would silently never take effect.
+router.put('/avatar', async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Not authenticated' });
+  const { avatarUrl } = req.body as { avatarUrl?: string | null };
+  if (avatarUrl && !/^data:image\//.test(avatarUrl)) {
+    return res.status(400).json({ error: 'Invalid image data' });
+  }
+  try {
+    const updated = await prisma.user.update({
+      where: { id: (req.user as Express.User).id },
+      data: { avatarUrl: avatarUrl || null },
+    });
+    res.json({
+      id: updated.id,
+      email: updated.email,
+      name: updated.name,
+      role: updated.role,
+      agentId: updated.agentId,
+      telegramChatId: updated.telegramChatId,
+      avatarUrl: updated.avatarUrl,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to update avatar' });
+  }
 });
 
 // Logout

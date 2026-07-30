@@ -43,6 +43,21 @@ app.use(
     credentials: true,
   })
 );
+
+// A handful of routes accept small base64-encoded images and need more than
+// Express's default ~100kb json body limit. These MUST be registered before
+// the blanket express.json() below, not just declared again at the route level
+// inside their own router files — body-parser no-ops (skips re-reading the
+// stream) if a request's body was already parsed by an earlier instance, so a
+// route-level `express.json({limit:'6mb'})` registered AFTER the app-wide
+// default has already run never actually takes effect: the default's smaller
+// limit silently 413s anything over ~100kb before the larger override is ever
+// reached. (Confirmed: this was already happening in production for the
+// Quick Actions image-paste feature.)
+app.use('/api/shortcuts', express.json({ limit: '6mb' }));
+app.use('/api/personal-shortcuts', express.json({ limit: '6mb' }));
+app.use('/api/auth/avatar', express.json({ limit: '2mb' }));
+
 app.use(express.json());
 
 // express-session's default MemoryStore doesn't survive serverless cold

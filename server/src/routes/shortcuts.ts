@@ -1,6 +1,6 @@
 // server/src/routes/shortcuts.ts
 import { randomUUID } from 'crypto';
-import express, { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
 import prisma from '../prisma';
 
@@ -100,7 +100,10 @@ router.get('/', async (_req: Request, res: Response) => {
 
 // POST /api/shortcuts — any authenticated user can add. Larger body limit to
 // fit a resized pasted image (see client/src/utils/imagePaste.ts).
-router.post('/', express.json({ limit: '6mb' }), async (req: Request, res: Response) => {
+// The 6mb body limit for pasted images is applied in app.ts (path-scoped,
+// registered before the app-wide express.json() default) — see the comment
+// there for why it can't just be declared here.
+router.post('/', async (req: Request, res: Response) => {
   try {
     const user = req.user as Express.User;
     const { title, type, content, category, variants, imageData } = req.body as {
@@ -158,7 +161,8 @@ router.post('/', express.json({ limit: '6mb' }), async (req: Request, res: Respo
 
 // PUT /api/shortcuts/:id — head/lead only. Larger body limit to fit a resized
 // pasted image.
-router.put('/:id', express.json({ limit: '6mb' }), async (req: Request, res: Response) => {
+// Same note as POST '/' above — the larger body limit is applied in app.ts.
+router.put('/:id', async (req: Request, res: Response) => {
   try {
     if (!isAdmin(req)) {
       return res.status(403).json({ error: 'Not allowed' });
