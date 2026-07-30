@@ -254,8 +254,12 @@ export default function DailyLog({ onSyncStats, onDataChanged }: { onSyncStats?:
   const loadData = async () => {
     setLoading(true);
     try {
+      // The main (non-archived) view intentionally has no date filter — an active
+      // shift log (archived: false) must stay visible until the agent explicitly
+      // clicks End Shift, however long that takes, rather than silently vanishing
+      // the moment the calendar day rolls over past midnight.
       const params = !showArchived
-        ? { date: today, includeArchived: false, limit: 100 }
+        ? { includeArchived: false, limit: 100 }
         : filterMode === 'day'
           ? { date: selectedDate, includeArchived: true, limit: 100 }
           : filterMode === 'month'
