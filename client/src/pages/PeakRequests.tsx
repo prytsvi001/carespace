@@ -1,6 +1,6 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Check, ChevronDown, ChevronRight, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal } from 'lucide-react';
+import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
@@ -62,11 +62,13 @@ const STATUS_LABEL: Record<RequestStatus, string> = {
 };
 
 // One primary action per column — status is already conveyed by the column
-// itself, so the card no longer needs its own status badge/dropdown.
-const PRIMARY_ACTION: Record<RequestStatus, { label: string; target: RequestStatus }> = {
-  NEW: { label: '→ Start', target: 'IN_PROGRESS' },
-  IN_PROGRESS: { label: '→ Done', target: 'DONE' },
-  DONE: { label: 'Reopen', target: 'IN_PROGRESS' },
+// itself, so the card no longer needs its own status badge/dropdown. Reopen
+// (Done -> In Progress) is styled neutral/ghost rather than accent — it's a
+// step backward, not forward progress like Start/Done.
+const PRIMARY_ACTION: Record<RequestStatus, { label: string; target: RequestStatus; accent: boolean }> = {
+  NEW: { label: '→ Start', target: 'IN_PROGRESS', accent: true },
+  IN_PROGRESS: { label: '→ Done', target: 'DONE', accent: true },
+  DONE: { label: 'Reopen', target: 'IN_PROGRESS', accent: false },
 };
 
 // ── CardMenu ───────────────────────────────────────────────────────────────────
@@ -286,22 +288,24 @@ function ClientCard({
             <button
               type="button"
               onClick={() => handleCopy(card.contactEmail!, 'email')}
-              className="w-full text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03]"
+              className="w-full flex items-center gap-1 text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
               style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
               title="Click to copy email"
             >
-              {card.contactEmail}
+              <Mail size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+              <span className="truncate">{card.contactEmail}</span>
             </button>
           )}
           {card.profileNickname && (
             <button
               type="button"
               onClick={() => handleCopy(card.profileNickname!, 'nickname')}
-              className="w-full text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03]"
+              className="w-full flex items-center gap-1 text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
               style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
               title="Click to copy username"
             >
-              {card.profileNickname}
+              <User size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+              <span className="truncate">{card.profileNickname}</span>
             </button>
           )}
           {!card.contactEmail && !card.profileNickname && (
@@ -317,7 +321,7 @@ function ClientCard({
             <CardMenu onArchive={() => setConfirm(true)} onDelete={() => setConfirmDelete(true)} />
           </div>
           <span className="text-[9px] text-slate-400 whitespace-nowrap">
-            {format(new Date(active.createdAt), 'MMM d, HH:mm')}
+            Created: {format(new Date(active.createdAt), 'MMM d, HH:mm')}
           </span>
         </div>
       </div>
@@ -336,7 +340,12 @@ function ClientCard({
             title={historyExpanded ? 'Hide history' : 'Show history'}
           >
             {card.requestCount} {card.requestCount === 1 ? 'request' : 'requests'}
-            {historyExpanded ? <ChevronDown size={10} strokeWidth={2.5} /> : <ChevronRight size={10} strokeWidth={2.5} />}
+            <ChevronDown
+              size={10}
+              strokeWidth={2.5}
+              className="transition-transform"
+              style={{ transform: historyExpanded ? 'rotate(180deg)' : undefined }}
+            />
           </button>
         ) : (
           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
@@ -431,8 +440,8 @@ function ClientCard({
         <button
           type="button"
           onClick={() => onStatusChange(card.id, primary.target)}
-          className="text-xs font-semibold px-2.5 py-1 rounded-lg transition-all hover:brightness-95"
-          style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+          className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-all hover:brightness-95 ${!primary.accent ? 'hover:bg-slate-200' : ''}`}
+          style={primary.accent ? { backgroundColor: '#A1F96E', color: '#0E0E0E' } : { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.55)' }}
         >
           {primary.label}
         </button>
