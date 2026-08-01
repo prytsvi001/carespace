@@ -3,12 +3,12 @@ import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react
 import {
   ClipboardList, CalendarDays, Lightbulb, Bot, ChartBar,
   ListTodo, Star, TrendingUp, FileText, LogOut, User,
-  ChevronDown, Bell, BarChart3, Send, CheckCircle2, Camera,
+  ChevronDown, Bell, BarChart3, Send, CheckCircle2, Camera, Download,
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Modal, Spinner } from './components/ui';
-import { getTelegramLinkCode, getTelegramStatus } from './api';
+import { getTelegramLinkCode, getTelegramStatus, downloadBackup } from './api';
 import { readImageFile } from './utils/imagePaste';
 import Login from './pages/Login';
 // Lazy — pulls in marked/DOMPurify for markdown rendering, no need to block the
@@ -123,6 +123,28 @@ function MainApp() {
     }
   };
 
+  const [backupStatus, setBackupStatus] = useState<'idle' | 'loading' | 'success'>('idle');
+
+  const handleDownloadBackup = async () => {
+    setBackupStatus('loading');
+    try {
+      const blob = await downloadBackup();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `carespace-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setBackupStatus('success');
+      setTimeout(() => setBackupStatus('idle'), 2000);
+    } catch (err) {
+      console.error(err);
+      setBackupStatus('idle');
+    }
+  };
+
   useEffect(() => {
     localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
   }, [activeTab]);
@@ -203,6 +225,7 @@ function MainApp() {
   const notifyStatsRefresh = useCallback(() => setStatsRefreshKey((k) => k + 1), []);
 
   const userInitial = user?.name?.[0]?.toUpperCase() ?? '?';
+  const isAdmin = user?.role === 'head' || user?.role === 'lead';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -406,6 +429,26 @@ function MainApp() {
                       )}
                       {telegramConnected ? 'Telegram connected' : 'Connect Telegram'}
                     </button>
+                    {isAdmin && (
+                      <button
+                        onClick={handleDownloadBackup}
+                        disabled={backupStatus === 'loading'}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60"
+                      >
+                        {backupStatus === 'loading' ? (
+                          <Spinner size="sm" />
+                        ) : backupStatus === 'success' ? (
+                          <CheckCircle2 size={14} strokeWidth={1.5} style={{ color: '#A1F96E' }} />
+                        ) : (
+                          <Download size={14} strokeWidth={1.5} />
+                        )}
+                        {backupStatus === 'loading'
+                          ? 'Preparing backup...'
+                          : backupStatus === 'success'
+                          ? 'Backup downloaded ✓'
+                          : 'Download Backup'}
+                      </button>
+                    )}
                     <button
                       onClick={() => { setShowUserMenu(false); logout(); }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors"

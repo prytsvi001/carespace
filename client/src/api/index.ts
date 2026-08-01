@@ -497,4 +497,7 @@ export const getDutyStatus = () =>
 export const setDutyStatus = (onDuty: boolean) =>
   api.patch('/duty/me', { onDuty }).then((r) => r.data);
 
+export const downloadBackup = () =>
+  api.get('/backup', { responseType: 'blob' }).then((r) => r.data as Blob);
+
 export default api;
