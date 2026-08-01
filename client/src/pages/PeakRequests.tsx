@@ -1,7 +1,7 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { ClipboardList, Copy, Check, ChevronDown, ChevronRight, Star, Pencil, Archive, Trash2, Plus } from 'lucide-react';
-import { format, formatDistanceToNowStrict } from 'date-fns';
+import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
   updatePeakRequestCardStatus, togglePeakRequestCardStar, archivePeakRequestCard, deletePeakRequestCard,
@@ -221,8 +221,6 @@ function ClientCard({
   };
   const next = nextStatus[card.status];
 
-  const timeAgo = formatDistanceToNowStrict(new Date(card.lastActivityAt), { addSuffix: true });
-
   if (isArchivedDone && !archivedViewExpanded) {
     return (
       <div className="bg-white rounded-xl border border-slate-100 p-2.5 shadow-sm">
@@ -306,8 +304,6 @@ function ClientCard({
             <span className="text-xs text-slate-400 italic">No contact info</span>
           )}
         </div>
-
-        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">{timeAgo}</span>
       </div>
 
       {/* Header row 2: status + count + new-activity indicator */}
