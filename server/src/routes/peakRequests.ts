@@ -26,6 +26,64 @@ function normalizeMatchKey(email: string | null | undefined, nickname: string | 
   return `${e}|${n}`;
 }
 
+// The peek team: Iryna Kolodienko, Victoria Horopeka (both peek_handler role),
+// and Julia Manson (peekCalendarAccess flag) — same shape as peekCalendar.ts's
+// isAssignable, duplicated locally rather than cross-imported (matches
+// normalizeMatchKey's precedent above). Gates both the "checked" stamp and
+// self-crediting on Done.
+function isTrackedAgent(u: { role: string; peekCalendarAccess: boolean }): boolean {
+  return u.role === 'peek_handler' || u.peekCalendarAccess;
+}
+
+// UTC-midnight day marker, same convention as peekCalendar.ts's parseDayMarker
+// / PeekCalendarEntry.eventDate.
+function todayDayMarker(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+// Credit-assignment rule: if whoever moved the card to Done is themselves one
+// of the 3 tracked peek agents, they're always self-credited (covers "Julia
+// resolves it herself" as just a special case of this, not a separate rule).
+// Otherwise (e.g. a regular support agent resolved it), defer to the Peek
+// Calendar for that day — but only if exactly one agent was scheduled; 0 or
+// 2+ is too ambiguous to guess, so no credit is recorded.
+// Never allowed to throw past this point — credit-tracking must not break
+// the status change it's attached to.
+async function recordResolutionCredit(clientCardId: string, sessionUser: Express.User) {
+  try {
+    const actor = await prisma.user.findUnique({ where: { id: sessionUser.id } });
+    if (!actor) return;
+
+    let creditedUserId: string | null;
+    let creditedName: string;
+
+    if (isTrackedAgent(actor)) {
+      creditedUserId = actor.id;
+      creditedName = actor.name;
+    } else {
+      const day = todayDayMarker();
+      const entries = await prisma.peekCalendarEntry.findMany({ where: { eventDate: day }, include: { user: true } });
+      if (entries.length !== 1) return;
+      creditedUserId = entries[0].userId;
+      creditedName = entries[0].user.name;
+    }
+
+    await prisma.peekResolutionCredit.create({
+      data: {
+        clientCardId,
+        movedByUserId: actor.id,
+        movedByName: actor.name,
+        creditedUserId,
+        creditedName,
+        resolvedDate: todayDayMarker(),
+      },
+    });
+  } catch (err) {
+    console.error('Failed to record resolution credit:', err);
+  }
+}
+
 type RawRequest = {
   id: string; agentId: string; agent: { id: string; name: string };
   requestText: string; status: string; doneAt: Date | null;
@@ -47,6 +105,7 @@ function formatRequestEntry(r: RawRequest) {
 type RawCard = {
   id: string; contactEmail: string | null; profileNickname: string | null;
   status: string; starred: boolean; archived: boolean; lastActivityAt: Date;
+  lastCheckedByName: string | null; lastCheckedAt: Date | null;
   requests: RawRequest[]; // pre-sorted desc by (createdAt, id) — requests[0] is active
 };
 
@@ -61,6 +120,8 @@ function formatCard(card: RawCard) {
     archived: card.archived,
     requestCount: card.requests.length,
     lastActivityAt: card.lastActivityAt,
+    lastCheckedByName: card.lastCheckedByName,
+    lastCheckedAt: card.lastCheckedAt,
     // Deterministic, no fragile time-window: a returning client's fresh issue
     // reads as "new activity" for as long as the card is genuinely sitting in
     // New with more than one request behind it.
@@ -115,7 +176,8 @@ router.get('/', async (req: Request, res: Response) => {
     if (status) where.status = status as string;
     if (agentId) where.requests = { some: { agentId: agentId as string } };
 
-    const [cards, total] = await Promise.all([
+    const sessionUser = req.user as Express.User;
+    const [cards, total, me] = await Promise.all([
       prisma.clientCard.findMany({
         where,
         include: CARD_INCLUDE,
@@ -124,9 +186,16 @@ router.get('/', async (req: Request, res: Response) => {
         skip: Number(offset),
       }),
       prisma.clientCard.count({ where }),
+      // peekCalendarAccess isn't in the session payload (same reasoning as
+      // peekCalendar.ts's loadMe), so this needs a fresh read.
+      prisma.user.findUnique({ where: { id: sessionUser.id } }),
     ]);
 
-    res.json({ cards: cards.map(formatCard), total });
+    res.json({
+      cards: cards.map(formatCard),
+      total,
+      canCheckAccounts: !!me && isTrackedAgent(me),
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to fetch peak requests' });
@@ -327,7 +396,8 @@ router.patch('/cards/:id/status', async (req: Request, res: Response) => {
     const card = await prisma.clientCard.findUnique({ where: { id }, include: CARD_INCLUDE });
     if (!card) return res.status(404).json({ error: 'Card not found' });
 
-    const doneAt = status === 'DONE' ? (card.status === 'DONE' ? card.doneAt : new Date()) : null;
+    const wasAlreadyDone = card.status === 'DONE';
+    const doneAt = status === 'DONE' ? (wasAlreadyDone ? card.doneAt : new Date()) : null;
 
     await prisma.clientCard.update({ where: { id }, data: { status, doneAt } });
 
@@ -336,11 +406,35 @@ router.patch('/cards/:id/status', async (req: Request, res: Response) => {
       await prisma.peakRequest.update({ where: { id: active.id }, data: { status, doneAt } });
     }
 
+    if (status === 'DONE' && !wasAlreadyDone) {
+      await recordResolutionCredit(id, req.user as Express.User);
+    }
+
     const updated = await prisma.clientCard.findUnique({ where: { id }, include: CARD_INCLUDE });
     return res.json(formatCard(updated!));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// PATCH /api/peak-requests/cards/:id/checked — "I verified this account still
+// works" stamp, settable only by the peek team (isTrackedAgent).
+router.patch('/cards/:id/checked', async (req: Request, res: Response) => {
+  try {
+    const sessionUser = req.user as Express.User;
+    const me = await prisma.user.findUnique({ where: { id: sessionUser.id } });
+    if (!me || !isTrackedAgent(me)) return res.status(403).json({ error: 'Not allowed' });
+
+    const card = await prisma.clientCard.update({
+      where: { id: req.params.id },
+      data: { lastCheckedByName: me.name, lastCheckedAt: new Date() },
+      include: CARD_INCLUDE,
+    });
+    return res.json(formatCard(card));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to record check' });
   }
 });
 

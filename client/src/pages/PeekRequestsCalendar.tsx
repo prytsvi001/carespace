@@ -16,10 +16,10 @@ import {
 } from '@dnd-kit/core';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths } from 'date-fns';
 import {
-  getPeekCalendarAssignees, getPeekCalendarEntries,
+  getPeekCalendarAssignees, getPeekCalendarEntries, getPeekResolutionStats,
   createPeekCalendarEntry, updatePeekCalendarEntry, deletePeekCalendarEntry,
 } from '../api';
-import { PeekCalendarEntry } from '../types';
+import { PeekCalendarEntry, PeekResolutionStats } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
 
 // Each agent's color is pinned to an existing Support Calendar event color, per
@@ -35,6 +35,16 @@ const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
 };
 const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
 const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
+
+// Short display names for the resolution-count summary line and day-cell
+// badges — "Victoria H" disambiguates from Victoria Davis (lead), even though
+// only peek-team names ever actually appear here.
+const SHORT_NAMES: Record<string, string> = {
+  'Iryna Kolodienko': 'Iryna',
+  'Victoria Horopeka': 'Victoria H',
+  'Julia Manson': 'Julia',
+};
+const shortNameFor = (name: string) => SHORT_NAMES[name] ?? name.split(' ')[0];
 
 const MAX_PER_DAY = 2;
 
@@ -92,9 +102,10 @@ function EntryChip({ entry, onDelete, onEdit }: {
   );
 }
 
-function DayCell({ date, entries, onAdd, onRequestDelete, onEditEntry, isCurrentMonth }: {
+function DayCell({ date, entries, resolvedCounts, onAdd, onRequestDelete, onEditEntry, isCurrentMonth }: {
   date: Date;
   entries: PeekCalendarEntry[];
+  resolvedCounts: { name: string; count: number }[];
   onAdd: (date: Date) => void;
   onRequestDelete: (id: string) => void;
   onEditEntry: (entry: PeekCalendarEntry) => void;
@@ -130,6 +141,22 @@ function DayCell({ date, entries, onAdd, onRequestDelete, onEditEntry, isCurrent
           <EntryChip key={entry.id} entry={entry} onDelete={() => onRequestDelete(entry.id)} onEdit={() => onEditEntry(entry)} />
         ))}
       </div>
+      {resolvedCounts.length > 0 && (
+        <div className="flex flex-wrap gap-0.5 mt-1" onClick={(e) => e.stopPropagation()}>
+          {resolvedCounts.map((r) => {
+            const s = styleForAssignee(r.name); // r.name is already the full name (e.g. "Iryna Kolodienko")
+            return (
+              <span
+                key={r.name}
+                className={`inline-flex items-center px-1 py-0.5 rounded text-[9px] font-semibold ${s.bg} ${s.text}`}
+                title={`${r.name}: ${r.count} resolved`}
+              >
+                {shortNameFor(r.name)}: {r.count}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -138,6 +165,9 @@ export default function PeekRequestsCalendar() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [assignees, setAssignees] = useState<{ id: string; name: string }[]>([]);
   const [entries, setEntries] = useState<PeekCalendarEntry[]>([]);
+  // Already filtered server-side to what the viewer is allowed to see (own
+  // counts only for the 3 peek agents, everyone's for head/lead).
+  const [stats, setStats] = useState<PeekResolutionStats>({ byDay: {}, totals: [] });
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -153,12 +183,14 @@ export default function PeekRequestsCalendar() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [assigneeData, entryData] = await Promise.all([
+      const [assigneeData, entryData, statsData] = await Promise.all([
         getPeekCalendarAssignees(),
         getPeekCalendarEntries({ year: currentMonth.getFullYear(), month: currentMonth.getMonth() + 1 }),
+        getPeekResolutionStats({ year: currentMonth.getFullYear(), month: currentMonth.getMonth() + 1 }),
       ]);
       setAssignees(assigneeData);
       setEntries(entryData);
+      setStats(statsData);
     } catch (e) {
       console.error(e);
     } finally {
@@ -174,6 +206,8 @@ export default function PeekRequestsCalendar() {
 
   const getEntriesForDate = (date: Date) =>
     entries.filter((e) => format(new Date(e.eventDate), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
+
+  const getResolvedCountsForDate = (date: Date) => stats.byDay[format(date, 'yyyy-MM-dd')] ?? [];
 
   const handleDragStart = (event: DragStartEvent) => {
     const found = entries.find((e) => e.id === event.active.id);
@@ -280,6 +314,21 @@ export default function PeekRequestsCalendar() {
         })}
       </div>
 
+      {/* Monthly resolved-request totals — already scoped server-side to what
+          the viewer is allowed to see (own count only for the 3 peek agents,
+          everyone's for head/lead). */}
+      {stats.totals.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
+          <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.40)' }}>Resolved this month:</span>
+          {stats.totals.map((t, i) => (
+            <span key={t.name}>
+              {i > 0 && <span className="mx-1" style={{ color: 'rgba(14,14,14,0.25)' }}>·</span>}
+              <span className="font-semibold text-ink">{shortNameFor(t.name)}</span>: {t.count}
+            </span>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-12"><Spinner size="lg" /></div>
       ) : (
@@ -296,6 +345,7 @@ export default function PeekRequestsCalendar() {
                 key={format(date, 'yyyy-MM-dd')}
                 date={date}
                 entries={getEntriesForDate(date)}
+                resolvedCounts={getResolvedCountsForDate(date)}
                 onAdd={(d) => { setSelectedDate(d); setForm({ userId: '', hours: '' }); setShowForm(true); }}
                 onRequestDelete={setConfirmDeleteId}
                 onEditEntry={(entry) => { setEditingEntry(entry); setEditHours(entry.hours || ''); }}

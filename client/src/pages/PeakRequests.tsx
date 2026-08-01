@@ -1,10 +1,10 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User, ArrowUp, ArrowDown } from 'lucide-react';
+import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User, ArrowUp, ArrowDown, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
-  updatePeakRequestCardStatus, togglePeakRequestCardStar, archivePeakRequestCard, deletePeakRequestCard,
+  updatePeakRequestCardStatus, togglePeakRequestCardStar, checkPeakRequestCard, archivePeakRequestCard, deletePeakRequestCard,
   patchPeakRequestFields, addPeakRequestComment, getDutyStatus, DutyStatus,
   getTodayLogs,
 } from '../api';
@@ -117,12 +117,71 @@ function CardMenu({ onArchive, onDelete }: { onArchive: () => void; onDelete: ()
   );
 }
 
+// ── EyeCheckButton ───────────────────────────────────────────────────────────
+// "I verified this account still works" stamp, shown on In Progress cards only.
+// Clickable for the peek team (canCheck); everyone else sees the same icon
+// and hover tooltip but with no click affordance (cursor: default).
+
+function EyeCheckButton({ card, canCheck, onCheck }: {
+  card: ClientCardView;
+  canCheck: boolean;
+  onCheck: () => void;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const checked = !!card.lastCheckedAt;
+  const tooltip = checked
+    ? `Last checked: ${card.lastCheckedByName} · ${format(new Date(card.lastCheckedAt!), "MMM d, yyyy 'at' HH:mm")}`
+    : 'Not checked yet';
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={canCheck ? (e) => { e.stopPropagation(); setConfirmOpen(true); } : undefined}
+        className={`p-1 rounded transition-colors ${canCheck ? 'hover:bg-black/5' : ''}`}
+        style={{ color: checked ? '#16a34a' : 'rgba(14,14,14,0.35)', cursor: canCheck ? 'pointer' : 'default' }}
+        title={tooltip}
+        aria-label={tooltip}
+      >
+        <Eye size={14} strokeWidth={1.8} fill={checked ? 'rgba(34,197,94,0.15)' : 'none'} />
+      </button>
+
+      {confirmOpen && canCheck && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setConfirmOpen(false)} />
+          <div className="absolute z-50 top-full right-0 mt-1 bg-white rounded-lg shadow-lg border border-slate-100 p-2.5 w-48">
+            <p className="text-xs text-slate-600 mb-2">Ти точно перевірила акаунт?</p>
+            <div className="flex gap-1.5 justify-end">
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="text-[10px] px-2 py-1 rounded-lg text-slate-400 hover:text-slate-600 font-medium transition-colors"
+              >
+                Ні
+              </button>
+              <button
+                type="button"
+                onClick={() => { setConfirmOpen(false); onCheck(); }}
+                className="text-[10px] px-2 py-1 rounded-lg font-semibold transition-colors hover:brightness-95"
+                style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+              >
+                Так ✓
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── ClientCard ─────────────────────────────────────────────────────────────────
 // One card per unique client. Shows the active (most recent) request expanded,
 // with older requests collapsed behind a "History" disclosure.
 
 function ClientCard({
-  card, onEdit, onStatusChange, onToggleStar, onArchive, onDelete, onFieldsUpdated, highlightNew,
+  card, onEdit, onStatusChange, onToggleStar, onArchive, onDelete, onFieldsUpdated, onCheckAccount,
+  highlightNew, showEyeCheck, canCheckAccounts,
 }: {
   card: ClientCardView;
   onEdit: (card: ClientCardView) => void;
@@ -131,7 +190,10 @@ function ClientCard({
   onArchive: (cardId: string) => void;
   onDelete: (cardId: string) => void;
   onFieldsUpdated: (requestId: string, fields: { comments?: PeakRequestComment[]; tags?: string }) => void;
+  onCheckAccount: (cardId: string) => void;
   highlightNew?: boolean;
+  showEyeCheck?: boolean;
+  canCheckAccounts?: boolean;
 }) {
   const [confirm, setConfirm]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -286,6 +348,10 @@ function ClientCard({
         <p className="flex-1 min-w-0 truncate text-sm font-medium text-slate-700" title={active.requestText}>
           {active.requestText}
         </p>
+
+        {showEyeCheck && (
+          <EyeCheckButton card={card} canCheck={!!canCheckAccounts} onCheck={() => onCheckAccount(card.id)} />
+        )}
 
         <button
           type="button"
@@ -531,6 +597,10 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const { user } = useAuth();
   const isPeekHandler = user?.role === 'peek_handler';
   const [cards, setCards] = useState<ClientCardView[]>([]);
+  // Whether the current viewer is one of the 3 peek team members (Iryna,
+  // Victoria Horopeka, Julia Manson) allowed to stamp the "account checked" eye
+  // icon — computed server-side (peekCalendarAccess isn't in the session).
+  const [canCheckAccounts, setCanCheckAccounts] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -598,6 +668,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
           // version (e.g. the optimistic status/star change) instead of the stale fetch.
           .map((c: ClientCardView) => (pendingMutations.current.has(c.id) ? prevById.get(c.id)! : c));
       });
+      setCanCheckAccounts(!!reqData.canCheckAccounts);
     } catch (e) {
       console.error(e);
     } finally {
@@ -670,6 +741,19 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       return;
     }
     pendingMutations.current.delete(cardId);
+  };
+
+  const handleCheckAccount = async (cardId: string) => {
+    pendingMutations.current.add(cardId);
+    try {
+      const updated: ClientCardView = await checkPeakRequestCard(cardId);
+      setCards(prev => prev.map(c => c.id === cardId ? updated : c));
+    } catch (e) {
+      console.error(e);
+      await loadData();
+    } finally {
+      pendingMutations.current.delete(cardId);
+    }
   };
 
   const handleArchive = async (cardId: string) => {
@@ -853,6 +937,9 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                       onArchive={handleArchive}
                       onDelete={handleDelete}
                       onFieldsUpdated={handleFieldsUpdated}
+                      onCheckAccount={handleCheckAccount}
+                      showEyeCheck={col.status === 'IN_PROGRESS'}
+                      canCheckAccounts={canCheckAccounts}
                     />
                   ))}
                 </div>

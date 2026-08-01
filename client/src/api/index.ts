@@ -90,6 +90,9 @@ export const updatePeekCalendarEntry = (id: string, data: Partial<{ eventDate: s
 export const deletePeekCalendarEntry = (id: string) =>
   api.delete(`/peek-calendar/${id}`).then(r => r.data);
 
+export const getPeekResolutionStats = (params?: { year?: number; month?: number }) =>
+  api.get('/peek-calendar/resolution-stats', { params }).then(r => r.data);
+
 // ─── QA ────────────────────────────────────────────────────────────────────
 export const getQAEntries = (params?: { channel?: string; dateFrom?: string; dateTo?: string; limit?: number; offset?: number; includeArchived?: boolean }) =>
   api.get('/qa', { params }).then(r => r.data);
@@ -148,6 +151,9 @@ export const updatePeakRequestCardStatus = (cardId: string, status: string) =>
 
 export const togglePeakRequestCardStar = (cardId: string, starred: boolean) =>
   api.patch(`/peak-requests/cards/${cardId}/star`, { starred }).then(r => r.data);
+
+export const checkPeakRequestCard = (cardId: string) =>
+  api.patch(`/peak-requests/cards/${cardId}/checked`).then(r => r.data);
 
 export const archivePeakRequestCard = (cardId: string) =>
   api.delete(`/peak-requests/cards/${cardId}`).then(r => r.data);

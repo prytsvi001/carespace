@@ -142,6 +142,50 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/peek-calendar/resolution-stats?year=&month= — daily/monthly counts
+// of resolved (Done) client cards credited per peek agent (see peakRequests.ts
+// for how credit is assigned). Same baseline access as the rest of this
+// router; the 3 tracked peek agents only ever get their OWN counts back
+// (filtered server-side, not just hidden client-side), head/lead see all.
+router.get('/resolution-stats', async (req: Request, res: Response) => {
+  try {
+    const me = await loadMe(req);
+    if (!me || !canEdit(me)) return res.status(403).json({ error: 'Not allowed' });
+
+    const now = new Date();
+    const year = Number(req.query.year ?? now.getUTCFullYear());
+    const month = Number(req.query.month ?? now.getUTCMonth() + 1) - 1;
+    const start = new Date(Date.UTC(year, month, 1));
+    const end = new Date(Date.UTC(year, month + 1, 1));
+
+    const isAdmin = me.role === 'head' || me.role === 'lead';
+    const where: Record<string, unknown> = { resolvedDate: { gte: start, lt: end } };
+    if (!isAdmin) where.creditedUserId = me.id;
+
+    const credits = await prisma.peekResolutionCredit.findMany({ where });
+
+    const byDay: Record<string, { name: string; count: number }[]> = {};
+    const totalsMap = new Map<string, number>();
+
+    for (const c of credits) {
+      const dayKey = c.resolvedDate.toISOString().slice(0, 10);
+      const dayList = byDay[dayKey] ?? (byDay[dayKey] = []);
+      const existing = dayList.find((e) => e.name === c.creditedName);
+      if (existing) existing.count++;
+      else dayList.push({ name: c.creditedName, count: 1 });
+
+      totalsMap.set(c.creditedName, (totalsMap.get(c.creditedName) ?? 0) + 1);
+    }
+
+    const totals = Array.from(totalsMap.entries()).map(([name, count]) => ({ name, count }));
+
+    res.json({ byDay, totals });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch resolution stats' });
+  }
+});
+
 // DELETE /api/peek-calendar/:id
 router.delete('/:id', async (req: Request, res: Response) => {
   try {

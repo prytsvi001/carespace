@@ -90,9 +90,18 @@ export interface ClientCardView {
   archived: boolean;
   requestCount: number;
   lastActivityAt: string;
+  lastCheckedByName: string | null;
+  lastCheckedAt: string | null;
   hasNewActivity: boolean;
   activeRequest: PeakRequest;
   history: PeakRequest[]; // newest-first, excludes activeRequest
+}
+
+// Daily/monthly counts of resolved (Done) client cards credited per peek
+// agent — already filtered server-side to what the viewer is allowed to see.
+export interface PeekResolutionStats {
+  byDay: Record<string, { name: string; count: number }[]>; // "yyyy-MM-dd" -> per-agent counts
+  totals: { name: string; count: number }[];
 }
 
 export interface PeekCalendarEntry {

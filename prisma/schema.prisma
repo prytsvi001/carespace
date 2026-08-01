@@ -455,10 +455,35 @@ model ClientCard {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // "I verified this account still works" stamp — settable only by the peek
+  // team (peekCalendar.ts's isAssignable predicate), shown on In Progress cards.
+  lastCheckedByName String?
+  lastCheckedAt     DateTime?
+
   requests        PeakRequest[]
+  resolutionCredits PeekResolutionCredit[]
 
   @@index([status])
   @@index([status, archived])
+}
+
+// One row per Done transition — who resolved it and who gets credit for it
+// (may differ: e.g. a regular agent resolves it, credit defers to whoever was
+// on duty per the Peek Calendar that day). See peakRequests.ts for the rule.
+// No historical backfill — tracks resolutions going forward only.
+model PeekResolutionCredit {
+  id             String    @id @default(cuid())
+  clientCardId   String
+  clientCard     ClientCard @relation(fields: [clientCardId], references: [id], onDelete: Cascade)
+  movedByUserId  String?
+  movedByName    String
+  creditedUserId String?
+  creditedName   String
+  resolvedDate   DateTime  // UTC-midnight day marker, same convention as PeekCalendarEntry.eventDate
+  createdAt      DateTime  @default(now())
+
+  @@index([creditedUserId, resolvedDate])
+  @@index([resolvedDate])
 }
 
 model PeakRequest {
