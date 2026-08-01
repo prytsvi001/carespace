@@ -432,24 +432,57 @@ model PersonalShortcutTag {
   @@index([userId, kind, order])
 }
 
+// One card per unique client (matched by contactEmail + profileNickname).
+// Holds the aggregate/current state; individual requests live in PeakRequest,
+// linked via clientCardId. The "active" request for a card is simply the one
+// with the latest createdAt (see peakRequests.ts) — no separate isActive flag.
+model ClientCard {
+  id              String    @id @default(cuid())
+  contactEmail    String?
+  profileNickname String?
+  // Null when either identity field is blank, so blank-identity cards never
+  // accidentally merge with each other (Postgres/SQLite both treat multiple
+  // NULLs as non-conflicting under a unique index). When both are present:
+  // normalizeMatchKey(email, nickname) — lowercase+trim both, join with "|".
+  // Same helper is used here, in match-or-create, and in the identity-edit
+  // collision check in peakRequests.ts — never three separate implementations.
+  matchKey        String?   @unique
+  status          String    @default("NEW")   // mirrors the active request's status
+  starred         Boolean   @default(false)
+  archived        Boolean   @default(false)
+  doneAt          DateTime? // set when status transitions to DONE; auto-archived 24h after
+  lastActivityAt  DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  requests        PeakRequest[]
+
+  @@index([status])
+  @@index([status, archived])
+}
+
 model PeakRequest {
   id            String        @id @default(cuid())
+  clientCardId  String
+  clientCard    ClientCard    @relation(fields: [clientCardId], references: [id], onDelete: Cascade)
   agentId       String
   agent         Agent         @relation(fields: [agentId], references: [id])
-  contactEmail     String?
-  profileNickname  String?
+  contactEmail     String?    // legacy per-row copy, kept for data-safety — ClientCard now owns identity
+  profileNickname  String?    // legacy per-row copy, kept for data-safety — ClientCard now owns identity
   requestText      String
   status        String        @default("NEW")
-  doneAt        DateTime?     // set when status transitions to DONE; auto-archived 24h after
+  doneAt        DateTime?     // legacy; ClientCard.doneAt is authoritative for auto-archive going forward
   comments      String        @default("[]") // JSON: [{authorId, authorName, text, createdAt}]
   tags          String        @default("")
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
-  archived      Boolean       @default(false)
+  archived      Boolean       @default(false) // legacy; ClientCard.archived is authoritative going forward
 
   @@index([agentId])
   @@index([status])
   @@index([status, archived])
+  @@index([clientCardId])
+  @@index([clientCardId, createdAt])
 }
 
 // Dedup log for the shift-reminder cron — the external scheduler that hits

@@ -64,12 +64,13 @@ export interface PeakRequestComment {
   createdAt: string;
 }
 
+// One entry in a ClientCard's timeline — either the active request or a
+// read-only history item. contactEmail/profileNickname/archived now live on
+// ClientCard (the card's identity/lifecycle), not per-request.
 export interface PeakRequest {
   id: string;
   agentId: string;
   agent: Agent;
-  contactEmail?: string | null;
-  profileNickname?: string | null;
   requestText: string;
   status: RequestStatus;
   doneAt: string | null;
@@ -77,7 +78,21 @@ export interface PeakRequest {
   tags: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// One card per unique client (matched by contactEmail + profileNickname).
+export interface ClientCardView {
+  id: string;
+  contactEmail: string | null;
+  profileNickname: string | null;
+  status: RequestStatus;
+  starred: boolean;
   archived: boolean;
+  requestCount: number;
+  lastActivityAt: string;
+  hasNewActivity: boolean;
+  activeRequest: PeakRequest;
+  history: PeakRequest[]; // newest-first, excludes activeRequest
 }
 
 export interface PeekCalendarEntry {

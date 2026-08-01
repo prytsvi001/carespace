@@ -1,4 +1,8 @@
 // server/src/routes/peakRequests.ts
+// "Client Card" board: one card per unique client (matched by contactEmail +
+// profileNickname), holding the full history of their requests. The "active"
+// request for a card is simply the one with the latest (createdAt, id) —
+// derived, not a stored flag — everything older is read-only history.
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { sendTelegramMessage, CARESPACE_URL } from '../telegram';
@@ -11,24 +15,82 @@ function parseComments(raw: string): PeakComment[] {
   try { return JSON.parse(raw); } catch { return []; }
 }
 
-function formatRequest(r: { comments: string; [key: string]: unknown }) {
-  return { ...r, comments: parseComments(r.comments) };
+// Same normalization used in scripts/backfill-peak-request-client-cards.ts —
+// keep both in sync if this ever changes. Null when either field is blank, so
+// blank-identity cards never accidentally merge with each other (Postgres and
+// SQLite both treat multiple NULLs as non-conflicting under a unique index).
+function normalizeMatchKey(email: string | null | undefined, nickname: string | null | undefined): string | null {
+  const e = email?.trim().toLowerCase();
+  const n = nickname?.trim().toLowerCase();
+  if (!e || !n) return null;
+  return `${e}|${n}`;
 }
+
+type RawRequest = {
+  id: string; agentId: string; agent: { id: string; name: string };
+  requestText: string; status: string; doneAt: Date | null;
+  comments: string; tags: string; createdAt: Date; updatedAt: Date;
+};
+
+// Drops the legacy per-row contactEmail/profileNickname/archived/clientCardId —
+// those are now ClientCard-level concerns; showing them per-history-row would
+// just go stale the moment the card's identity is edited.
+function formatRequestEntry(r: RawRequest) {
+  return {
+    id: r.id, agentId: r.agentId, agent: r.agent,
+    requestText: r.requestText, status: r.status, doneAt: r.doneAt,
+    comments: parseComments(r.comments), tags: r.tags,
+    createdAt: r.createdAt, updatedAt: r.updatedAt,
+  };
+}
+
+type RawCard = {
+  id: string; contactEmail: string | null; profileNickname: string | null;
+  status: string; starred: boolean; archived: boolean; lastActivityAt: Date;
+  requests: RawRequest[]; // pre-sorted desc by (createdAt, id) — requests[0] is active
+};
+
+function formatCard(card: RawCard) {
+  const [active, ...history] = card.requests;
+  return {
+    id: card.id,
+    contactEmail: card.contactEmail,
+    profileNickname: card.profileNickname,
+    status: card.status,
+    starred: card.starred,
+    archived: card.archived,
+    requestCount: card.requests.length,
+    lastActivityAt: card.lastActivityAt,
+    // Deterministic, no fragile time-window: a returning client's fresh issue
+    // reads as "new activity" for as long as the card is genuinely sitting in
+    // New with more than one request behind it.
+    hasNewActivity: card.requests.length > 1 && card.status === 'NEW',
+    activeRequest: formatRequestEntry(active),
+    history: history.map(formatRequestEntry),
+  };
+}
+
+const CARD_INCLUDE = {
+  requests: {
+    include: { agent: { select: { id: true, name: true } } },
+    orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
+  },
+};
 
 const DONE_ARCHIVE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 // Runs on every board load/poll — no separate cron process needed (production
 // runs as Vercel serverless functions, which can't host a long-lived timer).
-// Rows that were already DONE before this feature shipped have no doneAt yet;
+// Cards that were already DONE before this existed have no doneAt yet;
 // stamping them with "now" here means their 24h timer effectively starts at
-// first-check-after-deploy, matching the "start the timer at deploy time" spec.
+// first-check-after-deploy.
 async function autoArchiveStaleDone() {
   const now = new Date();
-  await prisma.peakRequest.updateMany({
+  await prisma.clientCard.updateMany({
     where: { status: 'DONE', archived: false, doneAt: null },
     data: { doneAt: now },
   });
-  await prisma.peakRequest.updateMany({
+  await prisma.clientCard.updateMany({
     where: { status: 'DONE', archived: false, doneAt: { lte: new Date(now.getTime() - DONE_ARCHIVE_AFTER_MS) } },
     data: { archived: true },
   });
@@ -42,38 +104,40 @@ router.get('/', async (req: Request, res: Response) => {
 
     const where: Record<string, unknown> = includeArchived === 'true' ? {} : { archived: false };
     if (search) {
+      const s = search as string;
       where.OR = [
-        { requestText: { contains: search as string } },
-        { contactEmail: { contains: search as string } },
-        { comments: { contains: search as string } },
+        { contactEmail: { contains: s } },
+        { profileNickname: { contains: s } },
+        { requests: { some: { requestText: { contains: s } } } },
+        { requests: { some: { comments: { contains: s } } } },
       ];
     }
     if (status) where.status = status as string;
-    if (agentId) where.agentId = agentId as string;
+    if (agentId) where.requests = { some: { agentId: agentId as string } };
 
-    const [requests, total] = await Promise.all([
-      prisma.peakRequest.findMany({
+    const [cards, total] = await Promise.all([
+      prisma.clientCard.findMany({
         where,
-        include: { agent: { select: { id: true, name: true } } },
-        orderBy: { createdAt: 'desc' },
+        include: CARD_INCLUDE,
+        orderBy: { lastActivityAt: 'desc' },
         take: Number(limit),
         skip: Number(offset),
       }),
-      prisma.peakRequest.count({ where }),
+      prisma.clientCard.count({ where }),
     ]);
 
-    res.json({ requests: requests.map(formatRequest), total });
+    res.json({ cards: cards.map(formatCard), total });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to fetch peak requests' });
   }
 });
 
-// GET /api/peak-requests/new-count
+// GET /api/peak-requests/new-count — distinct clients, not raw request rows
 router.get('/new-count', async (req: Request, res: Response) => {
   try {
     await autoArchiveStaleDone();
-    const count = await prisma.peakRequest.count({
+    const count = await prisma.clientCard.count({
       where: { archived: false, status: 'NEW' },
     });
     res.json({ count });
@@ -83,7 +147,7 @@ router.get('/new-count', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/peak-requests
+// POST /api/peak-requests — match-or-create a ClientCard, then always create a new PeakRequest under it
 router.post('/', async (req: Request, res: Response) => {
   try {
     const { agentId, contactEmail, profileNickname, requestText } = req.body;
@@ -92,39 +156,51 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'agentId and requestText are required' });
     }
 
-    const request = await prisma.peakRequest.create({
-      data: {
-        agentId,
-        contactEmail: contactEmail || null,
-        profileNickname: profileNickname || null,
-        requestText,
-        status: 'NEW',
-      },
-      include: { agent: { select: { id: true, name: true } } },
+    const email = contactEmail || null;
+    const nickname = profileNickname || null;
+    const key = normalizeMatchKey(email, nickname);
+
+    // `upsert` on the unique matchKey resolves concurrent submissions from the
+    // same brand-new client atomically — the DB, not a check-then-act race in
+    // app code. Blank-identity submissions (key === null) always create a new
+    // card; two nulls never collide under a unique index.
+    const card = key
+      ? await prisma.clientCard.upsert({
+          where: { matchKey: key },
+          update: { status: 'NEW', archived: false, doneAt: null, lastActivityAt: new Date() },
+          create: { contactEmail: email, profileNickname: nickname, matchKey: key },
+        })
+      : await prisma.clientCard.create({ data: { contactEmail: email, profileNickname: nickname, matchKey: null } });
+
+    await prisma.peakRequest.create({
+      data: { clientCardId: card.id, agentId, contactEmail: email, profileNickname: nickname, requestText, status: 'NEW' },
     });
 
     // Only notify users currently toggled "on duty" via the dedicated Peek Duty status
     // (User.peekOnDuty, set through PATCH /api/duty/me) — a separate concept from the
-    // Daily Log shift system. Includes peek_handlers and any peekDutyEligible agent
-    // (e.g. Julia Manson) who has toggled themself on; excludes everyone else, even a
-    // peek_handler, when they haven't toggled on.
+    // Daily Log shift system. Fires for every new request, whether it created a fresh
+    // card or added to an existing one — a fresh inbound issue deserves the same nudge.
     const onlinePeekHandlers = await prisma.user.findMany({
       where: { peekOnDuty: true, telegramChatId: { not: null } },
     });
-
-    const notifyText = `New Peak Request from ${request.agent.name}: ${requestText.trim().slice(0, 120)} ${CARESPACE_URL}`;
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    const notifyText = `New Peak Request from ${agent?.name ?? 'an agent'}: ${requestText.trim().slice(0, 120)} ${CARESPACE_URL}`;
     await Promise.allSettled(
       onlinePeekHandlers.map((u) => sendTelegramMessage(u.telegramChatId as string, notifyText)),
     );
 
-    return res.status(201).json(formatRequest(request));
+    const withRequests = await prisma.clientCard.findUnique({ where: { id: card.id }, include: CARD_INCLUDE });
+    return res.status(201).json(formatCard(withRequests!));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to create peak request' });
   }
 });
 
-// PUT /api/peak-requests/:id
+// PUT /api/peak-requests/:id — :id is the active PeakRequest's id. Updates the
+// request's own text/agent, and its parent card's identity fields (with a
+// collision guard, since editing email/nickname could otherwise merge two
+// previously-distinct clients together).
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -134,25 +210,46 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'agentId and requestText are required' });
     }
 
-    const request = await prisma.peakRequest.update({
+    const existing = await prisma.peakRequest.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Request not found' });
+
+    const email = contactEmail || null;
+    const nickname = profileNickname || null;
+    const key = normalizeMatchKey(email, nickname);
+
+    if (key) {
+      const collision = await prisma.clientCard.findUnique({ where: { matchKey: key } });
+      if (collision && collision.id !== existing.clientCardId) {
+        return res.status(409).json({ error: 'This email/nickname already belongs to another client card' });
+      }
+    }
+
+    try {
+      await prisma.clientCard.update({
+        where: { id: existing.clientCardId },
+        data: { contactEmail: email, profileNickname: nickname, matchKey: key },
+      });
+    } catch (err: unknown) {
+      if ((err as { code?: string })?.code === 'P2002') {
+        return res.status(409).json({ error: 'This email/nickname already belongs to another client card' });
+      }
+      throw err;
+    }
+
+    await prisma.peakRequest.update({
       where: { id },
-      data: {
-        agentId,
-        contactEmail: contactEmail || null,
-        profileNickname: profileNickname || null,
-        requestText,
-      },
-      include: { agent: { select: { id: true, name: true } } },
+      data: { agentId, contactEmail: email, profileNickname: nickname, requestText },
     });
 
-    return res.json(formatRequest(request));
+    const card = await prisma.clientCard.findUnique({ where: { id: existing.clientCardId }, include: CARD_INCLUDE });
+    return res.json(formatCard(card!));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update peak request' });
   }
 });
 
-// PATCH /api/peak-requests/:id/fields  — lightweight inline update (tags)
+// PATCH /api/peak-requests/:id/fields — lightweight inline update (tags) on the active request
 router.patch('/:id/fields', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -171,14 +268,14 @@ router.patch('/:id/fields', async (req: Request, res: Response) => {
       include: { agent: { select: { id: true, name: true } } },
     });
 
-    return res.json(formatRequest(request));
+    return res.json(formatRequestEntry(request));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update fields' });
   }
 });
 
-// POST /api/peak-requests/:id/comments — append a comment
+// POST /api/peak-requests/:id/comments — append a comment to the active request
 router.post('/:id/comments', async (req: Request, res: Response) => {
   try {
     const user = req.user as Express.User;
@@ -187,7 +284,7 @@ router.post('/:id/comments', async (req: Request, res: Response) => {
 
     if (!text?.trim()) return res.status(400).json({ error: 'Comment text is required' });
 
-    const existing = await prisma.peakRequest.findUnique({ where: { id }, select: { comments: true } });
+    const existing = await prisma.peakRequest.findUnique({ where: { id }, select: { comments: true, agentId: true } });
     if (!existing) return res.status(404).json({ error: 'Request not found' });
 
     const comments = parseComments(existing.comments);
@@ -204,21 +301,21 @@ router.post('/:id/comments', async (req: Request, res: Response) => {
       include: { agent: { select: { id: true, name: true } } },
     });
 
-    const originalRequester = await prisma.user.findFirst({ where: { agentId: request.agentId } });
+    const originalRequester = await prisma.user.findFirst({ where: { agentId: existing.agentId } });
     if (originalRequester && originalRequester.id !== user.id && originalRequester.telegramChatId) {
       const notifyText = `${user.name} commented on your Peek Request: ${text.trim().slice(0, 120)} ${CARESPACE_URL}`;
       await sendTelegramMessage(originalRequester.telegramChatId, notifyText);
     }
 
-    return res.json(formatRequest(request));
+    return res.json(formatRequestEntry(request));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to add comment' });
   }
 });
 
-// PATCH /api/peak-requests/:id/status
-router.patch('/:id/status', async (req: Request, res: Response) => {
+// PATCH /api/peak-requests/cards/:id/status
+router.patch('/cards/:id/status', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -227,47 +324,60 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
-    const existing = await prisma.peakRequest.findUnique({ where: { id }, select: { status: true } });
-    if (!existing) return res.status(404).json({ error: 'Request not found' });
+    const card = await prisma.clientCard.findUnique({ where: { id }, include: CARD_INCLUDE });
+    if (!card) return res.status(404).json({ error: 'Card not found' });
 
-    const request = await prisma.peakRequest.update({
-      where: { id },
-      data: {
-        status,
-        doneAt: status === 'DONE' ? (existing.status === 'DONE' ? undefined : new Date()) : null,
-      },
-      include: { agent: { select: { id: true, name: true } } },
-    });
+    const doneAt = status === 'DONE' ? (card.status === 'DONE' ? card.doneAt : new Date()) : null;
 
-    return res.json(formatRequest(request));
+    await prisma.clientCard.update({ where: { id }, data: { status, doneAt } });
+
+    const active = card.requests[0];
+    if (active) {
+      await prisma.peakRequest.update({ where: { id: active.id }, data: { status, doneAt } });
+    }
+
+    const updated = await prisma.clientCard.findUnique({ where: { id }, include: CARD_INCLUDE });
+    return res.json(formatCard(updated!));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update status' });
   }
 });
 
-// DELETE (archive) /api/peak-requests/:id
-router.delete('/:id', async (req: Request, res: Response) => {
+// PATCH /api/peak-requests/cards/:id/star
+router.patch('/cards/:id/star', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    await prisma.peakRequest.update({
-      where: { id },
-      data: { archived: true },
-    });
-    res.json({ success: true });
+    const { starred } = req.body as { starred?: boolean };
+    if (typeof starred !== 'boolean') return res.status(400).json({ error: 'starred (boolean) is required' });
+
+    const card = await prisma.clientCard.update({ where: { id }, data: { starred }, include: CARD_INCLUDE });
+    return res.json(formatCard(card));
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Failed to archive peak request' });
+    return res.status(500).json({ error: 'Failed to update priority' });
   }
 });
 
-router.delete('/delete/:id', async (req: Request, res: Response) => {
+// DELETE (archive) /api/peak-requests/cards/:id
+router.delete('/cards/:id', async (req: Request, res: Response) => {
   try {
-    await prisma.peakRequest.delete({ where: { id: req.params.id } });
+    await prisma.clientCard.update({ where: { id: req.params.id }, data: { archived: true } });
     res.json({ success: true });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Failed to delete peak request' });
+    res.status(500).json({ error: 'Failed to archive client card' });
+  }
+});
+
+// DELETE /api/peak-requests/cards/delete/:id — cascades its PeakRequest rows
+router.delete('/cards/delete/:id', async (req: Request, res: Response) => {
+  try {
+    await prisma.clientCard.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to delete client card' });
   }
 });
 

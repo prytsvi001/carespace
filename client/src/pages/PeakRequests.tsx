@@ -1,14 +1,14 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Copy, Check, ChevronDown } from 'lucide-react';
-import { format } from 'date-fns';
+import { ClipboardList, Copy, Check, ChevronDown, ChevronRight, Star } from 'lucide-react';
+import { format, formatDistanceToNowStrict } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
-  updatePeakRequestStatus, archivePeakRequest, deletePeakRequest,
+  updatePeakRequestCardStatus, togglePeakRequestCardStar, archivePeakRequestCard, deletePeakRequestCard,
   patchPeakRequestFields, addPeakRequestComment, getDutyStatus, DutyStatus,
   getTodayLogs,
 } from '../api';
-import { PeakRequest, PeakRequestComment, RequestStatus, ShiftLog } from '../types';
+import { ClientCardView, PeakRequestComment, RequestStatus, ShiftLog } from '../types';
 import { Modal, EmptyState, ConfirmDialog, StatusStrip, CardListSkeleton } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
@@ -112,46 +112,52 @@ function StatusDropdownBadge({ status, onChange }: { status: RequestStatus; onCh
   );
 }
 
-// ── RequestCard ───────────────────────────────────────────────────────────────
+// ── ClientCard ─────────────────────────────────────────────────────────────────
+// One card per unique client. Shows the active (most recent) request expanded,
+// with older requests collapsed behind a "History" disclosure.
 
-function RequestCard({
-  req, onEdit, onStatusChange, onArchive, onDelete, onFieldsUpdated, highlightNew,
+function ClientCard({
+  card, onEdit, onStatusChange, onToggleStar, onArchive, onDelete, onFieldsUpdated, highlightNew,
 }: {
-  req: PeakRequest;
-  onEdit: (req: PeakRequest) => void;
-  onStatusChange: (id: string, status: RequestStatus) => void;
-  onArchive: (id: string) => void;
-  onDelete: (id: string) => void;
-  onFieldsUpdated: (id: string, fields: { comments?: PeakRequestComment[]; tags?: string }) => void;
+  card: ClientCardView;
+  onEdit: (card: ClientCardView) => void;
+  onStatusChange: (cardId: string, status: RequestStatus) => void;
+  onToggleStar: (cardId: string, starred: boolean) => void;
+  onArchive: (cardId: string) => void;
+  onDelete: (cardId: string) => void;
+  onFieldsUpdated: (requestId: string, fields: { comments?: PeakRequestComment[]; tags?: string }) => void;
   highlightNew?: boolean;
 }) {
   const [confirm, setConfirm]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [copiedField, setCopiedField]     = useState<'email' | 'nickname' | null>(null);
 
-  // Archived Done cards start collapsed to keep that column scannable — full
-  // detail (request text, comments, tags, timestamps) is hidden until expanded.
-  const isArchivedDone = req.archived && req.status === 'DONE';
-  const [expanded, setExpanded] = useState(false);
+  const active = card.activeRequest;
 
-  // ── Comment thread state ───────────────────────────────────────────────────
-  const [comments, setComments] = useState<PeakRequestComment[]>(req.comments);
+  // Archived Done cards start collapsed to keep that column scannable — full
+  // detail (request text, comments, tags, timestamps, history) is hidden until expanded.
+  const isArchivedDone = card.archived && card.status === 'DONE';
+  const [archivedViewExpanded, setArchivedViewExpanded] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+
+  // ── Comment thread state (active request only — history is read-only) ─────
+  const [comments, setComments] = useState<PeakRequestComment[]>(active.comments);
   const [commentDraft, setCommentDraft] = useState('');
   const [postingComment, setPostingComment] = useState(false);
 
-  // ── Tags state ─────────────────────────────────────────────────────────────
+  // ── Tags state (active request only) ───────────────────────────────────────
   const [activeTags, setActiveTags] = useState<TagKey[]>(() =>
-    (req.tags || '').split(',').filter(Boolean) as TagKey[]
+    (active.tags || '').split(',').filter(Boolean) as TagKey[]
   );
 
-  // Sync when parent refreshes (e.g. after Edit modal save)
+  // Sync when parent refreshes (e.g. after Edit modal save, or a new request lands)
   useEffect(() => {
-    setComments(req.comments);
-  }, [req.comments]);
+    setComments(active.comments);
+  }, [active.comments, active.id]);
 
   useEffect(() => {
-    setActiveTags((req.tags || '').split(',').filter(Boolean) as TagKey[]);
-  }, [req.tags]);
+    setActiveTags((active.tags || '').split(',').filter(Boolean) as TagKey[]);
+  }, [active.tags, active.id]);
 
   // Copy-to-clipboard timeout
   useEffect(() => {
@@ -171,10 +177,10 @@ function RequestCard({
     if (!text) return;
     setPostingComment(true);
     try {
-      const updated = await addPeakRequestComment(req.id, text);
+      const updated = await addPeakRequestComment(active.id, text);
       setComments(updated.comments);
       setCommentDraft('');
-      onFieldsUpdated(req.id, { comments: updated.comments });
+      onFieldsUpdated(active.id, { comments: updated.comments });
     } catch (e) {
       console.error(e);
     } finally {
@@ -197,8 +203,8 @@ function RequestCard({
     setActiveTags(next);
     const tagsStr = next.join(',');
     try {
-      await patchPeakRequestFields(req.id, { tags: tagsStr });
-      onFieldsUpdated(req.id, { tags: tagsStr });
+      await patchPeakRequestFields(active.id, { tags: tagsStr });
+      onFieldsUpdated(active.id, { tags: tagsStr });
     } catch (e) {
       console.error(e);
       setActiveTags(activeTags);
@@ -208,26 +214,28 @@ function RequestCard({
   const nextStatus: Record<RequestStatus, RequestStatus | null> = {
     NEW: 'IN_PROGRESS', IN_PROGRESS: 'DONE', DONE: null,
   };
-  const next = nextStatus[req.status];
+  const next = nextStatus[card.status];
 
-  if (isArchivedDone && !expanded) {
+  const timeAgo = formatDistanceToNowStrict(new Date(card.lastActivityAt), { addSuffix: true });
+
+  if (isArchivedDone && !archivedViewExpanded) {
     return (
-      <div className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm">
+      <div className="bg-white rounded-xl border border-slate-100 p-2.5 shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-col gap-0.5 min-w-0">
-            {req.contactEmail && (
-              <span className="text-xs text-slate-500 truncate">📧 {req.contactEmail}</span>
+            {card.contactEmail && (
+              <span className="text-xs text-slate-500 truncate">📧 {card.contactEmail}</span>
             )}
-            {req.profileNickname && (
-              <span className="text-xs text-slate-500 truncate">👤 {req.profileNickname}</span>
+            {card.profileNickname && (
+              <span className="text-xs text-slate-500 truncate">👤 {card.profileNickname}</span>
             )}
-            {!req.contactEmail && !req.profileNickname && (
+            {!card.contactEmail && !card.profileNickname && (
               <span className="text-xs text-slate-400 italic">No contact info</span>
             )}
           </div>
           <button
             type="button"
-            onClick={() => setExpanded(true)}
+            onClick={() => setArchivedViewExpanded(true)}
             className="shrink-0 text-xs px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors"
           >
             Expand
@@ -238,44 +246,99 @@ function RequestCard({
   }
 
   return (
-    <div className={`bg-white rounded-xl border p-3 shadow-sm hover:shadow-md transition-shadow
+    <div className={`bg-white rounded-xl border p-2.5 shadow-sm hover:shadow-md transition-shadow
       ${highlightNew ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-100'}`}>
 
       {/* peek_handler new indicator */}
       {highlightNew && (
-        <div className="flex items-center gap-1.5 mb-2">
+        <div className="flex items-center gap-1.5 mb-1.5">
           <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse inline-block" />
           <span className="text-[10px] text-blue-400 font-semibold uppercase tracking-wide">New</span>
         </div>
       )}
 
-      {/* Header: agent + status + actions */}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-xs font-medium text-slate-500 truncate">{req.agent.name}</span>
-          <StatusDropdownBadge status={req.status} onChange={(s) => onStatusChange(req.id, s)} />
+      {/* Header: star + client identity + status/count/activity */}
+      <div className="flex items-start gap-2 mb-1.5">
+        <button
+          type="button"
+          onClick={() => onToggleStar(card.id, !card.starred)}
+          className="shrink-0 mt-0.5 transition-transform hover:scale-110"
+          aria-label={card.starred ? 'Remove priority' : 'Mark as priority'}
+          title={card.starred ? 'Remove priority' : 'Mark as priority'}
+        >
+          <Star
+            size={16}
+            strokeWidth={1.8}
+            fill={card.starred ? '#D4A847' : 'none'}
+            style={{ color: card.starred ? '#D4A847' : 'rgba(14,14,14,0.25)' }}
+          />
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {card.contactEmail && (
+              <span className="text-xs font-semibold text-slate-700 truncate">{card.contactEmail}</span>
+            )}
+            {card.profileNickname && (
+              <span className="text-xs text-slate-500 truncate">👤 {card.profileNickname}</span>
+            )}
+            {!card.contactEmail && !card.profileNickname && (
+              <span className="text-xs text-slate-400 italic">No contact info</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <StatusDropdownBadge status={card.status} onChange={(s) => onStatusChange(card.id, s)} />
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
+              {card.requestCount} {card.requestCount === 1 ? 'request' : 'requests'}
+            </span>
+            {card.hasNewActivity && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: '#0E0E0E' }}>
+                <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse" style={{ backgroundColor: '#A1F96E' }} />
+                New activity
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {isArchivedDone && (
-            <button onClick={() => setExpanded(false)} className="text-xs text-slate-400 hover:text-slate-600">Collapse</button>
-          )}
-          <button onClick={() => onEdit(req)} className="text-xs text-brand-600 hover:text-brand-700">Edit</button>
-          <button onClick={() => setConfirm(true)} className="text-xs text-amber-600 hover:text-amber-700">Archive</button>
-          <button onClick={() => setConfirmDelete(true)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
-        </div>
+
+        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">Last activity: {timeAgo}</span>
       </div>
 
-      {/* Request body */}
-      <p className="text-sm text-slate-700 leading-relaxed mb-3">{req.requestText}</p>
+      {/* Actions row */}
+      <div className="flex items-center justify-end gap-2 mb-1.5">
+        {isArchivedDone && (
+          <button onClick={() => setArchivedViewExpanded(false)} className="text-xs text-slate-400 hover:text-slate-600">Collapse</button>
+        )}
+        <button onClick={() => onEdit(card)} className="text-xs text-brand-600 hover:text-brand-700">Edit</button>
+        <button onClick={() => setConfirm(true)} className="text-xs text-amber-600 hover:text-amber-700">Archive</button>
+        <button onClick={() => setConfirmDelete(true)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+      </div>
 
-      {/* Contact info */}
-      {(req.contactEmail || req.profileNickname) && (
+      {/* Active request body */}
+      <p className="text-sm text-slate-700 leading-relaxed mb-1.5">{active.requestText}</p>
+
+      {/* Logged-by + one-step status transition */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] text-slate-400">
+          Logged by {active.agent.name} · {format(new Date(active.createdAt), "MMM d, yyyy 'at' HH:mm")}
+        </span>
+        {next && (
+          <button
+            onClick={() => onStatusChange(card.id, next)}
+            className="text-xs px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors"
+          >
+            → {next === 'IN_PROGRESS' ? 'Start' : 'Done'}
+          </button>
+        )}
+      </div>
+
+      {/* Contact info copy buttons */}
+      {(card.contactEmail || card.profileNickname) && (
         <div className="flex flex-col gap-0.5 mb-2">
-          {req.contactEmail && (
+          {card.contactEmail && (
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className="shrink-0">📧</span>
-              <span className="flex-1 truncate">{req.contactEmail}</span>
-              <button type="button" onClick={() => handleCopy(req.contactEmail!, 'email')}
+              <span className="flex-1 truncate">{card.contactEmail}</span>
+              <button type="button" onClick={() => handleCopy(card.contactEmail!, 'email')}
                 className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors" title="Copy email">
                 {copiedField === 'email'
                   ? <Check size={12} strokeWidth={2} className="text-emerald-500" />
@@ -283,11 +346,11 @@ function RequestCard({
               </button>
             </div>
           )}
-          {req.profileNickname && (
+          {card.profileNickname && (
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className="shrink-0">👤</span>
-              <span className="flex-1 truncate">{req.profileNickname}</span>
-              <button type="button" onClick={() => handleCopy(req.profileNickname!, 'nickname')}
+              <span className="flex-1 truncate">{card.profileNickname}</span>
+              <button type="button" onClick={() => handleCopy(card.profileNickname!, 'nickname')}
                 className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors" title="Copy nickname">
                 {copiedField === 'nickname'
                   ? <Check size={12} strokeWidth={2} className="text-emerald-500" />
@@ -298,21 +361,8 @@ function RequestCard({
         </div>
       )}
 
-      {/* Created timestamp + status transition */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-400">Created: {format(new Date(req.createdAt), "MMM d, yyyy 'at' HH:mm")}</span>
-        {next && (
-          <button
-            onClick={() => onStatusChange(req.id, next)}
-            className="text-xs px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors"
-          >
-            → {next === 'IN_PROGRESS' ? 'Start' : 'Done'}
-          </button>
-        )}
-      </div>
-
       {/* ── Inline tags + note ──────────────────────────────────────────────── */}
-      <div className="mt-2.5 pt-2.5 space-y-2" style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }}>
+      <div className="pt-2 space-y-2" style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }}>
 
         {/* Tags */}
         <div className="flex flex-wrap gap-1">
@@ -376,11 +426,56 @@ function RequestCard({
         </div>
       </div>
 
-      <ConfirmDialog open={confirm} message="Archive this request?"
-        onConfirm={() => { onArchive(req.id); setConfirm(false); }}
+      {/* ── History (previous requests) — collapsed by default, subdued style ── */}
+      {card.history.length > 0 && (
+        <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(14,14,14,0.06)' }}>
+          <button
+            type="button"
+            onClick={() => setHistoryExpanded(v => !v)}
+            className="flex items-center gap-1 text-[11px] font-medium transition-colors hover:text-slate-500"
+            style={{ color: 'rgba(14,14,14,0.38)' }}
+          >
+            {historyExpanded ? <ChevronDown size={11} strokeWidth={2} /> : <ChevronRight size={11} strokeWidth={2} />}
+            History ({card.history.length} previous {card.history.length === 1 ? 'request' : 'requests'})
+          </button>
+
+          {historyExpanded && (
+            <div className="mt-1.5 space-y-2 pl-3" style={{ borderLeft: '2px solid rgba(14,14,14,0.07)' }}>
+              {card.history.map(h => (
+                <div key={h.id} className="text-xs">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span style={{ color: 'rgba(14,14,14,0.35)' }}>
+                      {format(new Date(h.createdAt), "MMM d, yyyy 'at' HH:mm")}
+                    </span>
+                    <span
+                      className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.45)' }}
+                    >
+                      Resolved: {STATUS_LABEL[h.status]}
+                    </span>
+                  </div>
+                  <p style={{ color: 'rgba(14,14,14,0.55)' }}>{h.requestText}</p>
+                  {h.comments.length > 0 && (
+                    <div className="mt-1 space-y-0.5">
+                      {h.comments.map((c, i) => (
+                        <p key={i} style={{ color: 'rgba(14,14,14,0.40)' }}>
+                          <span className="font-medium">{c.authorName}:</span> {c.text}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <ConfirmDialog open={confirm} message="Archive this client card?"
+        onConfirm={() => { onArchive(card.id); setConfirm(false); }}
         onCancel={() => setConfirm(false)} />
-      <ConfirmDialog open={confirmDelete} message="Delete this request permanently?"
-        onConfirm={() => { onDelete(req.id); setConfirmDelete(false); }}
+      <ConfirmDialog open={confirmDelete} message="Delete this client card and its full request history permanently?"
+        onConfirm={() => { onDelete(card.id); setConfirmDelete(false); }}
         onCancel={() => setConfirmDelete(false)} />
     </div>
   );
@@ -391,11 +486,12 @@ function RequestCard({
 export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => void }) {
   const { user } = useAuth();
   const isPeekHandler = user?.role === 'peek_handler';
-  const [requests, setRequests] = useState<PeakRequest[]>([]);
+  const [cards, setCards] = useState<ClientCardView[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterAgent, setFilterAgent]   = useState('');
   const [search, setSearch]             = useState('');
@@ -404,13 +500,14 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
   const [activeShiftLogs, setActiveShiftLogs] = useState<ShiftLog[]>([]);
 
-  // Ids with an in-flight optimistic mutation (status change / archive / delete).
-  // The 20s background poll below does a full-array replace from whatever the
-  // server returns — if that GET was issued before the mutation reached the
-  // server but resolves after the optimistic local update, applying it as-is
-  // would silently revert (or resurrect) that one row until the next poll
-  // catches up. That reads as "the button didn't work," so the poll below
-  // skips overwriting any row still listed here.
+  // Ids (of ClientCards) with an in-flight optimistic mutation (status change /
+  // star toggle / archive / delete). The 20s background poll below does a
+  // full-array replace from whatever the server returns — if that GET was
+  // issued before the mutation reached the server but resolves after the
+  // optimistic local update, applying it as-is would silently revert (or
+  // resurrect) that one card until the next poll catches up. That reads as
+  // "the button didn't work," so the poll below skips overwriting any card
+  // still listed here.
   const pendingMutations = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -446,16 +543,16 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
         limit: 200,
         includeArchived: showArchived,
       });
-      setRequests(prev => {
-        if (pendingMutations.current.size === 0) return reqData.requests;
-        const prevById = new Map(prev.map(r => [r.id, r]));
-        return (reqData.requests as PeakRequest[])
-          // A pending row that's no longer in local state was just archived/deleted
+      setCards(prev => {
+        if (pendingMutations.current.size === 0) return reqData.cards;
+        const prevById = new Map(prev.map(c => [c.id, c]));
+        return (reqData.cards as ClientCardView[])
+          // A pending card that's no longer in local state was just archived/deleted
           // locally — drop it rather than let this stale fetch resurrect it.
-          .filter((r: PeakRequest) => !pendingMutations.current.has(r.id) || prevById.has(r.id))
-          // A pending row that's still present locally keeps its fresher local
-          // version (e.g. the optimistic status change) instead of the stale fetch.
-          .map((r: PeakRequest) => (pendingMutations.current.has(r.id) ? prevById.get(r.id)! : r));
+          .filter((c: ClientCardView) => !pendingMutations.current.has(c.id) || prevById.has(c.id))
+          // A pending card that's still present locally keeps its fresher local
+          // version (e.g. the optimistic status/star change) instead of the stale fetch.
+          .map((c: ClientCardView) => (pendingMutations.current.has(c.id) ? prevById.get(c.id)! : c));
       });
     } catch (e) {
       console.error(e);
@@ -475,6 +572,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const handleSubmit = async () => {
     if (!form.agentId || !form.requestText) return;
     setSubmitting(true);
+    setFormError('');
     try {
       if (editingId) {
         await updatePeakRequest(editingId, form);
@@ -486,8 +584,8 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       setForm({ agentId: '', contactEmail: '', profileNickname: '', requestText: '' });
       await loadData();
       onDataChanged?.();
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setFormError(e?.response?.data?.error ?? 'Failed to save. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -499,54 +597,78 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     setTimeout(() => setAppliedPreset(prev => (prev === preset ? null : prev)), 1000);
   };
 
-  const handleStatusChange = async (id: string, status: RequestStatus) => {
-    pendingMutations.current.add(id);
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+  const handleStatusChange = async (cardId: string, status: RequestStatus) => {
+    pendingMutations.current.add(cardId);
+    setCards(prev => prev.map(c => c.id === cardId ? { ...c, status } : c));
     try {
-      await updatePeakRequestStatus(id, status);
+      await updatePeakRequestCardStatus(cardId, status);
       onDataChanged?.();
     } catch {
       // Clear the pending flag BEFORE this recovery reload — it needs to be
       // treated as authoritative (correcting the failed optimistic change),
       // not merged against the very local value it's supposed to overwrite.
-      pendingMutations.current.delete(id);
+      pendingMutations.current.delete(cardId);
       await loadData();
       return;
     }
-    pendingMutations.current.delete(id);
+    pendingMutations.current.delete(cardId);
   };
 
-  const handleArchive = async (id: string) => {
-    pendingMutations.current.add(id);
-    setRequests(prev => prev.filter(r => r.id !== id));
+  const handleToggleStar = async (cardId: string, starred: boolean) => {
+    pendingMutations.current.add(cardId);
+    setCards(prev => prev.map(c => c.id === cardId ? { ...c, starred } : c));
     try {
-      await archivePeakRequest(id);
+      await togglePeakRequestCardStar(cardId, starred);
+    } catch (e) {
+      console.error(e);
+      pendingMutations.current.delete(cardId);
+      await loadData();
+      return;
+    }
+    pendingMutations.current.delete(cardId);
+  };
+
+  const handleArchive = async (cardId: string) => {
+    pendingMutations.current.add(cardId);
+    setCards(prev => prev.filter(c => c.id !== cardId));
+    try {
+      await archivePeakRequestCard(cardId);
       onDataChanged?.();
     } finally {
-      pendingMutations.current.delete(id);
+      pendingMutations.current.delete(cardId);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    pendingMutations.current.add(id);
-    setRequests(prev => prev.filter(r => r.id !== id));
+  const handleDelete = async (cardId: string) => {
+    pendingMutations.current.add(cardId);
+    setCards(prev => prev.filter(c => c.id !== cardId));
     try {
-      await deletePeakRequest(id);
+      await deletePeakRequestCard(cardId);
       onDataChanged?.();
     } finally {
-      pendingMutations.current.delete(id);
+      pendingMutations.current.delete(cardId);
     }
   };
 
-  // Inline field updates — no reload needed
-  const handleFieldsUpdated = (id: string, fields: { comments?: PeakRequestComment[]; tags?: string }) => {
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, ...fields } : r));
+  // Inline field updates (tags/comments) on the active request — no reload needed
+  const handleFieldsUpdated = (requestId: string, fields: { comments?: PeakRequestComment[]; tags?: string }) => {
+    setCards(prev => prev.map(c =>
+      c.activeRequest.id === requestId ? { ...c, activeRequest: { ...c.activeRequest, ...fields } } : c
+    ));
   };
 
-  const byStatus = (status: RequestStatus) => requests.filter(r => r.status === status);
+  // Starred cards always lead their column, sorted by recency among themselves;
+  // non-starred cards follow, also by recency.
+  const byStatus = (status: RequestStatus) => cards
+    .filter(c => c.status === status)
+    .sort((a, b) => {
+      if (a.starred !== b.starred) return a.starred ? -1 : 1;
+      return new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime();
+    });
 
   const openNewForm = () => {
     setEditingId(null);
+    setFormError('');
     setForm({
       agentId: user?.agentId || '',
       contactEmail: '',
@@ -618,14 +740,14 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
           <CardListSkeleton count={1} />
           <CardListSkeleton count={2} />
         </div>
-      ) : requests.length === 0 ? (
+      ) : cards.length === 0 ? (
         <EmptyState icon={<ClipboardList size={44} strokeWidth={1} />} message="No requests yet" action={
           <button className="btn-accent" onClick={openNewForm}>Submit First Request</button>
         } />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {STATUS_COLS.map(col => {
-            const colRequests = byStatus(col.status);
+            const colCards = byStatus(col.status);
             return (
               <div key={col.status} className={`rounded-xl p-3 ${col.bg}`}>
                 <div className="flex items-center justify-between mb-3">
@@ -634,28 +756,30 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                     <h3 className="font-semibold text-slate-700 text-sm">{col.label}</h3>
                   </div>
                   <span className="bg-white text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full shadow-sm">
-                    {colRequests.length}
+                    {colCards.length}
                   </span>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {colRequests.length === 0 ? (
+                  {colCards.length === 0 ? (
                     <p className="text-xs text-slate-400 text-center py-4">Empty</p>
-                  ) : colRequests.map(req => (
-                    <RequestCard
-                      key={req.id}
-                      req={req}
+                  ) : colCards.map(card => (
+                    <ClientCard
+                      key={card.id}
+                      card={card}
                       highlightNew={isPeekHandler && col.status === 'NEW'}
                       onEdit={(item) => {
-                        setEditingId(item.id);
+                        setEditingId(item.activeRequest.id);
+                        setFormError('');
                         setForm({
-                          agentId: item.agentId,
+                          agentId: item.activeRequest.agentId,
                           contactEmail: item.contactEmail || '',
                           profileNickname: item.profileNickname || '',
-                          requestText: item.requestText,
+                          requestText: item.activeRequest.requestText,
                         });
                         setShowForm(true);
                       }}
                       onStatusChange={handleStatusChange}
+                      onToggleStar={handleToggleStar}
                       onArchive={handleArchive}
                       onDelete={handleDelete}
                       onFieldsUpdated={handleFieldsUpdated}
@@ -719,6 +843,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
               Your account isn't linked to an agent profile, so a request can't be submitted. Contact an admin to get linked.
             </p>
           )}
+          {formError && <p className="text-xs text-red-500">{formError}</p>}
           <div className="flex gap-3 pt-2">
             <button className="btn-secondary flex-1" onClick={() => { setShowForm(false); setEditingId(null); }}>Cancel</button>
             <button

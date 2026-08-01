@@ -133,9 +133,6 @@ export const updatePeakRequest = (id: string, data: {
   requestText: string;
 }) => api.put(`/peak-requests/${id}`, data).then(r => r.data);
 
-export const updatePeakRequestStatus = (id: string, status: string) =>
-  api.patch(`/peak-requests/${id}/status`, { status }).then(r => r.data);
-
 export const patchPeakRequestFields = (id: string, fields: { tags?: string }) =>
   api.patch(`/peak-requests/${id}/fields`, fields).then(r => r.data);
 
@@ -145,10 +142,17 @@ export const addPeakRequestComment = (id: string, text: string) =>
 export const getNewRequestsCount = () =>
   api.get('/peak-requests/new-count').then(r => r.data as { count: number });
 
-export const archivePeakRequest = (id: string) =>
-  api.delete(`/peak-requests/${id}`).then(r => r.data);
-export const deletePeakRequest = (id: string) =>
-  api.delete(`/peak-requests/delete/${id}`).then(r => r.data);
+// ─── Peak Requests: card-level actions (keyed by ClientCard id) ────────────
+export const updatePeakRequestCardStatus = (cardId: string, status: string) =>
+  api.patch(`/peak-requests/cards/${cardId}/status`, { status }).then(r => r.data);
+
+export const togglePeakRequestCardStar = (cardId: string, starred: boolean) =>
+  api.patch(`/peak-requests/cards/${cardId}/star`, { starred }).then(r => r.data);
+
+export const archivePeakRequestCard = (cardId: string) =>
+  api.delete(`/peak-requests/cards/${cardId}`).then(r => r.data);
+export const deletePeakRequestCard = (cardId: string) =>
+  api.delete(`/peak-requests/cards/delete/${cardId}`).then(r => r.data);
 
 // ─── Statistics ────────────────────────────────────────────────────────────
 export const getStatistics = (params?: { year?: number; month?: number; dateFrom?: string; dateTo?: string }) =>
