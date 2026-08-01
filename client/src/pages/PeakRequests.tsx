@@ -1,7 +1,7 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Copy, Check, ChevronDown, ChevronRight, Star, Pencil, Archive, Trash2, Plus } from 'lucide-react';
-import { format, formatDistanceToNowStrict } from 'date-fns';
+import { ClipboardList, Copy, Check, ChevronDown, ChevronRight, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal } from 'lucide-react';
+import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
   updatePeakRequestCardStatus, togglePeakRequestCardStar, archivePeakRequestCard, deletePeakRequestCard,
@@ -55,27 +55,25 @@ const STATUS_COLS: { status: RequestStatus; label: string; icon: string; bg: str
   { status: 'DONE',        label: 'Done',          icon: '✅', bg: 'bg-emerald-50' },
 ];
 
-// Same NEW/IN_PROGRESS/DONE vocabulary + colors as StatusBadge in ui.tsx (badge-new/
-// badge-progress/badge-done, already defined in index.css) — reused here directly
-// since this dropdown needs each option individually clickable, not just one static span.
-const STATUS_ORDER: RequestStatus[] = ['NEW', 'IN_PROGRESS', 'DONE'];
-const STATUS_BADGE_CLASS: Record<RequestStatus, string> = {
-  NEW: 'badge-new',
-  IN_PROGRESS: 'badge-progress',
-  DONE: 'badge-done',
-};
 const STATUS_LABEL: Record<RequestStatus, string> = {
   NEW: 'New',
   IN_PROGRESS: 'In Progress',
   DONE: 'Done',
 };
 
-// ── StatusDropdownBadge ───────────────────────────────────────────────────────
-// Click the badge to jump to any status directly, in either direction — not just
-// the one-step-forward "→ Start/Done" shortcut this card already has (kept as-is
-// alongside this, since nothing asked for it to be removed).
+// One primary action per column — status is already conveyed by the column
+// itself, so the card no longer needs its own status badge/dropdown.
+const PRIMARY_ACTION: Record<RequestStatus, { label: string; target: RequestStatus }> = {
+  NEW: { label: '→ Start', target: 'IN_PROGRESS' },
+  IN_PROGRESS: { label: '→ Done', target: 'DONE' },
+  DONE: { label: 'Reopen', target: 'IN_PROGRESS' },
+};
 
-function StatusDropdownBadge({ status, onChange }: { status: RequestStatus; onChange: (s: RequestStatus) => void }) {
+// ── CardMenu ───────────────────────────────────────────────────────────────────
+// Archive/Delete tucked behind "..." so the destructive/housekeeping actions
+// don't compete visually with the primary (Start/Done/Reopen) action.
+
+function CardMenu({ onArchive, onDelete }: { onArchive: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -83,28 +81,33 @@ function StatusDropdownBadge({ status, onChange }: { status: RequestStatus; onCh
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className={`${STATUS_BADGE_CLASS[status]} inline-flex items-center gap-0.5 cursor-pointer hover:brightness-95 transition-all`}
+        className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-slate-600"
+        aria-label="More actions"
+        title="More actions"
       >
-        {STATUS_LABEL[status]}
-        <ChevronDown size={11} strokeWidth={2.5} />
+        <MoreHorizontal size={14} strokeWidth={1.8} />
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute z-50 top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-slate-100 py-1 min-w-[132px]">
-            {STATUS_ORDER.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => { setOpen(false); if (s !== status) onChange(s); }}
-                className="w-full flex items-center px-2 py-1 hover:bg-slate-50 transition-colors"
-              >
-                <span className={`${STATUS_BADGE_CLASS[s]} ${s === status ? 'ring-1 ring-slate-300' : ''}`}>
-                  {STATUS_LABEL[s]}
-                </span>
-              </button>
-            ))}
+          <div className="absolute z-50 top-full right-0 mt-1 bg-white rounded-lg shadow-lg border border-slate-100 py-1 min-w-[130px]">
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onArchive(); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <Archive size={12} strokeWidth={1.8} />
+              Archive
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onDelete(); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 size={12} strokeWidth={1.8} />
+              Delete
+            </button>
           </div>
         </>
       )}
@@ -144,6 +147,9 @@ function ClientCard({
   const [comments, setComments] = useState<PeakRequestComment[]>(active.comments);
   const [commentDraft, setCommentDraft] = useState('');
   const [postingComment, setPostingComment] = useState(false);
+  // Existing comments always show; the input for a NEW one stays collapsed
+  // behind a "+ Add comment" link until clicked.
+  const [addingComment, setAddingComment] = useState(false);
 
   // ── Tags state (active request only) ───────────────────────────────────────
   const [activeTags, setActiveTags] = useState<TagKey[]>(() =>
@@ -184,6 +190,7 @@ function ClientCard({
       const updated = await addPeakRequestComment(active.id, text);
       setComments(updated.comments);
       setCommentDraft('');
+      setAddingComment(false);
       onFieldsUpdated(active.id, { comments: updated.comments });
     } catch (e) {
       console.error(e);
@@ -216,12 +223,7 @@ function ClientCard({
     }
   };
 
-  const nextStatus: Record<RequestStatus, RequestStatus | null> = {
-    NEW: 'IN_PROGRESS', IN_PROGRESS: 'DONE', DONE: null,
-  };
-  const next = nextStatus[card.status];
-
-  const timeAgo = formatDistanceToNowStrict(new Date(card.lastActivityAt), { addSuffix: true });
+  const primary = PRIMARY_ACTION[card.status];
 
   if (isArchivedDone && !archivedViewExpanded) {
     return (
@@ -262,8 +264,8 @@ function ClientCard({
         </div>
       )}
 
-      {/* Header row 1: star + email + nickname (+ inline copy) + last activity */}
-      <div className="flex items-center gap-1.5 mb-1">
+      {/* Header: star + username (primary) + email (secondary) */}
+      <div className="flex items-center gap-1.5 mb-1.5">
         <button
           type="button"
           onClick={() => onToggleStar(card.id, !card.starred)}
@@ -279,24 +281,24 @@ function ClientCard({
           />
         </button>
 
-        <div className="min-w-0 flex-1 flex items-center gap-1.5">
-          {card.contactEmail && (
+        <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
+          {card.profileNickname && (
             <span className="inline-flex items-center gap-0.5 min-w-0">
-              <span className="text-xs font-semibold text-slate-700 truncate">{card.contactEmail}</span>
-              <button type="button" onClick={() => handleCopy(card.contactEmail!, 'email')}
-                className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors" title="Copy email">
-                {copiedField === 'email'
+              <span className="text-sm font-bold text-slate-800 truncate">{card.profileNickname}</span>
+              <button type="button" onClick={() => handleCopy(card.profileNickname!, 'nickname')}
+                className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors" title="Copy username">
+                {copiedField === 'nickname'
                   ? <Check size={10} strokeWidth={2} className="text-emerald-500" />
                   : <Copy size={10} strokeWidth={1.5} />}
               </button>
             </span>
           )}
-          {card.profileNickname && (
+          {card.contactEmail && (
             <span className="inline-flex items-center gap-0.5 min-w-0 shrink-0">
-              <span className="text-xs text-slate-500 truncate">👤 {card.profileNickname}</span>
-              <button type="button" onClick={() => handleCopy(card.profileNickname!, 'nickname')}
-                className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors" title="Copy nickname">
-                {copiedField === 'nickname'
+              <span className="text-[11px] text-slate-400 truncate">{card.contactEmail}</span>
+              <button type="button" onClick={() => handleCopy(card.contactEmail!, 'email')}
+                className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors" title="Copy email">
+                {copiedField === 'email'
                   ? <Check size={10} strokeWidth={2} className="text-emerald-500" />
                   : <Copy size={10} strokeWidth={1.5} />}
               </button>
@@ -306,13 +308,13 @@ function ClientCard({
             <span className="text-xs text-slate-400 italic">No contact info</span>
           )}
         </div>
-
-        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">{timeAgo}</span>
       </div>
 
-      {/* Header row 2: status + count + new-activity indicator */}
-      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-        <StatusDropdownBadge status={card.status} onChange={(s) => onStatusChange(card.id, s)} />
+      {/* Active request body */}
+      <p className="text-sm text-slate-700 leading-relaxed mb-1.5">{active.requestText}</p>
+
+      {/* Unified badge row: count + new-activity + tags — same place regardless of status */}
+      <div className="flex flex-wrap items-center gap-1 mb-2">
         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
           {card.requestCount} {card.requestCount === 1 ? 'request' : 'requests'}
         </span>
@@ -322,13 +324,6 @@ function ClientCard({
             New activity
           </span>
         )}
-      </div>
-
-      {/* Active request body */}
-      <p className="text-sm text-slate-700 leading-relaxed mb-1">{active.requestText}</p>
-
-      {/* Tags — compact chips when set, a single "+ Tag" affordance when empty */}
-      <div className="flex flex-wrap items-center gap-1 mb-1.5">
         {activeTags.length > 0 && TAGS.filter(tag => activeTags.includes(tag.key)).map(tag => (
           <button
             key={tag.key}
@@ -375,77 +370,87 @@ function ClientCard({
         )}
       </div>
 
-      {/* Logged-by + one-step status transition + icon-only actions */}
+      {/* Primary action (weighted, accent) + secondary actions (neutral icon + "..." menu) */}
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-[10px] text-slate-400 truncate">
-          Logged by {active.agent.name} · {format(new Date(active.createdAt), "MMM d, yyyy 'at' HH:mm")}
-        </span>
+        <button
+          type="button"
+          onClick={() => onStatusChange(card.id, primary.target)}
+          className="text-xs font-semibold px-2.5 py-1 rounded-lg transition-all hover:brightness-95"
+          style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+        >
+          {primary.label}
+        </button>
         <div className="flex items-center gap-1 shrink-0">
-          {next && (
-            <button
-              onClick={() => onStatusChange(card.id, next)}
-              className="text-xs px-2 py-0.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors"
-            >
-              → {next === 'IN_PROGRESS' ? 'Start' : 'Done'}
-            </button>
-          )}
           {isArchivedDone && (
             <button onClick={() => setArchivedViewExpanded(false)} className="text-[10px] text-slate-400 hover:text-slate-600">Collapse</button>
           )}
           <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
             <Pencil size={13} strokeWidth={1.8} />
           </button>
-          <button onClick={() => setConfirm(true)} className="p-1 rounded hover:bg-amber-50 transition-colors text-slate-400 hover:text-amber-600" aria-label="Archive" title="Archive">
-            <Archive size={13} strokeWidth={1.8} />
-          </button>
-          <button onClick={() => setConfirmDelete(true)} className="p-1 rounded hover:bg-red-50 transition-colors text-slate-400 hover:text-red-600" aria-label="Delete" title="Delete">
-            <Trash2 size={13} strokeWidth={1.8} />
-          </button>
+          <CardMenu onArchive={() => setConfirm(true)} onDelete={() => setConfirmDelete(true)} />
         </div>
       </div>
 
-      {/* ── Comment thread ──────────────────────────────────────────────────── */}
-      <div className="pt-2 space-y-2" style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }}>
-        <div className="space-y-1.5">
-          {comments.length > 0 && (
-            <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
-              {comments.map((c, i) => (
-                <div key={i} className="rounded-lg px-2 py-1.5" style={{ backgroundColor: 'rgba(14,14,14,0.025)' }}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-medium text-slate-600">{c.authorName}</span>
-                    <span className="text-[10px]" style={{ color: 'rgba(14,14,14,0.35)' }}>
-                      {format(new Date(c.createdAt), "MMM d, yyyy 'at' HH:mm")}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-snug">{c.text}</p>
+      {/* ── Comment thread — existing comments always shown; new-comment input collapsed ── */}
+      <div className="pt-2 space-y-1.5" style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }}>
+        {comments.length > 0 && (
+          <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+            {comments.map((c, i) => (
+              <div key={i} className="rounded-lg px-2 py-1.5" style={{ backgroundColor: 'rgba(14,14,14,0.025)' }}>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium text-slate-600">{c.authorName}</span>
+                  <span className="text-[10px]" style={{ color: 'rgba(14,14,14,0.35)' }}>
+                    {format(new Date(c.createdAt), "MMM d, yyyy 'at' HH:mm")}
+                  </span>
                 </div>
-              ))}
-            </div>
-          )}
-          <textarea
-            value={commentDraft}
-            rows={2}
-            placeholder="Add a comment…"
-            className="w-full resize-none rounded-lg px-2 py-1.5 text-xs outline-none transition-colors"
-            style={{
-              border: '1px solid rgba(14,14,14,0.10)',
-              color: 'rgba(14,14,14,0.60)',
-              backgroundColor: 'rgba(14,14,14,0.025)',
-            }}
-            onChange={e => setCommentDraft(e.target.value)}
-            onKeyDown={handleCommentKeyDown}
-          />
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={handlePostComment}
-              disabled={postingComment || !commentDraft.trim()}
-              className="text-[10px] px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors disabled:opacity-50"
-            >
-              {postingComment ? 'Posting…' : 'Post comment'}
-            </button>
+                <p className="text-xs text-slate-600 leading-snug">{c.text}</p>
+              </div>
+            ))}
           </div>
-        </div>
+        )}
+        {addingComment ? (
+          <div className="space-y-1.5">
+            <textarea
+              autoFocus
+              value={commentDraft}
+              rows={2}
+              placeholder="Add a comment…"
+              className="w-full resize-none rounded-lg px-2 py-1.5 text-xs outline-none transition-colors"
+              style={{
+                border: '1px solid rgba(14,14,14,0.10)',
+                color: 'rgba(14,14,14,0.60)',
+                backgroundColor: 'rgba(14,14,14,0.025)',
+              }}
+              onChange={e => setCommentDraft(e.target.value)}
+              onKeyDown={handleCommentKeyDown}
+            />
+            <div className="flex justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => { setAddingComment(false); setCommentDraft(''); }}
+                className="text-[10px] px-2 py-1 rounded-lg text-slate-400 hover:text-slate-600 font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePostComment}
+                disabled={postingComment || !commentDraft.trim()}
+                className="text-[10px] px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors disabled:opacity-50"
+              >
+                {postingComment ? 'Posting…' : 'Post comment'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAddingComment(true)}
+            className="text-[10px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            + Add comment
+          </button>
+        )}
       </div>
 
       {/* ── History (previous requests) — collapsed by default, subdued style ── */}
