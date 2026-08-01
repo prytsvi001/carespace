@@ -1,5 +1,5 @@
 // client/src/pages/PeakRequests.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ClipboardList, Copy, Check, ChevronDown } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -404,6 +404,15 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
   const [activeShiftLogs, setActiveShiftLogs] = useState<ShiftLog[]>([]);
 
+  // Ids with an in-flight optimistic mutation (status change / archive / delete).
+  // The 20s background poll below does a full-array replace from whatever the
+  // server returns — if that GET was issued before the mutation reached the
+  // server but resolves after the optimistic local update, applying it as-is
+  // would silently revert (or resurrect) that one row until the next poll
+  // catches up. That reads as "the button didn't work," so the poll below
+  // skips overwriting any row still listed here.
+  const pendingMutations = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     const loadDuty = () => getDutyStatus().then(setDutyInfo).catch(() => {});
     loadDuty();
@@ -437,7 +446,17 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
         limit: 200,
         includeArchived: showArchived,
       });
-      setRequests(reqData.requests);
+      setRequests(prev => {
+        if (pendingMutations.current.size === 0) return reqData.requests;
+        const prevById = new Map(prev.map(r => [r.id, r]));
+        return (reqData.requests as PeakRequest[])
+          // A pending row that's no longer in local state was just archived/deleted
+          // locally — drop it rather than let this stale fetch resurrect it.
+          .filter((r: PeakRequest) => !pendingMutations.current.has(r.id) || prevById.has(r.id))
+          // A pending row that's still present locally keeps its fresher local
+          // version (e.g. the optimistic status change) instead of the stale fetch.
+          .map((r: PeakRequest) => (pendingMutations.current.has(r.id) ? prevById.get(r.id)! : r));
+      });
     } catch (e) {
       console.error(e);
     } finally {
@@ -481,25 +500,42 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   };
 
   const handleStatusChange = async (id: string, status: RequestStatus) => {
+    pendingMutations.current.add(id);
     setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
     try {
       await updatePeakRequestStatus(id, status);
       onDataChanged?.();
     } catch {
+      // Clear the pending flag BEFORE this recovery reload — it needs to be
+      // treated as authoritative (correcting the failed optimistic change),
+      // not merged against the very local value it's supposed to overwrite.
+      pendingMutations.current.delete(id);
       await loadData();
+      return;
     }
+    pendingMutations.current.delete(id);
   };
 
   const handleArchive = async (id: string) => {
+    pendingMutations.current.add(id);
     setRequests(prev => prev.filter(r => r.id !== id));
-    await archivePeakRequest(id);
-    onDataChanged?.();
+    try {
+      await archivePeakRequest(id);
+      onDataChanged?.();
+    } finally {
+      pendingMutations.current.delete(id);
+    }
   };
 
   const handleDelete = async (id: string) => {
+    pendingMutations.current.add(id);
     setRequests(prev => prev.filter(r => r.id !== id));
-    await deletePeakRequest(id);
-    onDataChanged?.();
+    try {
+      await deletePeakRequest(id);
+      onDataChanged?.();
+    } finally {
+      pendingMutations.current.delete(id);
+    }
   };
 
   // Inline field updates — no reload needed
