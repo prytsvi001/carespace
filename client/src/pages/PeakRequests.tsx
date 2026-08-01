@@ -1,6 +1,6 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Copy, Check, ChevronDown, ChevronRight, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal } from 'lucide-react';
+import { ClipboardList, Check, ChevronDown, ChevronRight, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
@@ -264,12 +264,12 @@ function ClientCard({
         </div>
       )}
 
-      {/* Header: star + username (primary) + email (secondary) */}
-      <div className="flex items-center gap-1.5 mb-1.5">
+      {/* Header: star + email/username (stacked, click-to-copy) + edit/menu + created timestamp */}
+      <div className="flex items-start gap-1.5 mb-1.5">
         <button
           type="button"
           onClick={() => onToggleStar(card.id, !card.starred)}
-          className="shrink-0 transition-transform hover:scale-110"
+          className="shrink-0 mt-0.5 transition-transform hover:scale-110"
           aria-label={card.starred ? 'Remove priority' : 'Mark as priority'}
           title={card.starred ? 'Remove priority' : 'Mark as priority'}
         >
@@ -281,50 +281,68 @@ function ClientCard({
           />
         </button>
 
-        <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
-          {card.profileNickname && (
-            <span className="inline-flex items-center gap-0.5 min-w-0">
-              <span className="text-sm font-bold text-slate-800 truncate">{card.profileNickname}</span>
-              <button type="button" onClick={() => handleCopy(card.profileNickname!, 'nickname')}
-                className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors" title="Copy username">
-                {copiedField === 'nickname'
-                  ? <Check size={10} strokeWidth={2} className="text-emerald-500" />
-                  : <Copy size={10} strokeWidth={1.5} />}
-              </button>
-            </span>
-          )}
+        <div className="min-w-0 flex-1 flex flex-col">
           {card.contactEmail && (
-            <span className="inline-flex items-center gap-0.5 min-w-0 shrink-0">
-              <span className="text-[11px] text-slate-400 truncate">{card.contactEmail}</span>
-              <button type="button" onClick={() => handleCopy(card.contactEmail!, 'email')}
-                className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors" title="Copy email">
-                {copiedField === 'email'
-                  ? <Check size={10} strokeWidth={2} className="text-emerald-500" />
-                  : <Copy size={10} strokeWidth={1.5} />}
-              </button>
-            </span>
+            <button
+              type="button"
+              onClick={() => handleCopy(card.contactEmail!, 'email')}
+              className="w-full text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03]"
+              style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
+              title="Click to copy email"
+            >
+              {card.contactEmail}
+            </button>
+          )}
+          {card.profileNickname && (
+            <button
+              type="button"
+              onClick={() => handleCopy(card.profileNickname!, 'nickname')}
+              className="w-full text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03]"
+              style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
+              title="Click to copy username"
+            >
+              {card.profileNickname}
+            </button>
           )}
           {!card.contactEmail && !card.profileNickname && (
             <span className="text-xs text-slate-400 italic">No contact info</span>
           )}
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
-          <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
-            <Pencil size={13} strokeWidth={1.8} />
-          </button>
-          <CardMenu onArchive={() => setConfirm(true)} onDelete={() => setConfirmDelete(true)} />
+        <div className="flex flex-col items-end gap-0.5 shrink-0">
+          <div className="flex items-center gap-1">
+            <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
+              <Pencil size={13} strokeWidth={1.8} />
+            </button>
+            <CardMenu onArchive={() => setConfirm(true)} onDelete={() => setConfirmDelete(true)} />
+          </div>
+          <span className="text-[9px] text-slate-400 whitespace-nowrap">
+            {format(new Date(active.createdAt), 'MMM d, HH:mm')}
+          </span>
         </div>
       </div>
 
       {/* Active request body */}
       <p className="text-sm text-slate-700 leading-relaxed mb-1.5">{active.requestText}</p>
 
-      {/* Unified badge row: count + new-activity + tags — same place regardless of status */}
-      <div className="flex flex-wrap items-center gap-1 mb-2">
-        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
-          {card.requestCount} {card.requestCount === 1 ? 'request' : 'requests'}
-        </span>
+      {/* Unified badge row: count (click for history) + new-activity + tags — same place regardless of status */}
+      <div className="flex flex-wrap items-center gap-1 mb-1">
+        {card.history.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setHistoryExpanded(v => !v)}
+            className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+            aria-label={historyExpanded ? 'Hide history' : 'Show history'}
+            title={historyExpanded ? 'Hide history' : 'Show history'}
+          >
+            {card.requestCount} {card.requestCount === 1 ? 'request' : 'requests'}
+            {historyExpanded ? <ChevronDown size={10} strokeWidth={2.5} /> : <ChevronRight size={10} strokeWidth={2.5} />}
+          </button>
+        ) : (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
+            {card.requestCount} {card.requestCount === 1 ? 'request' : 'requests'}
+          </span>
+        )}
         {card.hasNewActivity && (
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: '#0E0E0E' }}>
             <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse" style={{ backgroundColor: '#A1F96E' }} />
@@ -376,6 +394,37 @@ function ClientCard({
           </button>
         )}
       </div>
+
+      {/* History (previous requests) — toggled by the request-count badge above, shown right below the tag row */}
+      {historyExpanded && card.history.length > 0 && (
+        <div className="mb-2 space-y-2 pl-3" style={{ borderLeft: '2px solid rgba(14,14,14,0.07)' }}>
+          {card.history.map(h => (
+            <div key={h.id} className="text-xs">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span style={{ color: 'rgba(14,14,14,0.35)' }}>
+                  {format(new Date(h.createdAt), "MMM d, yyyy 'at' HH:mm")}
+                </span>
+                <span
+                  className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                  style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.45)' }}
+                >
+                  Resolved: {STATUS_LABEL[h.status]}
+                </span>
+              </div>
+              <p style={{ color: 'rgba(14,14,14,0.55)' }}>{h.requestText}</p>
+              {h.comments.length > 0 && (
+                <div className="mt-1 space-y-0.5">
+                  {h.comments.map((c, i) => (
+                    <p key={i} style={{ color: 'rgba(14,14,14,0.40)' }}>
+                      <span className="font-medium">{c.authorName}:</span> {c.text}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Primary action (weighted, accent) — Edit/"..." now live in the header, top-right */}
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -453,51 +502,6 @@ function ClientCard({
           </button>
         )}
       </div>
-
-      {/* ── History (previous requests) — collapsed by default, subdued style ── */}
-      {card.history.length > 0 && (
-        <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(14,14,14,0.06)' }}>
-          <button
-            type="button"
-            onClick={() => setHistoryExpanded(v => !v)}
-            className="flex items-center gap-1 text-[11px] font-medium transition-colors hover:text-slate-500"
-            style={{ color: 'rgba(14,14,14,0.38)' }}
-          >
-            {historyExpanded ? <ChevronDown size={11} strokeWidth={2} /> : <ChevronRight size={11} strokeWidth={2} />}
-            History ({card.history.length} previous {card.history.length === 1 ? 'request' : 'requests'})
-          </button>
-
-          {historyExpanded && (
-            <div className="mt-1.5 space-y-2 pl-3" style={{ borderLeft: '2px solid rgba(14,14,14,0.07)' }}>
-              {card.history.map(h => (
-                <div key={h.id} className="text-xs">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span style={{ color: 'rgba(14,14,14,0.35)' }}>
-                      {format(new Date(h.createdAt), "MMM d, yyyy 'at' HH:mm")}
-                    </span>
-                    <span
-                      className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.45)' }}
-                    >
-                      Resolved: {STATUS_LABEL[h.status]}
-                    </span>
-                  </div>
-                  <p style={{ color: 'rgba(14,14,14,0.55)' }}>{h.requestText}</p>
-                  {h.comments.length > 0 && (
-                    <div className="mt-1 space-y-0.5">
-                      {h.comments.map((c, i) => (
-                        <p key={i} style={{ color: 'rgba(14,14,14,0.40)' }}>
-                          <span className="font-medium">{c.authorName}:</span> {c.text}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       <ConfirmDialog open={confirm} message="Archive this client card?"
         onConfirm={() => { onArchive(card.id); setConfirm(false); }}
