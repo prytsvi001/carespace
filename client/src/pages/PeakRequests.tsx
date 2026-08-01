@@ -701,13 +701,14 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     ));
   };
 
-  // Starred cards always lead their column, sorted by recency among themselves;
-  // non-starred cards follow, also by recency.
+  // Starred cards always lead their column; within each of those two groups,
+  // newest-to-oldest by the active request's createdAt (the same timestamp
+  // shown on the card as "Created: ...").
   const byStatus = (status: RequestStatus) => cards
     .filter(c => c.status === status)
     .sort((a, b) => {
       if (a.starred !== b.starred) return a.starred ? -1 : 1;
-      return new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime();
+      return new Date(b.activeRequest.createdAt).getTime() - new Date(a.activeRequest.createdAt).getTime();
     });
 
   const openNewForm = () => {
