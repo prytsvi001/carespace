@@ -53,8 +53,41 @@ model User {
   peekCalendarEntries PeekCalendarEntry[]
   personalShortcuts    PersonalShortcut[]
   personalShortcutTags PersonalShortcutTag[]
+  authoredUpdates      Update[]     @relation("AuthoredUpdates")
+  updateReads          UpdateRead[]
 
   @@index([peekOnDuty])
+}
+
+model Update {
+  id         String    @id @default(cuid())
+  authorId   String?
+  author     User?     @relation("AuthoredUpdates", fields: [authorId], references: [id], onDelete: SetNull)
+  authorName String    // denormalized (same pattern as Shortcut.createdByName) — survives author account removal
+  title      String
+  content    String
+  tag        String?   // "Important" | "Policy change" | "Reminder" | null
+  editedAt   DateTime? // set on edit; null until then — drives the "Edited" indicator
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  reads      UpdateRead[]
+
+  @@index([authorId])
+}
+
+model UpdateRead {
+  id       String    @id @default(cuid())
+  updateId String
+  update   Update    @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  read     Boolean   @default(false)
+  readAt   DateTime?
+
+  @@unique([updateId, userId], name: "updateId_userId")
+  @@index([updateId])
+  @@index([userId])
 }
 
 model Plan {

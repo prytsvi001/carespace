@@ -25,6 +25,7 @@ import quickLinksRouter from './routes/quickLinks';
 import shortcutsRouter from './routes/shortcuts';
 import personalShortcutsRouter from './routes/personalShortcuts';
 import peekCalendarRouter from './routes/peekCalendar';
+import updatesRouter from './routes/updates';
 import kpiRouter from './routes/kpi';
 import dutyRouter from './routes/duty';
 import telegramRouter from './routes/telegram';
@@ -112,6 +113,7 @@ app.use('/api/quick-links', quickLinksRouter); // requireAuth applied inside rou
 app.use('/api/shortcuts',   shortcutsRouter);   // requireAuth applied inside router
 app.use('/api/personal-shortcuts', personalShortcutsRouter); // requireAuth + userId-scoped everywhere, no admin override
 app.use('/api/peek-calendar', peekCalendarRouter); // requireAuth + per-user access check applied inside router
+app.use('/api/updates', updatesRouter); // requireAuth + head/lead-only writes, peek_handler excluded entirely
 app.use('/api/kpi',         kpiRouter);        // requireAuth applied inside router
 app.use('/api/duty',        dutyRouter);       // requireAuth applied inside router
 app.use('/api/telegram',    telegramRouter);   // requireAuth applied per-route (webhook has none)

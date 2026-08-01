@@ -103,14 +103,16 @@ router.get('/sent', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/inbox/unread-count
+// GET /api/inbox/unread-count — combines unread messages with unread Updates
+// (the "Updates" tab lives inside Inbox and shares this one bell-icon badge).
 router.get('/unread-count', async (req: Request, res: Response) => {
   try {
     const userId = (req.user as Express.User).id;
-    const count = await prisma.inboxMessage.count({
-      where: { receiverId: userId, read: false },
-    });
-    res.json({ count });
+    const [messageCount, updateCount] = await Promise.all([
+      prisma.inboxMessage.count({ where: { receiverId: userId, read: false } }),
+      prisma.updateRead.count({ where: { userId, read: false } }),
+    ]);
+    res.json({ count: messageCount + updateCount });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch unread count' });

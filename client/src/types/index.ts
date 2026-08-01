@@ -355,6 +355,26 @@ export interface PersonalShortcut {
   updatedAt: string;
 }
 
+export type UpdateTag = 'Important' | 'Policy change' | 'Reminder';
+
+export interface TeamUpdate {
+  id: string;
+  authorId: string | null;
+  authorName: string;
+  title: string;
+  content: string;
+  tag: UpdateTag | null;
+  editedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  isAuthor: boolean;
+  read: boolean;
+  readCount: number;
+  totalCount: number;
+  readNames?: string[];   // present only for head/lead/author viewers
+  unreadNames?: string[]; // present only for head/lead/author viewers
+}
+
 export interface MonthlyStats {
   year?: number;
   month?: number;

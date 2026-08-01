@@ -1,14 +1,16 @@
 // client/src/pages/Inbox.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mail, MailOpen, Send, X, Trash2, Reply, ChevronDown, ChevronUp } from 'lucide-react';
+import { Mail, MailOpen, Send, X, Trash2, Reply, ChevronDown, ChevronUp, Megaphone } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage, deleteMessage,
   addQAAgentReportComment, addQAIssueComment,
+  getUpdates, createUpdate, updateUpdate, deleteUpdate, markUpdateRead,
 } from '../api';
-import { InboxMessage } from '../types';
+import { InboxMessage, TeamUpdate } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { QAReportPreview } from '../components/qaReport';
+import { UpdatesTab } from '../components/UpdatesTab';
 import { ConfirmDialog, CardListSkeleton } from '../components/ui';
 
 type InboxUser = { id: string; name: string; role: string };
@@ -42,11 +44,13 @@ interface InboxProps {
 export default function Inbox({ onRead }: InboxProps) {
   const { user } = useAuth();
   const role = user?.role ?? 'agent';
+  const isAdmin = role === 'head' || role === 'lead';
   const typeOptions = ROLE_TYPE_OPTIONS[role] ?? ROLE_TYPE_OPTIONS.agent;
 
-  const [view, setView] = useState<'received' | 'sent'>('received');
+  const [view, setView] = useState<'received' | 'sent' | 'updates'>('received');
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [sentMessages, setSentMessages] = useState<InboxMessage[]>([]);
+  const [updates, setUpdates] = useState<TeamUpdate[]>([]);
   const [users, setUsers] = useState<InboxUser[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -71,7 +75,19 @@ export default function Inbox({ onRead }: InboxProps) {
     } catch (e) {
       console.error(e);
     }
-  }, []);
+
+    // Fetched separately from the block above: /api/updates 403s for
+    // peek_handler, and axios rejects on non-2xx — bundled into the same
+    // Promise.all, that single rejection would have wiped out messages/sent/
+    // users too. peek_handler never sees the Updates tab, so just skip it.
+    if (role !== 'peek_handler') {
+      try {
+        setUpdates(await getUpdates());
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [role]);
 
   useEffect(() => {
     setLoading(true);
@@ -163,6 +179,40 @@ export default function Inbox({ onRead }: InboxProps) {
     }
   };
 
+  // ── Updates (announcements) ────────────────────────────────────────────────
+  const handlePublishUpdate = async (data: { title: string; content: string; tag: string | null }) => {
+    const created: TeamUpdate = await createUpdate(data);
+    setUpdates((prev) => [created, ...prev]);
+    onRead?.();
+  };
+
+  const handleEditUpdate = async (id: string, data: { title: string; content: string; tag: string | null }) => {
+    const updated: TeamUpdate = await updateUpdate(id, data);
+    setUpdates((prev) => prev.map((u) => (u.id === id ? updated : u)));
+  };
+
+  const handleDeleteUpdate = async (id: string) => {
+    setUpdates((prev) => prev.filter((u) => u.id !== id));
+    try {
+      await deleteUpdate(id);
+      onRead?.();
+    } catch (e) {
+      console.error(e);
+      loadInbox();
+    }
+  };
+
+  const handleMarkUpdateRead = async (id: string) => {
+    setUpdates((prev) => prev.map((u) => (u.id === id ? { ...u, read: true } : u)));
+    try {
+      await markUpdateRead(id);
+      onRead?.();
+    } catch (e) {
+      console.error(e);
+      loadInbox();
+    }
+  };
+
   // ── QA report comments (per-issue + report-level) ─────────────────────────
   const handleIssueComment = async (issueId: string, text: string, action: 'comment' | 'return') => {
     await addQAIssueComment(issueId, { text, action });
@@ -178,6 +228,7 @@ export default function Inbox({ onRead }: InboxProps) {
   };
 
   const unreadCount = messages.filter((m) => !m.read).length;
+  const updatesUnreadCount = updates.filter((u) => !u.read && !u.isAuthor).length;
   const displayed = view === 'received' ? messages : sentMessages;
 
   return (
@@ -197,28 +248,30 @@ export default function Inbox({ onRead }: InboxProps) {
             )}
           </h2>
           <p className="text-sm text-slate-400">
-            {view === 'received' ? 'Messages sent to you' : 'Messages you sent'}
+            {view === 'received' ? 'Messages sent to you' : view === 'sent' ? 'Messages you sent' : 'Team announcements'}
           </p>
         </div>
 
-        <button
-          onClick={composing ? closeCompose : openCompose}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all shrink-0"
-          style={
-            composing
-              ? { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.50)' }
-              : { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+        {view !== 'updates' && (
+          <button
+            onClick={composing ? closeCompose : openCompose}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all shrink-0"
+            style={
+              composing
+                ? { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.50)' }
+                : { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+            }
+          >
+            {composing
+              ? <><X size={13} strokeWidth={2} /> Cancel</>
+              : <><Send size={13} strokeWidth={1.8} /> New Message</>
           }
-        >
-          {composing
-            ? <><X size={13} strokeWidth={2} /> Cancel</>
-            : <><Send size={13} strokeWidth={1.8} /> New Message</>
-          }
-        </button>
+          </button>
+        )}
       </div>
 
       {/* Compose panel */}
-      {composing && (
+      {composing && view !== 'updates' && (
         <div ref={composeRef} className="card space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-700">
@@ -291,12 +344,12 @@ export default function Inbox({ onRead }: InboxProps) {
         </div>
       )}
 
-      {/* Received / Sent filter */}
+      {/* Received / Sent / Updates filter */}
       <div className="flex gap-1">
-        {(['received', 'sent'] as const).map((v) => (
+        {(['received', 'sent', 'updates'] as const).map((v) => (
           <button
             key={v}
-            onClick={() => setView(v)}
+            onClick={() => { setView(v); if (v === 'updates') closeCompose(); }}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium transition-all capitalize"
             style={
               view === v
@@ -304,19 +357,36 @@ export default function Inbox({ onRead }: InboxProps) {
                 : { color: 'rgba(14,14,14,0.45)' }
             }
           >
-            {v === 'received' ? 'Received' : 'Sent'}
-            {v === 'received' && unreadCount > 0 && (
+            {v === 'received' ? <Mail size={12} strokeWidth={1.8} /> : v === 'updates' ? <Megaphone size={12} strokeWidth={1.8} /> : null}
+            {v === 'received' ? 'Received' : v === 'sent' ? 'Sent' : 'Updates'}
+            {((v === 'received' && unreadCount > 0) || (v === 'updates' && updatesUnreadCount > 0)) && (
               <span
                 className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
                 style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
               >
-                {unreadCount}
+                {v === 'received' ? unreadCount : updatesUnreadCount}
               </span>
             )}
           </button>
         ))}
       </div>
 
+      {/* Updates tab */}
+      {view === 'updates' ? (
+        loading ? (
+          <CardListSkeleton />
+        ) : (
+          <UpdatesTab
+            updates={updates}
+            isAdmin={isAdmin}
+            onPublish={handlePublishUpdate}
+            onEdit={handleEditUpdate}
+            onDelete={handleDeleteUpdate}
+            onMarkRead={handleMarkUpdateRead}
+          />
+        )
+      ) : (
+      <>
       {/* Message list */}
       {loading ? (
         <CardListSkeleton />
@@ -484,6 +554,8 @@ export default function Inbox({ onRead }: InboxProps) {
             );
           })}
         </div>
+      )}
+      </>
       )}
 
       <ConfirmDialog

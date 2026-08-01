@@ -211,6 +211,21 @@ export const sendMessage = (data: { recipientId: string; type: string; content: 
 export const deleteMessage = (id: string) =>
   api.delete(`/inbox/${id}`).then((r) => r.data);
 
+// ─── Updates (Inbox tab: lead/head announcements) ──────────────────────────
+export const getUpdates = () => api.get('/updates').then((r) => r.data);
+
+export const createUpdate = (data: { title: string; content: string; tag?: string | null }) =>
+  api.post('/updates', data).then((r) => r.data);
+
+export const updateUpdate = (id: string, data: { title: string; content: string; tag?: string | null }) =>
+  api.put(`/updates/${id}`, data).then((r) => r.data);
+
+export const deleteUpdate = (id: string) =>
+  api.delete(`/updates/${id}`).then((r) => r.data);
+
+export const markUpdateRead = (id: string) =>
+  api.patch(`/updates/${id}/read`).then((r) => r.data);
+
 // ─── Reviews ───────────────────────────────────────────────────────────────
 export const getReviews = (params?: {
   userId?: string;
