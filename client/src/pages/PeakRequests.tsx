@@ -1,6 +1,6 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Copy, Check, ChevronDown, ChevronRight, Star } from 'lucide-react';
+import { ClipboardList, Copy, Check, ChevronDown, ChevronRight, Star, Pencil, Archive, Trash2, Plus } from 'lucide-react';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
@@ -149,6 +149,10 @@ function ClientCard({
   const [activeTags, setActiveTags] = useState<TagKey[]>(() =>
     (active.tags || '').split(',').filter(Boolean) as TagKey[]
   );
+  // Compact by default: an empty tag set shows a single "+ Tag" affordance
+  // instead of all 3 ghost options; picking one collapses straight back to
+  // the compact chip view rather than staying open.
+  const [showTagPicker, setShowTagPicker] = useState(false);
 
   // Sync when parent refreshes (e.g. after Edit modal save, or a new request lands)
   useEffect(() => {
@@ -201,6 +205,7 @@ function ClientCard({
       ? activeTags.filter(t => t !== key)
       : [...activeTags, key];
     setActiveTags(next);
+    setShowTagPicker(false);
     const tagsStr = next.join(',');
     try {
       await patchPeakRequestFields(active.id, { tags: tagsStr });
@@ -257,133 +262,150 @@ function ClientCard({
         </div>
       )}
 
-      {/* Header: star + client identity + status/count/activity */}
-      <div className="flex items-start gap-2 mb-1.5">
+      {/* Header row 1: star + email + nickname (+ inline copy) + last activity */}
+      <div className="flex items-center gap-1.5 mb-1">
         <button
           type="button"
           onClick={() => onToggleStar(card.id, !card.starred)}
-          className="shrink-0 mt-0.5 transition-transform hover:scale-110"
+          className="shrink-0 transition-transform hover:scale-110"
           aria-label={card.starred ? 'Remove priority' : 'Mark as priority'}
           title={card.starred ? 'Remove priority' : 'Mark as priority'}
         >
           <Star
-            size={16}
+            size={15}
             strokeWidth={1.8}
             fill={card.starred ? '#D4A847' : 'none'}
             style={{ color: card.starred ? '#D4A847' : 'rgba(14,14,14,0.25)' }}
           />
         </button>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {card.contactEmail && (
+        <div className="min-w-0 flex-1 flex items-center gap-1.5">
+          {card.contactEmail && (
+            <span className="inline-flex items-center gap-0.5 min-w-0">
               <span className="text-xs font-semibold text-slate-700 truncate">{card.contactEmail}</span>
-            )}
-            {card.profileNickname && (
-              <span className="text-xs text-slate-500 truncate">👤 {card.profileNickname}</span>
-            )}
-            {!card.contactEmail && !card.profileNickname && (
-              <span className="text-xs text-slate-400 italic">No contact info</span>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <StatusDropdownBadge status={card.status} onChange={(s) => onStatusChange(card.id, s)} />
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
-              {card.requestCount} {card.requestCount === 1 ? 'request' : 'requests'}
+              <button type="button" onClick={() => handleCopy(card.contactEmail!, 'email')}
+                className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors" title="Copy email">
+                {copiedField === 'email'
+                  ? <Check size={10} strokeWidth={2} className="text-emerald-500" />
+                  : <Copy size={10} strokeWidth={1.5} />}
+              </button>
             </span>
-            {card.hasNewActivity && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: '#0E0E0E' }}>
-                <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse" style={{ backgroundColor: '#A1F96E' }} />
-                New activity
-              </span>
-            )}
-          </div>
+          )}
+          {card.profileNickname && (
+            <span className="inline-flex items-center gap-0.5 min-w-0 shrink-0">
+              <span className="text-xs text-slate-500 truncate">👤 {card.profileNickname}</span>
+              <button type="button" onClick={() => handleCopy(card.profileNickname!, 'nickname')}
+                className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors" title="Copy nickname">
+                {copiedField === 'nickname'
+                  ? <Check size={10} strokeWidth={2} className="text-emerald-500" />
+                  : <Copy size={10} strokeWidth={1.5} />}
+              </button>
+            </span>
+          )}
+          {!card.contactEmail && !card.profileNickname && (
+            <span className="text-xs text-slate-400 italic">No contact info</span>
+          )}
         </div>
 
-        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">Last activity: {timeAgo}</span>
+        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">{timeAgo}</span>
       </div>
 
-      {/* Actions row */}
-      <div className="flex items-center justify-end gap-2 mb-1.5">
-        {isArchivedDone && (
-          <button onClick={() => setArchivedViewExpanded(false)} className="text-xs text-slate-400 hover:text-slate-600">Collapse</button>
+      {/* Header row 2: status + count + new-activity indicator */}
+      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+        <StatusDropdownBadge status={card.status} onChange={(s) => onStatusChange(card.id, s)} />
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
+          {card.requestCount} {card.requestCount === 1 ? 'request' : 'requests'}
+        </span>
+        {card.hasNewActivity && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: '#0E0E0E' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse" style={{ backgroundColor: '#A1F96E' }} />
+            New activity
+          </span>
         )}
-        <button onClick={() => onEdit(card)} className="text-xs text-brand-600 hover:text-brand-700">Edit</button>
-        <button onClick={() => setConfirm(true)} className="text-xs text-amber-600 hover:text-amber-700">Archive</button>
-        <button onClick={() => setConfirmDelete(true)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
       </div>
 
       {/* Active request body */}
-      <p className="text-sm text-slate-700 leading-relaxed mb-1.5">{active.requestText}</p>
+      <p className="text-sm text-slate-700 leading-relaxed mb-1">{active.requestText}</p>
 
-      {/* Logged-by + one-step status transition */}
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] text-slate-400">
-          Logged by {active.agent.name} · {format(new Date(active.createdAt), "MMM d, yyyy 'at' HH:mm")}
-        </span>
-        {next && (
+      {/* Tags — compact chips when set, a single "+ Tag" affordance when empty */}
+      <div className="flex flex-wrap items-center gap-1 mb-1.5">
+        {activeTags.length > 0 && TAGS.filter(tag => activeTags.includes(tag.key)).map(tag => (
           <button
-            onClick={() => onStatusChange(card.id, next)}
-            className="text-xs px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors"
+            key={tag.key}
+            type="button"
+            onClick={() => handleTagToggle(tag.key)}
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border transition-all ${tag.selected}`}
+            title="Click to remove"
           >
-            → {next === 'IN_PROGRESS' ? 'Start' : 'Done'}
+            <span>{tag.emoji}</span>
+            <span>{tag.label}</span>
+          </button>
+        ))}
+        {showTagPicker && TAGS.filter(tag => !activeTags.includes(tag.key)).map(tag => (
+          <button
+            key={tag.key}
+            type="button"
+            onClick={() => handleTagToggle(tag.key)}
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border transition-all ${tag.ghost}`}
+          >
+            <span>{tag.emoji}</span>
+            <span>{tag.label}</span>
+          </button>
+        ))}
+        {activeTags.length === 0 && !showTagPicker && (
+          <button
+            type="button"
+            onClick={() => setShowTagPicker(true)}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-medium border border-dashed border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 transition-colors"
+          >
+            <Plus size={10} strokeWidth={2} />
+            Tag
+          </button>
+        )}
+        {activeTags.length > 0 && activeTags.length < TAGS.length && (
+          <button
+            type="button"
+            onClick={() => setShowTagPicker(v => !v)}
+            className="shrink-0 p-0.5 rounded text-slate-300 hover:text-slate-500 transition-colors"
+            aria-label={showTagPicker ? 'Close tag picker' : 'Add another tag'}
+            title={showTagPicker ? 'Close' : 'Add another tag'}
+          >
+            <Plus size={11} strokeWidth={2} />
           </button>
         )}
       </div>
 
-      {/* Contact info copy buttons */}
-      {(card.contactEmail || card.profileNickname) && (
-        <div className="flex flex-col gap-0.5 mb-2">
-          {card.contactEmail && (
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span className="shrink-0">📧</span>
-              <span className="flex-1 truncate">{card.contactEmail}</span>
-              <button type="button" onClick={() => handleCopy(card.contactEmail!, 'email')}
-                className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors" title="Copy email">
-                {copiedField === 'email'
-                  ? <Check size={12} strokeWidth={2} className="text-emerald-500" />
-                  : <Copy size={12} strokeWidth={1.5} />}
-              </button>
-            </div>
+      {/* Logged-by + one-step status transition + icon-only actions */}
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-[10px] text-slate-400 truncate">
+          Logged by {active.agent.name} · {format(new Date(active.createdAt), "MMM d, yyyy 'at' HH:mm")}
+        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          {next && (
+            <button
+              onClick={() => onStatusChange(card.id, next)}
+              className="text-xs px-2 py-0.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors"
+            >
+              → {next === 'IN_PROGRESS' ? 'Start' : 'Done'}
+            </button>
           )}
-          {card.profileNickname && (
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span className="shrink-0">👤</span>
-              <span className="flex-1 truncate">{card.profileNickname}</span>
-              <button type="button" onClick={() => handleCopy(card.profileNickname!, 'nickname')}
-                className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors" title="Copy nickname">
-                {copiedField === 'nickname'
-                  ? <Check size={12} strokeWidth={2} className="text-emerald-500" />
-                  : <Copy size={12} strokeWidth={1.5} />}
-              </button>
-            </div>
+          {isArchivedDone && (
+            <button onClick={() => setArchivedViewExpanded(false)} className="text-[10px] text-slate-400 hover:text-slate-600">Collapse</button>
           )}
+          <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
+            <Pencil size={13} strokeWidth={1.8} />
+          </button>
+          <button onClick={() => setConfirm(true)} className="p-1 rounded hover:bg-amber-50 transition-colors text-slate-400 hover:text-amber-600" aria-label="Archive" title="Archive">
+            <Archive size={13} strokeWidth={1.8} />
+          </button>
+          <button onClick={() => setConfirmDelete(true)} className="p-1 rounded hover:bg-red-50 transition-colors text-slate-400 hover:text-red-600" aria-label="Delete" title="Delete">
+            <Trash2 size={13} strokeWidth={1.8} />
+          </button>
         </div>
-      )}
+      </div>
 
-      {/* ── Inline tags + note ──────────────────────────────────────────────── */}
+      {/* ── Comment thread ──────────────────────────────────────────────────── */}
       <div className="pt-2 space-y-2" style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }}>
-
-        {/* Tags */}
-        <div className="flex flex-wrap gap-1">
-          {TAGS.map(tag => {
-            const isActive = activeTags.includes(tag.key);
-            return (
-              <button
-                key={tag.key}
-                type="button"
-                onClick={() => handleTagToggle(tag.key)}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border transition-all
-                  ${isActive ? tag.selected : tag.ghost}`}
-              >
-                <span>{tag.emoji}</span>
-                <span>{tag.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Comment thread */}
         <div className="space-y-1.5">
           {comments.length > 0 && (
             <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
