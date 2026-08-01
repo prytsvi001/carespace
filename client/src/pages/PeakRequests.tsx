@@ -308,6 +308,13 @@ function ClientCard({
             <span className="text-xs text-slate-400 italic">No contact info</span>
           )}
         </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
+            <Pencil size={13} strokeWidth={1.8} />
+          </button>
+          <CardMenu onArchive={() => setConfirm(true)} onDelete={() => setConfirmDelete(true)} />
+        </div>
       </div>
 
       {/* Active request body */}
@@ -370,7 +377,7 @@ function ClientCard({
         )}
       </div>
 
-      {/* Primary action (weighted, accent) + secondary actions (neutral icon + "..." menu) */}
+      {/* Primary action (weighted, accent) — Edit/"..." now live in the header, top-right */}
       <div className="flex items-center justify-between gap-2 mb-2">
         <button
           type="button"
@@ -380,15 +387,9 @@ function ClientCard({
         >
           {primary.label}
         </button>
-        <div className="flex items-center gap-1 shrink-0">
-          {isArchivedDone && (
-            <button onClick={() => setArchivedViewExpanded(false)} className="text-[10px] text-slate-400 hover:text-slate-600">Collapse</button>
-          )}
-          <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
-            <Pencil size={13} strokeWidth={1.8} />
-          </button>
-          <CardMenu onArchive={() => setConfirm(true)} onDelete={() => setConfirmDelete(true)} />
-        </div>
+        {isArchivedDone && (
+          <button onClick={() => setArchivedViewExpanded(false)} className="text-[10px] text-slate-400 hover:text-slate-600">Collapse</button>
+        )}
       </div>
 
       {/* ── Comment thread — existing comments always shown; new-comment input collapsed ── */}
