@@ -1,6 +1,6 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User } from 'lucide-react';
+import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User, ArrowUp, ArrowDown } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
@@ -701,15 +701,27 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     ));
   };
 
+  // Each column has its own independent newest-first/oldest-first toggle.
+  const [sortDirection, setSortDirection] = useState<Record<RequestStatus, 'newest' | 'oldest'>>({
+    NEW: 'newest', IN_PROGRESS: 'newest', DONE: 'newest',
+  });
+  const toggleSortDirection = (status: RequestStatus) => {
+    setSortDirection(prev => ({ ...prev, [status]: prev[status] === 'newest' ? 'oldest' : 'newest' }));
+  };
+
   // Starred cards always lead their column; within each of those two groups,
-  // newest-to-oldest by the active request's createdAt (the same timestamp
-  // shown on the card as "Created: ...").
-  const byStatus = (status: RequestStatus) => cards
-    .filter(c => c.status === status)
-    .sort((a, b) => {
-      if (a.starred !== b.starred) return a.starred ? -1 : 1;
-      return new Date(b.activeRequest.createdAt).getTime() - new Date(a.activeRequest.createdAt).getTime();
-    });
+  // ordered by the active request's createdAt (the same timestamp shown on
+  // the card as "Created: ..."), direction per the column's own toggle.
+  const byStatus = (status: RequestStatus) => {
+    const dir = sortDirection[status];
+    return cards
+      .filter(c => c.status === status)
+      .sort((a, b) => {
+        if (a.starred !== b.starred) return a.starred ? -1 : 1;
+        const diff = new Date(b.activeRequest.createdAt).getTime() - new Date(a.activeRequest.createdAt).getTime();
+        return dir === 'newest' ? diff : -diff;
+      });
+  };
 
   const openNewForm = () => {
     setEditingId(null);
@@ -800,9 +812,22 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                     <span>{col.icon}</span>
                     <h3 className="font-semibold text-slate-700 text-sm">{col.label}</h3>
                   </div>
-                  <span className="bg-white text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full shadow-sm">
-                    {colCards.length}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleSortDirection(col.status)}
+                      className="p-1 rounded-full hover:bg-white/70 transition-colors text-slate-400 hover:text-slate-600"
+                      aria-label={sortDirection[col.status] === 'newest' ? 'Sorted newest first — click for oldest first' : 'Sorted oldest first — click for newest first'}
+                      title={sortDirection[col.status] === 'newest' ? 'Newest first — click for oldest first' : 'Oldest first — click for newest first'}
+                    >
+                      {sortDirection[col.status] === 'newest'
+                        ? <ArrowDown size={12} strokeWidth={2.25} />
+                        : <ArrowUp size={12} strokeWidth={2.25} />}
+                    </button>
+                    <span className="bg-white text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full shadow-sm">
+                      {colCards.length}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2">
                   {colCards.length === 0 ? (
