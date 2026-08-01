@@ -266,12 +266,12 @@ function ClientCard({
         </div>
       )}
 
-      {/* Header: star + email/username (stacked, click-to-copy) + edit/menu + created timestamp */}
-      <div className="flex items-start gap-1.5 mb-1.5">
+      {/* Row 1: star + request title + primary action */}
+      <div className="flex items-center gap-1.5 mb-1.5">
         <button
           type="button"
           onClick={() => onToggleStar(card.id, !card.starred)}
-          className="shrink-0 mt-0.5 transition-transform hover:scale-110"
+          className="shrink-0 transition-transform hover:scale-110"
           aria-label={card.starred ? 'Remove priority' : 'Mark as priority'}
           title={card.starred ? 'Remove priority' : 'Mark as priority'}
         >
@@ -283,53 +283,52 @@ function ClientCard({
           />
         </button>
 
-        <div className="min-w-0 flex-1 flex flex-col">
-          {card.contactEmail && (
-            <button
-              type="button"
-              onClick={() => handleCopy(card.contactEmail!, 'email')}
-              className="w-full flex items-center gap-1 text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
-              style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
-              title="Click to copy email"
-            >
-              <Mail size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
-              <span className="truncate">{card.contactEmail}</span>
-            </button>
-          )}
-          {card.profileNickname && (
-            <button
-              type="button"
-              onClick={() => handleCopy(card.profileNickname!, 'nickname')}
-              className="w-full flex items-center gap-1 text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
-              style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
-              title="Click to copy username"
-            >
-              <User size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
-              <span className="truncate">{card.profileNickname}</span>
-            </button>
-          )}
-          {!card.contactEmail && !card.profileNickname && (
-            <span className="text-xs text-slate-400 italic">No contact info</span>
-          )}
-        </div>
+        <p className="flex-1 min-w-0 truncate text-sm font-medium text-slate-700" title={active.requestText}>
+          {active.requestText}
+        </p>
 
-        <div className="flex flex-col items-end gap-0.5 shrink-0">
-          <div className="flex items-center gap-1">
-            <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
-              <Pencil size={13} strokeWidth={1.8} />
-            </button>
-            <CardMenu onArchive={() => setConfirm(true)} onDelete={() => setConfirmDelete(true)} />
-          </div>
-          <span className="text-[9px] text-slate-400 whitespace-nowrap">
-            Created: {format(new Date(active.createdAt), 'MMM d, HH:mm')}
-          </span>
-        </div>
+        <button
+          type="button"
+          onClick={() => onStatusChange(card.id, primary.target)}
+          className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-all hover:brightness-95 ${!primary.accent ? 'hover:bg-slate-200' : ''}`}
+          style={primary.accent ? { backgroundColor: '#A1F96E', color: '#0E0E0E' } : { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.55)' }}
+        >
+          {primary.label}
+        </button>
       </div>
 
-      {/* Active request body */}
-      <p className="text-sm text-slate-700 leading-relaxed mb-1.5">{active.requestText}</p>
+      {/* Rows 2-3: email + username, stacked, click-to-copy */}
+      <div className="flex flex-col mb-1.5">
+        {card.contactEmail && (
+          <button
+            type="button"
+            onClick={() => handleCopy(card.contactEmail!, 'email')}
+            className="w-full flex items-center gap-1 text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
+            style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
+            title="Click to copy email"
+          >
+            <Mail size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+            <span className="truncate">{card.contactEmail}</span>
+          </button>
+        )}
+        {card.profileNickname && (
+          <button
+            type="button"
+            onClick={() => handleCopy(card.profileNickname!, 'nickname')}
+            className="w-full flex items-center gap-1 text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
+            style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
+            title="Click to copy username"
+          >
+            <User size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+            <span className="truncate">{card.profileNickname}</span>
+          </button>
+        )}
+        {!card.contactEmail && !card.profileNickname && (
+          <span className="text-xs text-slate-400 italic">No contact info</span>
+        )}
+      </div>
 
-      {/* Unified badge row: count (click for history) + new-activity + tags — same place regardless of status */}
+      {/* Row 4: unified badge row — count (click for history) + new-activity + tags */}
       <div className="flex flex-wrap items-center gap-1 mb-1">
         {card.history.length > 0 ? (
           <button
@@ -435,21 +434,6 @@ function ClientCard({
         </div>
       )}
 
-      {/* Primary action (weighted, accent) — Edit/"..." now live in the header, top-right */}
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <button
-          type="button"
-          onClick={() => onStatusChange(card.id, primary.target)}
-          className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-all hover:brightness-95 ${!primary.accent ? 'hover:bg-slate-200' : ''}`}
-          style={primary.accent ? { backgroundColor: '#A1F96E', color: '#0E0E0E' } : { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.55)' }}
-        >
-          {primary.label}
-        </button>
-        {isArchivedDone && (
-          <button onClick={() => setArchivedViewExpanded(false)} className="text-[10px] text-slate-400 hover:text-slate-600">Collapse</button>
-        )}
-      </div>
-
       {/* ── Comment thread — existing comments always shown; new-comment input collapsed ── */}
       <div className="pt-2 space-y-1.5" style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }}>
         {comments.length > 0 && (
@@ -467,7 +451,7 @@ function ClientCard({
             ))}
           </div>
         )}
-        {addingComment ? (
+        {addingComment && (
           <div className="space-y-1.5">
             <textarea
               autoFocus
@@ -501,15 +485,34 @@ function ClientCard({
               </button>
             </div>
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setAddingComment(true)}
-            className="text-[10px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
-          >
-            + Add comment
-          </button>
         )}
+
+        {/* Row 5: "+ Add comment" (left) + Created/Edit/"..." (right) */}
+        <div className="flex items-center justify-between gap-2 pt-0.5">
+          <div className="flex items-center gap-2">
+            {isArchivedDone && (
+              <button onClick={() => setArchivedViewExpanded(false)} className="text-[10px] text-slate-400 hover:text-slate-600">Collapse</button>
+            )}
+            {!addingComment && (
+              <button
+                type="button"
+                onClick={() => setAddingComment(true)}
+                className="text-[10px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                + Add comment
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[9px] text-slate-400 whitespace-nowrap">
+              Created: {format(new Date(active.createdAt), 'MMM d, HH:mm')}
+            </span>
+            <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
+              <Pencil size={13} strokeWidth={1.8} />
+            </button>
+            <CardMenu onArchive={() => setConfirm(true)} onDelete={() => setConfirmDelete(true)} />
+          </div>
+        </div>
       </div>
 
       <ConfirmDialog open={confirm} message="Archive this client card?"
