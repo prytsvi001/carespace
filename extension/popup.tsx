@@ -91,6 +91,7 @@ function ResultRow({
   row,
   query,
   selected,
+  previewOpen,
   copied,
   onHover,
   onActivate,
@@ -99,6 +100,7 @@ function ResultRow({
   row: NavRow;
   query: string;
   selected: boolean;
+  previewOpen: boolean;
   copied: boolean;
   onHover: () => void;
   onActivate: () => void;
@@ -112,7 +114,6 @@ function ResultRow({
   const pinned = !isVariant && row.shortcut.pinned;
 
   const previewText = isVariant ? row.variant.content : row.shortcut.content;
-  const otherVariantCount = !isVariant && row.shortcut.variants.length > 1 ? row.shortcut.variants.length - 1 : 0;
 
   return (
     <div>
@@ -144,7 +145,7 @@ function ResultRow({
           {copied && <span className="text-xs font-medium shrink-0" style={{ color: '#3ba648' }}>Copied! ✓</span>}
         </button>
       </div>
-      {selected && previewText && (
+      {previewOpen && previewText && (
         <div className={`mx-2.5 mb-1.5 px-2.5 py-2 rounded-md bg-slate-50 text-slate-600 ${isVariant ? 'ml-11' : ''}`}>
           <p
             className={`max-h-28 overflow-y-auto whitespace-pre-wrap ${
@@ -153,11 +154,9 @@ function ResultRow({
           >
             {previewText}
           </p>
-          {otherVariantCount > 0 && (
-            <p className="text-[11px] text-slate-400 mt-1">
-              +{otherVariantCount} more variant{otherVariantCount > 1 ? 's' : ''} — press Enter to choose
-            </p>
-          )}
+          <p className="text-[11px] text-slate-400 mt-1">
+            Click again to {isLink ? 'open' : 'copy'}
+          </p>
         </div>
       )}
     </div>
@@ -185,6 +184,7 @@ function App() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [previewOpenKey, setPreviewOpenKey] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -260,6 +260,7 @@ function App() {
 
   useEffect(() => {
     setSelectedIndex(0);
+    setPreviewOpenKey(null);
   }, [query, expandedId]);
 
   useEffect(() => {
@@ -291,6 +292,30 @@ function App() {
     setCopiedKey(key);
     setTimeout(() => setCopiedKey((cur) => (cur === key ? null : cur)), 1500);
   }, []);
+
+  // A row either copies/opens (variant, link, single-variant template) or
+  // expands into variant sub-items (multi-variant template parent). Only the
+  // former needs a "click reveals text, click again commits" gate for mouse
+  // users — expanding is already itself a reveal, nothing to gate.
+  const isLeafAction = (row: NavRow) =>
+    row.kind === 'variant' || row.shortcut.type === 'link' || row.shortcut.variants.length <= 1;
+
+  const handleRowClick = useCallback(
+    (row: NavRow) => {
+      if (!isLeafAction(row)) {
+        activateRow(row);
+        return;
+      }
+      const key = rowKey(row);
+      if (previewOpenKey === key) {
+        setPreviewOpenKey(null);
+        activateRow(row);
+      } else {
+        setPreviewOpenKey(key);
+      }
+    },
+    [activateRow, previewOpenKey]
+  );
 
   const handleTogglePin = useCallback((s: Shortcut) => {
     const next = !s.pinned;
@@ -421,9 +446,10 @@ function App() {
                           row={row}
                           query={query.trim()}
                           selected={startIndex + i === selectedIndex}
+                          previewOpen={previewOpenKey === rowKey(row)}
                           copied={copiedKey === rowKey(row)}
                           onHover={() => setSelectedIndex(startIndex + i)}
-                          onActivate={() => activateRow(row)}
+                          onActivate={() => handleRowClick(row)}
                           onTogglePin={row.kind === 'shortcut' ? () => handleTogglePin(row.shortcut) : undefined}
                         />
                       ))}
