@@ -36,3 +36,24 @@ export async function refreshShortcutsCache(): Promise<Shortcut[]> {
   await chrome.storage.local.set({ [CACHE_KEY]: cache });
   return shortcuts;
 }
+
+export async function pinShortcut(id: string, pinned: boolean): Promise<Shortcut> {
+  const res = await fetch(`${API_BASE}/shortcuts/${id}/pin`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pinned }),
+  });
+  if (!res.ok) throw new Error(`pin failed: ${res.status}`);
+  return res.json();
+}
+
+// Keeps the cache in sync with an optimistic pin toggle so the next popup
+// open (even before the 5-minute TTL is up) reflects it instead of
+// flashing back to the pre-toggle state.
+export async function updateCachedShortcut(id: string, patch: Partial<Shortcut>): Promise<void> {
+  const cache = await getCachedShortcuts();
+  if (!cache) return;
+  const shortcuts = cache.shortcuts.map((s) => (s.id === id ? { ...s, ...patch } : s));
+  await chrome.storage.local.set({ [CACHE_KEY]: { ...cache, shortcuts } });
+}

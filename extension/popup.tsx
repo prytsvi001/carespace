@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
+import { Star } from 'lucide-react';
 import './popup.css';
 import type { AuthUser, Shortcut, ShortcutVariant } from './lib/types';
 import {
   fetchAuthUser,
   getCachedShortcuts,
   isCacheFresh,
+  pinShortcut,
   refreshShortcutsCache,
+  updateCachedShortcut,
 } from './lib/data';
 
 const CARESPACE_URL = 'https://carespace.struktura.io';
@@ -91,6 +94,7 @@ function ResultRow({
   copied,
   onHover,
   onActivate,
+  onTogglePin,
 }: {
   row: NavRow;
   query: string;
@@ -98,34 +102,48 @@ function ResultRow({
   copied: boolean;
   onHover: () => void;
   onActivate: () => void;
+  onTogglePin?: () => void;
 }) {
   const isVariant = row.kind === 'variant';
   const isLink = !isVariant && row.shortcut.type === 'link';
   const icon = isVariant ? '' : row.shortcut.type === 'text' ? '📋' : '🔗';
   const title = isVariant ? row.variant.label : row.shortcut.title;
   const subtitle = isVariant ? null : row.shortcut.category || null;
+  const pinned = !isVariant && row.shortcut.pinned;
 
   const previewText = isVariant ? row.variant.content : row.shortcut.content;
   const otherVariantCount = !isVariant && row.shortcut.variants.length > 1 ? row.shortcut.variants.length - 1 : 0;
 
   return (
     <div>
-      <button
+      <div
         onMouseEnter={onHover}
-        onClick={onActivate}
-        className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
+        className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 transition-colors ${
           selected ? 'bg-accent/25' : 'hover:bg-accent/15'
         } ${isVariant ? 'pl-8' : ''}`}
       >
-        {icon && <span className="text-sm shrink-0">{icon}</span>}
-        <span className="flex-1 min-w-0">
-          <span className="block text-sm font-semibold text-ink truncate">
-            {query ? highlightMatch(title, query) : title}
+        {!isVariant && onTogglePin && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+            className="shrink-0 transition-colors"
+            style={{ color: pinned ? '#D4A847' : 'rgba(14,14,14,0.25)' }}
+            aria-label={pinned ? 'Unpin' : 'Pin'}
+            title={pinned ? 'Unpin' : 'Pin'}
+          >
+            <Star size={13} fill={pinned ? 'currentColor' : 'none'} />
+          </button>
+        )}
+        <button onClick={onActivate} className="flex-1 min-w-0 flex items-center gap-2 text-left">
+          {icon && <span className="text-sm shrink-0">{icon}</span>}
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold text-ink truncate">
+              {query ? highlightMatch(title, query) : title}
+            </span>
+            {subtitle && <span className="block text-xs text-slate-400 truncate">{subtitle}</span>}
           </span>
-          {subtitle && <span className="block text-xs text-slate-400 truncate">{subtitle}</span>}
-        </span>
-        {copied && <span className="text-xs font-medium shrink-0" style={{ color: '#3ba648' }}>Copied! ✓</span>}
-      </button>
+          {copied && <span className="text-xs font-medium shrink-0" style={{ color: '#3ba648' }}>Copied! ✓</span>}
+        </button>
+      </div>
       {selected && previewText && (
         <div className={`mx-2.5 mb-1.5 px-2.5 py-2 rounded-md bg-slate-50 text-slate-600 ${isVariant ? 'ml-11' : ''}`}>
           <p
@@ -217,10 +235,11 @@ function App() {
 
   const groups = useMemo(() => {
     if (!shortcuts) return null;
+    const byPinnedFirst = (a: Shortcut, b: Shortcut) => Number(b.pinned) - Number(a.pinned);
     const trimmed = query.trim();
     if (!trimmed) {
-      const templates = shortcuts.filter((s) => s.type === 'text').slice(0, 5);
-      const links = shortcuts.filter((s) => s.type === 'link').slice(0, 5);
+      const templates = shortcuts.filter((s) => s.type === 'text').sort(byPinnedFirst).slice(0, 5);
+      const links = shortcuts.filter((s) => s.type === 'link').sort(byPinnedFirst).slice(0, 5);
       return [
         { label: 'TEMPLATES', icon: '📋', items: templates },
         { label: 'SHORTCUTS', icon: '⌨️', items: links },
@@ -230,7 +249,7 @@ function App() {
     const ranked = shortcuts
       .map((s) => ({ s, score: matchScore(s, q) }))
       .filter(({ score }) => score > 0)
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => b.score - a.score || byPinnedFirst(a.s, b.s));
     return [{ label: null, icon: null, items: ranked.map((r) => r.s) }];
   }, [shortcuts, query]);
 
@@ -271,6 +290,16 @@ function App() {
     copyToClipboard(s.content);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey((cur) => (cur === key ? null : cur)), 1500);
+  }, []);
+
+  const handleTogglePin = useCallback((s: Shortcut) => {
+    const next = !s.pinned;
+    setShortcuts((prev) => prev && prev.map((x) => (x.id === s.id ? { ...x, pinned: next } : x)));
+    pinShortcut(s.id, next)
+      .then(() => updateCachedShortcut(s.id, { pinned: next }))
+      .catch(() => {
+        setShortcuts((prev) => prev && prev.map((x) => (x.id === s.id ? { ...x, pinned: !next } : x)));
+      });
   }, []);
 
   const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -395,6 +424,7 @@ function App() {
                           copied={copiedKey === rowKey(row)}
                           onHover={() => setSelectedIndex(startIndex + i)}
                           onActivate={() => activateRow(row)}
+                          onTogglePin={row.kind === 'shortcut' ? () => handleTogglePin(row.shortcut) : undefined}
                         />
                       ))}
                     </div>
