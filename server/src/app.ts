@@ -84,6 +84,13 @@ app.use(
     cookie: {
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
+      // SameSite=None (only in prod, where secure:true is required alongside
+      // it) so the session cookie is sent on requests from the
+      // chrome-extension:// origin the CareSpace Quick Actions extension
+      // runs in — those are cross-site requests, and the default/Lax
+      // wouldn't attach the cookie to a fetch() the way it does to a
+      // top-level navigation.
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     },
   })
