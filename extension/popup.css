@@ -2,7 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
+/* Fixed popup dimensions — this is the single source of truth for sizing
+   (deliberately not split into an inline <style> in popup.html too: Vite
+   injects this stylesheet's <link> after any inline <head> styles, so a
+   duplicate rule there would lose the cascade to whichever set here). */
+html, body {
+  margin: 0;
+  width: 480px;
+  height: 520px;
+  overflow: hidden;
+}
+#root {
+  width: 100%;
   height: 100%;
 }
 body {
