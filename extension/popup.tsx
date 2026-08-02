@@ -100,27 +100,49 @@ function ResultRow({
   onActivate: () => void;
 }) {
   const isVariant = row.kind === 'variant';
+  const isLink = !isVariant && row.shortcut.type === 'link';
   const icon = isVariant ? '' : row.shortcut.type === 'text' ? '📋' : '🔗';
   const title = isVariant ? row.variant.label : row.shortcut.title;
   const subtitle = isVariant ? null : row.shortcut.category || null;
 
+  const previewText = isVariant ? row.variant.content : row.shortcut.content;
+  const otherVariantCount = !isVariant && row.shortcut.variants.length > 1 ? row.shortcut.variants.length - 1 : 0;
+
   return (
-    <button
-      onMouseEnter={onHover}
-      onClick={onActivate}
-      className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
-        selected ? 'bg-accent/25' : 'hover:bg-accent/15'
-      } ${isVariant ? 'pl-8' : ''}`}
-    >
-      {icon && <span className="text-sm shrink-0">{icon}</span>}
-      <span className="flex-1 min-w-0">
-        <span className="block text-sm font-semibold text-ink truncate">
-          {query ? highlightMatch(title, query) : title}
+    <div>
+      <button
+        onMouseEnter={onHover}
+        onClick={onActivate}
+        className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
+          selected ? 'bg-accent/25' : 'hover:bg-accent/15'
+        } ${isVariant ? 'pl-8' : ''}`}
+      >
+        {icon && <span className="text-sm shrink-0">{icon}</span>}
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-semibold text-ink truncate">
+            {query ? highlightMatch(title, query) : title}
+          </span>
+          {subtitle && <span className="block text-xs text-slate-400 truncate">{subtitle}</span>}
         </span>
-        {subtitle && <span className="block text-xs text-slate-400 truncate">{subtitle}</span>}
-      </span>
-      {copied && <span className="text-xs font-medium shrink-0" style={{ color: '#3ba648' }}>Copied! ✓</span>}
-    </button>
+        {copied && <span className="text-xs font-medium shrink-0" style={{ color: '#3ba648' }}>Copied! ✓</span>}
+      </button>
+      {selected && previewText && (
+        <div className={`mx-2.5 mb-1.5 px-2.5 py-2 rounded-md bg-slate-50 text-slate-600 ${isVariant ? 'ml-11' : ''}`}>
+          <p
+            className={`max-h-28 overflow-y-auto whitespace-pre-wrap ${
+              isLink ? 'font-mono text-[11px] break-all' : 'text-xs'
+            }`}
+          >
+            {previewText}
+          </p>
+          {otherVariantCount > 0 && (
+            <p className="text-[11px] text-slate-400 mt-1">
+              +{otherVariantCount} more variant{otherVariantCount > 1 ? 's' : ''} — press Enter to choose
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
