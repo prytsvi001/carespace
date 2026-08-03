@@ -11,6 +11,7 @@ const AGENTS = [
   'Julia Manson',
   'Jonathan Lewis',
   'Sandra Moore',
+  'Victoria Zosim',
 ];
 
 const USERS: { name: string; email: string; role: string; peekDutyEligible?: boolean }[] = [
@@ -21,6 +22,7 @@ const USERS: { name: string; email: string; role: string; peekDutyEligible?: boo
   { name: 'Nicky Brown',       email: 'myroslava_horshchar@struktura.io',    role: 'agent' },
   { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler' },
   { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler' },
+  { name: 'Victoria Zosim',    email: 'vika_zosim@struktura.io',             role: 'agent' },
 ];
 
 async function main() {
