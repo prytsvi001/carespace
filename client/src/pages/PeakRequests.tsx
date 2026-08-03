@@ -328,26 +328,22 @@ function ClientCard({
         </div>
       )}
 
-      {/* Row 1: star + request title + primary action */}
+      {/* Row 1: email + primary action */}
       <div className="flex items-center gap-1.5 mb-1.5">
-        <button
-          type="button"
-          onClick={() => onToggleStar(card.id, !card.starred)}
-          className="shrink-0 transition-transform hover:scale-110"
-          aria-label={card.starred ? 'Remove priority' : 'Mark as priority'}
-          title={card.starred ? 'Remove priority' : 'Mark as priority'}
-        >
-          <Star
-            size={15}
-            strokeWidth={1.8}
-            fill={card.starred ? '#D4A847' : 'none'}
-            style={{ color: card.starred ? '#D4A847' : 'rgba(14,14,14,0.25)' }}
-          />
-        </button>
-
-        <p className="flex-1 min-w-0 truncate text-sm font-medium text-slate-700" title={active.requestText}>
-          {active.requestText}
-        </p>
+        {card.contactEmail ? (
+          <button
+            type="button"
+            onClick={() => handleCopy(card.contactEmail!, 'email')}
+            className="flex-1 min-w-0 flex items-center gap-1 text-left text-xs font-semibold truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
+            style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
+            title="Click to copy email"
+          >
+            <Mail size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+            <span className="truncate">{card.contactEmail}</span>
+          </button>
+        ) : (
+          <div className="flex-1 min-w-0" />
+        )}
 
         {showEyeCheck && (
           <EyeCheckButton card={card} canCheck={!!canCheckAccounts} onCheck={() => onCheckAccount(card.id)} />
@@ -363,25 +359,13 @@ function ClientCard({
         </button>
       </div>
 
-      {/* Rows 2-3: email + username, stacked, click-to-copy */}
+      {/* Rows 2-3: nickname + problem title */}
       <div className="flex flex-col mb-1.5">
-        {card.contactEmail && (
-          <button
-            type="button"
-            onClick={() => handleCopy(card.contactEmail!, 'email')}
-            className="w-full flex items-center gap-1 text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
-            style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
-            title="Click to copy email"
-          >
-            <Mail size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
-            <span className="truncate">{card.contactEmail}</span>
-          </button>
-        )}
         {card.profileNickname && (
           <button
             type="button"
             onClick={() => handleCopy(card.profileNickname!, 'nickname')}
-            className="w-full flex items-center gap-1 text-left text-xs truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
+            className="w-full flex items-center gap-1 text-left text-xs font-semibold truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
             style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
             title="Click to copy username"
           >
@@ -389,6 +373,10 @@ function ClientCard({
             <span className="truncate">{card.profileNickname}</span>
           </button>
         )}
+        <p className="flex items-center gap-1 truncate text-sm font-normal text-slate-700" title={active.requestText}>
+          <span className="shrink-0">⚠️</span>
+          <span className="truncate">{active.requestText}</span>
+        </p>
         {!card.contactEmail && !card.profileNickname && (
           <span className="text-xs text-slate-400 italic">No contact info</span>
         )}
@@ -573,6 +561,20 @@ function ClientCard({
             <span className="text-[9px] text-slate-400 whitespace-nowrap">
               Created: {format(new Date(active.createdAt), 'MMM d, HH:mm')}
             </span>
+            <button
+              type="button"
+              onClick={() => onToggleStar(card.id, !card.starred)}
+              className="p-1 rounded hover:bg-black/5 transition-colors"
+              aria-label={card.starred ? 'Remove priority' : 'Mark as priority'}
+              title={card.starred ? 'Remove priority' : 'Mark as priority'}
+            >
+              <Star
+                size={13}
+                strokeWidth={1.8}
+                fill={card.starred ? '#D4A847' : 'none'}
+                style={{ color: card.starred ? '#D4A847' : 'rgba(14,14,14,0.25)' }}
+              />
+            </button>
             <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
               <Pencil size={13} strokeWidth={1.8} />
             </button>
