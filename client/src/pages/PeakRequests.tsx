@@ -1,6 +1,6 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User, ArrowUp, ArrowDown, Eye } from 'lucide-react';
+import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, User, ArrowUp, ArrowDown, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
@@ -353,7 +353,6 @@ function ClientCard({
             style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(14,14,14,0.85)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
             title="Click to copy email"
           >
-            <Mail size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
             <span className="truncate">{card.contactEmail}</span>
           </button>
         ) : (
