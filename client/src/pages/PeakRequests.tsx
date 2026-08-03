@@ -381,7 +381,7 @@ function ClientCard({
             type="button"
             onClick={() => handleCopy(card.profileNickname!, 'nickname')}
             className="w-full flex items-center gap-1 text-left truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
-            style={{ fontSize: '13px', fontWeight: 400, color: copiedField === 'nickname' ? 'rgba(14,14,14,0.65)' : '#94a3b8', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
+            style={{ fontSize: '14px', fontWeight: 600, color: copiedField === 'nickname' ? 'rgba(14,14,14,0.65)' : '#94a3b8', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
             title="Click to copy username"
           >
             <User size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
