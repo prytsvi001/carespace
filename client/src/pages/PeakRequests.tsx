@@ -329,7 +329,7 @@ function ClientCard({
       )}
 
       {/* Row 1: email + primary action */}
-      <div className="flex items-center gap-1.5 mb-1.5">
+      <div className="flex items-center gap-1.5">
         {card.contactEmail ? (
           <button
             type="button"
@@ -365,7 +365,7 @@ function ClientCard({
           <button
             type="button"
             onClick={() => handleCopy(card.profileNickname!, 'nickname')}
-            className="w-full flex items-center gap-1 text-left text-xs font-semibold truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
+            className="w-full flex items-center gap-1 text-left text-xs font-semibold truncate rounded px-1 -mx-1 mb-1.5 transition-colors hover:bg-black/[0.03] hover:underline"
             style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
             title="Click to copy username"
           >
