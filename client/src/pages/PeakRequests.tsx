@@ -328,40 +328,39 @@ function ClientCard({
         </div>
       )}
 
-      {/* Row 1: primary action */}
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <div className="flex-1 min-w-0" />
-
-        {showEyeCheck && (
-          <EyeCheckButton card={card} canCheck={!!canCheckAccounts} onCheck={() => onCheckAccount(card.id)} />
-        )}
-
-        <button
-          type="button"
-          onClick={() => onStatusChange(card.id, primary.target)}
-          className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-all hover:brightness-95 ${!primary.accent ? 'hover:bg-slate-200' : ''}`}
-          style={primary.accent ? { backgroundColor: '#A1F96E', color: '#0E0E0E' } : { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.55)' }}
-        >
-          {primary.label}
-        </button>
-      </div>
-
-      {/* Rows 2-4: email + nickname + problem title, stacked, left edges aligned */}
+      {/* Rows 1-4: email (+ eye check + primary action) + nickname + problem title, left edges aligned */}
       <div className="flex flex-col mb-1.5">
-        {card.contactEmail && (
+        <div className="flex items-center gap-1.5 mb-1.5">
+          {card.contactEmail ? (
+            <button
+              type="button"
+              onClick={() => handleCopy(card.contactEmail!, 'email')}
+              className="flex-1 min-w-0 flex items-center gap-1.5 text-left truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
+              style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(14,14,14,0.85)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
+              title="Click to copy email"
+            >
+              <span className="w-4 shrink-0 inline-flex justify-center">
+                <Mail size={11} strokeWidth={1.8} style={{ color: 'rgba(14,14,14,0.35)' }} />
+              </span>
+              <span className="truncate">{card.contactEmail}</span>
+            </button>
+          ) : (
+            <div className="flex-1 min-w-0" />
+          )}
+
+          {showEyeCheck && (
+            <EyeCheckButton card={card} canCheck={!!canCheckAccounts} onCheck={() => onCheckAccount(card.id)} />
+          )}
+
           <button
             type="button"
-            onClick={() => handleCopy(card.contactEmail!, 'email')}
-            className="w-full flex items-center gap-1.5 text-left truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
-            style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(14,14,14,0.85)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
-            title="Click to copy email"
+            onClick={() => onStatusChange(card.id, primary.target)}
+            className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-all hover:brightness-95 ${!primary.accent ? 'hover:bg-slate-200' : ''}`}
+            style={primary.accent ? { backgroundColor: '#A1F96E', color: '#0E0E0E' } : { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.55)' }}
           >
-            <span className="w-4 shrink-0 inline-flex justify-center">
-              <Mail size={11} strokeWidth={1.8} style={{ color: 'rgba(14,14,14,0.35)' }} />
-            </span>
-            <span className="truncate">{card.contactEmail}</span>
+            {primary.label}
           </button>
-        )}
+        </div>
         {card.profileNickname && (
           <button
             type="button"
