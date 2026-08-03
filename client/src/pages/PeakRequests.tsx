@@ -328,23 +328,8 @@ function ClientCard({
         </div>
       )}
 
-      {/* Row 1: star + primary action */}
+      {/* Row 1: primary action */}
       <div className="flex items-center gap-1.5 mb-1.5">
-        <button
-          type="button"
-          onClick={() => onToggleStar(card.id, !card.starred)}
-          className="shrink-0 transition-transform hover:scale-110"
-          aria-label={card.starred ? 'Remove priority' : 'Mark as priority'}
-          title={card.starred ? 'Remove priority' : 'Mark as priority'}
-        >
-          <Star
-            size={15}
-            strokeWidth={1.8}
-            fill={card.starred ? '#D4A847' : 'none'}
-            style={{ color: card.starred ? '#D4A847' : 'rgba(14,14,14,0.25)' }}
-          />
-        </button>
-
         <div className="flex-1 min-w-0" />
 
         {showEyeCheck && (
@@ -579,6 +564,20 @@ function ClientCard({
             <span className="text-[9px] text-slate-400 whitespace-nowrap">
               Created: {format(new Date(active.createdAt), 'MMM d, HH:mm')}
             </span>
+            <button
+              type="button"
+              onClick={() => onToggleStar(card.id, !card.starred)}
+              className="p-1 rounded hover:bg-black/5 transition-colors"
+              aria-label={card.starred ? 'Remove priority' : 'Mark as priority'}
+              title={card.starred ? 'Remove priority' : 'Mark as priority'}
+            >
+              <Star
+                size={13}
+                strokeWidth={1.8}
+                fill={card.starred ? '#D4A847' : 'none'}
+                style={{ color: card.starred ? '#D4A847' : 'rgba(14,14,14,0.25)' }}
+              />
+            </button>
             <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
               <Pencil size={13} strokeWidth={1.8} />
             </button>
