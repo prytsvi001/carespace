@@ -334,8 +334,8 @@ function ClientCard({
           <button
             type="button"
             onClick={() => handleCopy(card.contactEmail!, 'email')}
-            className="flex-1 min-w-0 flex items-center gap-1 text-left text-xs font-semibold truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
-            style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
+            className="flex-1 min-w-0 flex items-center gap-1 text-left truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
+            style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
             title="Click to copy email"
           >
             <Mail size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
@@ -365,15 +365,15 @@ function ClientCard({
           <button
             type="button"
             onClick={() => handleCopy(card.profileNickname!, 'nickname')}
-            className="w-full flex items-center gap-1 text-left text-xs font-semibold truncate rounded px-1 -mx-1 mb-1.5 transition-colors hover:bg-black/[0.03] hover:underline"
-            style={{ color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
+            className="w-full flex items-center gap-1 text-left truncate rounded px-1 -mx-1 mb-1.5 transition-colors hover:bg-black/[0.03] hover:underline"
+            style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
             title="Click to copy username"
           >
             <User size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
             <span className="truncate">{card.profileNickname}</span>
           </button>
         )}
-        <p className="flex items-center gap-1 truncate text-sm font-normal text-slate-700" title={active.requestText}>
+        <p className="flex items-center gap-1 truncate text-slate-700" style={{ fontSize: '13px', fontWeight: 400 }} title={active.requestText}>
           <span className="shrink-0">⚠️</span>
           <span className="truncate">{active.requestText}</span>
         </p>
