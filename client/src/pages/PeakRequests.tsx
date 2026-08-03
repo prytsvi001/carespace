@@ -335,7 +335,7 @@ function ClientCard({
             type="button"
             onClick={() => handleCopy(card.contactEmail!, 'email')}
             className="flex-1 min-w-0 flex items-center gap-1 text-left truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
-            style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
+            style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
             title="Click to copy email"
           >
             <Mail size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
@@ -366,7 +366,7 @@ function ClientCard({
             type="button"
             onClick={() => handleCopy(card.profileNickname!, 'nickname')}
             className="w-full flex items-center gap-1 text-left truncate rounded px-1 -mx-1 mb-1.5 transition-colors hover:bg-black/[0.03] hover:underline"
-            style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
+            style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(14,14,14,0.65)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
             title="Click to copy username"
           >
             <User size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
