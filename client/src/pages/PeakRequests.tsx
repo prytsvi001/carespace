@@ -1,6 +1,6 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, User, ArrowUp, ArrowDown, Eye } from 'lucide-react';
+import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User, ArrowUp, ArrowDown, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
@@ -328,7 +328,7 @@ function ClientCard({
         </div>
       )}
 
-      {/* Row 1: star + email + primary action */}
+      {/* Row 1: star + primary action */}
       <div className="flex items-center gap-1.5 mb-1.5">
         <button
           type="button"
@@ -345,19 +345,7 @@ function ClientCard({
           />
         </button>
 
-        {card.contactEmail ? (
-          <button
-            type="button"
-            onClick={() => handleCopy(card.contactEmail!, 'email')}
-            className="flex-1 min-w-0 flex items-center gap-1 text-left truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
-            style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(14,14,14,0.85)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
-            title="Click to copy email"
-          >
-            <span className="truncate">{card.contactEmail}</span>
-          </button>
-        ) : (
-          <div className="flex-1 min-w-0" />
-        )}
+        <div className="flex-1 min-w-0" />
 
         {showEyeCheck && (
           <EyeCheckButton card={card} canCheck={!!canCheckAccounts} onCheck={() => onCheckAccount(card.id)} />
@@ -373,22 +361,38 @@ function ClientCard({
         </button>
       </div>
 
-      {/* Rows 2-3: nickname + problem title, stacked */}
+      {/* Rows 2-4: email + nickname + problem title, stacked, left edges aligned */}
       <div className="flex flex-col mb-1.5">
+        {card.contactEmail && (
+          <button
+            type="button"
+            onClick={() => handleCopy(card.contactEmail!, 'email')}
+            className="w-full flex items-center gap-1.5 text-left truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
+            style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(14,14,14,0.85)', backgroundColor: copiedField === 'email' ? 'rgba(161,249,110,0.35)' : undefined }}
+            title="Click to copy email"
+          >
+            <span className="w-4 shrink-0 inline-flex justify-center">
+              <Mail size={11} strokeWidth={1.8} style={{ color: 'rgba(14,14,14,0.35)' }} />
+            </span>
+            <span className="truncate">{card.contactEmail}</span>
+          </button>
+        )}
         {card.profileNickname && (
           <button
             type="button"
             onClick={() => handleCopy(card.profileNickname!, 'nickname')}
-            className="w-full flex items-center gap-1 text-left truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
+            className="w-full flex items-center gap-1.5 text-left truncate rounded px-1 -mx-1 transition-colors hover:bg-black/[0.03] hover:underline"
             style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(14,14,14,0.85)', backgroundColor: copiedField === 'nickname' ? 'rgba(161,249,110,0.35)' : undefined }}
             title="Click to copy username"
           >
-            <User size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+            <span className="w-4 shrink-0 inline-flex justify-center">
+              <User size={11} strokeWidth={1.8} style={{ color: 'rgba(14,14,14,0.35)' }} />
+            </span>
             <span className="truncate">{card.profileNickname}</span>
           </button>
         )}
-        <p className="flex items-center gap-1 truncate px-1" style={{ fontSize: '13px', fontWeight: 500, color: 'rgba(14,14,14,0.75)' }} title={active.requestText}>
-          <span className="shrink-0">⚠️</span>
+        <p className="flex items-center gap-1.5 truncate px-1 -mx-1" style={{ fontSize: '13px', fontWeight: 500, color: 'rgba(14,14,14,0.75)' }} title={active.requestText}>
+          <span className="w-4 shrink-0 inline-flex justify-center">⚠️</span>
           <span className="truncate">{active.requestText}</span>
         </p>
         {!card.contactEmail && !card.profileNickname && (
