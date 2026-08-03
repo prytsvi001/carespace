@@ -387,8 +387,9 @@ function ClientCard({
             <span className="truncate">{card.profileNickname}</span>
           </button>
         )}
-        <p className="truncate px-1" style={{ fontSize: '13px', fontWeight: 500, color: 'rgba(14,14,14,0.75)' }} title={active.requestText}>
-          {active.requestText}
+        <p className="flex items-center gap-1 truncate px-1" style={{ fontSize: '13px', fontWeight: 500, color: 'rgba(14,14,14,0.75)' }} title={active.requestText}>
+          <span className="shrink-0">⚠️</span>
+          <span className="truncate">{active.requestText}</span>
         </p>
         {!card.contactEmail && !card.profileNickname && (
           <span className="text-xs text-slate-400 italic">No contact info</span>
