@@ -433,6 +433,8 @@ export interface SalaryRow {
   bonusesTotal: number;
   total: number;
   editedFields: string[];
+  canNotify: boolean;
+  notifiedAt: string | null;
 }
 
 export interface SalaryOverrides {

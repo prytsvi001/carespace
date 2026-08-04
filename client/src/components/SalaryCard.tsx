@@ -4,8 +4,10 @@
 // list, and a large total. Print scopes to just this card via the
 // `salary-print-card` / `salary-print-target` classes (see Salary.tsx).
 import React, { useEffect, useRef, useState } from 'react';
-import { Printer, Plus, Trash2 } from 'lucide-react';
+import { Printer, Plus, Trash2, Send, CheckCircle2 } from 'lucide-react';
+import { format } from 'date-fns';
 import { EditableField } from './EditableField';
+import { Modal } from './ui';
 import { BonusEntry, SalaryRow } from '../types';
 
 function newBonusId(): string {
@@ -13,22 +15,51 @@ function newBonusId(): string {
 }
 
 export function SalaryCard({
-  row, monthLabel, onSaveOverride, onSaveBonuses,
+  row, monthLabel, defaultMessage, onSaveOverride, onSaveBonuses, onSend,
 }: {
   row: SalaryRow;
   monthLabel: string;
+  defaultMessage: string;
   onSaveOverride: (key: string, value: number | boolean | null) => void;
   onSaveBonuses: (bonuses: BonusEntry[]) => void;
+  onSend: (message: string) => Promise<void>;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [newDesc, setNewDesc] = useState('');
   const [newAmount, setNewAmount] = useState('');
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [draftMessage, setDraftMessage] = useState(defaultMessage);
+  const [sending, setSending] = useState(false);
+  const [justSent, setJustSent] = useState(false);
 
   useEffect(() => {
     const clearPrintTarget = () => cardRef.current?.classList.remove('salary-print-target');
     window.addEventListener('afterprint', clearPrintTarget);
     return () => window.removeEventListener('afterprint', clearPrintTarget);
   }, []);
+
+  useEffect(() => {
+    if (!justSent) return;
+    const t = setTimeout(() => setJustSent(false), 2000);
+    return () => clearTimeout(t);
+  }, [justSent]);
+
+  const openSendModal = () => {
+    setDraftMessage(defaultMessage);
+    setShowSendModal(true);
+  };
+
+  const handleSend = async () => {
+    if (!draftMessage.trim()) return;
+    setSending(true);
+    try {
+      await onSend(draftMessage.trim());
+      setShowSendModal(false);
+      setJustSent(true);
+    } finally {
+      setSending(false);
+    }
+  };
 
   const handlePrint = () => {
     cardRef.current?.classList.add('salary-print-target');
@@ -60,16 +91,41 @@ export function SalaryCard({
           <h3 className="font-semibold text-slate-800">{row.displayName}</h3>
           <p className="text-xs text-slate-400">{monthLabel}</p>
         </div>
-        <button
-          type="button"
-          onClick={handlePrint}
-          className="salary-print-hide p-1.5 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-slate-600"
-          title="Print salary summary"
-          aria-label="Print salary summary"
-        >
-          <Printer size={15} strokeWidth={1.8} />
-        </button>
+        <div className="salary-print-hide flex items-center gap-1">
+          <button
+            type="button"
+            onClick={openSendModal}
+            disabled={!row.canNotify}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={justSent
+              ? { backgroundColor: 'rgba(161,249,110,0.35)', color: '#0E0E0E' }
+              : { backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.60)' }}
+            title={row.canNotify ? 'Send salary notification to this person' : 'No account linked'}
+            aria-label={row.canNotify ? 'Send salary notification' : 'No account linked'}
+          >
+            {justSent ? (
+              <><CheckCircle2 size={13} strokeWidth={2} /> Sent ✓</>
+            ) : (
+              <><Send size={13} strokeWidth={1.8} /> Send to Agent</>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="p-1.5 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-slate-600"
+            title="Print salary summary"
+            aria-label="Print salary summary"
+          >
+            <Printer size={15} strokeWidth={1.8} />
+          </button>
+        </div>
       </div>
+
+      {row.notifiedAt && (
+        <p className="text-[10px] mb-2" style={{ color: 'rgba(14,14,14,0.40)' }}>
+          Sent on {format(new Date(row.notifiedAt), 'MMM d, yyyy')}
+        </p>
+      )}
 
       <div className="pb-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
         <EditableField label="Hours worked" value={row.hours} prefix="" edited={isEdited('hours')}
@@ -189,6 +245,29 @@ export function SalaryCard({
         <EditableField label="" value={row.total} size="lg" edited={isEdited('total')}
           onSave={(v) => onSaveOverride('total', v)} onClear={() => onSaveOverride('total', null)} />
       </div>
+
+      <Modal open={showSendModal} onClose={() => setShowSendModal(false)} title={`Send to ${row.displayName}`}>
+        <div className="space-y-4">
+          <textarea
+            className="input resize-none"
+            rows={5}
+            value={draftMessage}
+            onChange={(e) => setDraftMessage(e.target.value)}
+          />
+          <div className="flex gap-3 pt-2">
+            <button className="btn-secondary flex-1" onClick={() => setShowSendModal(false)} disabled={sending}>
+              Cancel
+            </button>
+            <button
+              className="btn-accent flex-1 flex items-center justify-center gap-1.5"
+              onClick={handleSend}
+              disabled={sending || !draftMessage.trim()}
+            >
+              {sending ? 'Sending…' : 'Send'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

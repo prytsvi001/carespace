@@ -546,6 +546,12 @@ model SalaryRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Salary notification tracking — notifiedMessageId lets a resend update the
+  // same InboxMessage in place instead of piling up duplicates, same pattern
+  // as QAAgentReport.inboxMessageId.
+  notifiedAt        DateTime?
+  notifiedMessageId String?
+
   @@unique([personKey, year, month])
   @@index([year, month])
 }

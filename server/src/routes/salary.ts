@@ -6,8 +6,9 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { computeMonthlyAgentStats } from '../statsHelpers';
+import { sendTelegramMessage } from '../telegram';
 import {
-  SalaryPerson, ToggleKey, rosterForTeam, reviewsBonusForCount,
+  SalaryPerson, ToggleKey, rosterForTeam, reviewsBonusForCount, notifyUserNameFor,
 } from '../salaryConfig';
 
 const router = Router();
@@ -145,6 +146,14 @@ router.get('/', async (req: Request, res: Response) => {
     });
     const storedByKey = new Map(stored.map(r => [r.personKey, r]));
 
+    // Who can actually receive a notification — any roster person (either
+    // team) whose notifyUserNameFor() name resolves to a real User row.
+    const notifyNames = roster.map(p => notifyUserNameFor(p)).filter(Boolean) as string[];
+    const notifyUsers = notifyNames.length
+      ? await prisma.user.findMany({ where: { name: { in: notifyNames } } })
+      : [];
+    const notifyableNames = new Set(notifyUsers.map(u => u.name));
+
     const rows = roster.map(person => {
       const record = storedByKey.get(person.personKey);
       const overrides = safeParseJSON<SalaryOverrides>(record?.overrides, {});
@@ -155,7 +164,13 @@ router.get('/', async (req: Request, res: Response) => {
       const autoReviewsCount = person.agentName ? (reviewsByAgentName[person.agentName] ?? 0) : 0;
       const autoPeekCount = person.hasPeekBonus ? juliaPeekDoneCount : 0;
 
-      return computeSalary(person, autoHours, autoShifts, autoReviewsCount, autoPeekCount, overrides, bonuses);
+      const notifyName = notifyUserNameFor(person);
+
+      return {
+        ...computeSalary(person, autoHours, autoShifts, autoReviewsCount, autoPeekCount, overrides, bonuses),
+        canNotify: !!notifyName && notifyableNames.has(notifyName),
+        notifiedAt: record?.notifiedAt ? record.notifiedAt.toISOString() : null,
+      };
     });
 
     res.json({ year, month, team, rows });
@@ -209,6 +224,79 @@ router.patch('/:personKey', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to save salary override' });
+  }
+});
+
+function monthLabelFor(year: number, month: number): string {
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+// POST /api/salary/:personKey/notify  { year, month, team, message }
+// Sends the exact given message via Telegram (if linked) and creates/updates
+// an InboxMessage of type "salary_message" — resending updates the same
+// message in place instead of creating a duplicate.
+router.post('/:personKey/notify', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
+
+    const { personKey } = req.params;
+    const { year, month, team, message } = req.body as {
+      year: number; month: number; team: 'support' | 'peekviewer'; message?: string;
+    };
+    if (!year || !month || !team) return res.status(400).json({ error: 'year, month and team are required' });
+    if (!message?.trim()) return res.status(400).json({ error: 'message is required' });
+
+    const roster = rosterForTeam(team);
+    const person = roster.find(p => p.personKey === personKey);
+    if (!person) return res.status(400).json({ error: 'Unknown personKey for this team' });
+
+    const notifyName = notifyUserNameFor(person);
+    const targetUser = notifyName ? await prisma.user.findFirst({ where: { name: notifyName } }) : null;
+    if (!targetUser) {
+      return res.status(400).json({ error: "This person has no linked account and can't receive a notification." });
+    }
+
+    const existing = await prisma.salaryRecord.findUnique({
+      where: { personKey_year_month: { personKey, year, month } },
+    });
+
+    const subject = `Salary — ${monthLabelFor(year, month)}`;
+    const content = message.trim();
+
+    let messageId: string;
+    if (existing?.notifiedMessageId) {
+      const updated = await prisma.inboxMessage.update({
+        where: { id: existing.notifiedMessageId },
+        data: { subject, content, read: false, deletedByReceiver: false },
+      });
+      messageId = updated.id;
+    } else {
+      const created = await prisma.inboxMessage.create({
+        data: { senderId: me.id, receiverId: targetUser.id, type: 'salary_message', subject, content },
+      });
+      messageId = created.id;
+    }
+
+    if (targetUser.telegramChatId) {
+      await sendTelegramMessage(targetUser.telegramChatId, content);
+    }
+
+    const notifiedAt = new Date();
+    await prisma.salaryRecord.upsert({
+      where: { personKey_year_month: { personKey, year, month } },
+      update: { notifiedAt, notifiedMessageId: messageId },
+      create: {
+        personKey, team, year, month,
+        overrides: existing?.overrides ?? '{}', bonuses: existing?.bonuses ?? '[]',
+        notifiedAt, notifiedMessageId: messageId,
+      },
+    });
+
+    res.json({ notifiedAt: notifiedAt.toISOString() });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to send salary notification' });
   }
 });
 

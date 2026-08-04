@@ -510,4 +510,8 @@ export const patchSalary = (personKey: string, body: {
   bonuses?: { id: string; description: string; amount: number }[];
 }) => api.patch(`/salary/${personKey}`, body).then((r) => r.data);
 
+export const sendSalaryNotification = (personKey: string, body: {
+  year: number; month: number; team: 'support' | 'peekviewer'; message: string;
+}) => api.post(`/salary/${personKey}/notify`, body).then((r) => r.data);
+
 export default api;

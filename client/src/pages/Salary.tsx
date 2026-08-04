@@ -1,13 +1,18 @@
 // client/src/pages/Salary.tsx
 import React, { useEffect, useState } from 'react';
-import { Wallet } from 'lucide-react';
-import { getSalary, patchSalary } from '../api';
+import { Wallet, Send } from 'lucide-react';
+import { getSalary, patchSalary, sendSalaryNotification } from '../api';
 import { BonusEntry, SalaryRow } from '../types';
-import { CardListSkeleton, EmptyState } from '../components/ui';
+import { CardListSkeleton, EmptyState, ConfirmDialog } from '../components/ui';
 import { SalaryCard } from '../components/SalaryCard';
 import '../styles/salary-print.css';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NAMES_UA = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
+
+function defaultSalaryMessage(monthUA: string, year: number, total: number): string {
+  return `💰 Твоя зарплата за ${monthUA} ${year}: $${total.toFixed(2)}\n\nЯкщо є питання — звертайся 🙌`;
+}
 
 type SalaryTeam = 'support' | 'peekviewer';
 
@@ -18,6 +23,8 @@ export default function Salary() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [rows, setRows] = useState<SalaryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmSendAll, setConfirmSendAll] = useState(false);
+  const [sendingAll, setSendingAll] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -58,6 +65,34 @@ export default function Salary() {
 
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
   const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
+  const monthLabelUA = MONTH_NAMES_UA[month - 1];
+
+  const messageFor = (row: SalaryRow) => defaultSalaryMessage(monthLabelUA, year, row.total);
+
+  const handleSend = async (row: SalaryRow, message: string) => {
+    await sendSalaryNotification(row.personKey, { year, month, team, message });
+    await loadData();
+  };
+
+  const notifiableCount = rows.filter((r) => r.canNotify).length;
+
+  const handleSendAll = async () => {
+    setConfirmSendAll(false);
+    setSendingAll(true);
+    try {
+      for (const row of rows) {
+        if (!row.canNotify) continue;
+        try {
+          await sendSalaryNotification(row.personKey, { year, month, team, message: messageFor(row) });
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    } finally {
+      setSendingAll(false);
+      await loadData();
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -78,17 +113,31 @@ export default function Salary() {
       </div>
 
       {/* Support / Peekviewer sub-tabs */}
-      <div className="flex gap-1 salary-print-hide">
-        {(['support', 'peekviewer'] as const).map((t) => (
+      <div className="flex items-center justify-between gap-2 salary-print-hide">
+        <div className="flex gap-1">
+          {(['support', 'peekviewer'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTeam(t)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium transition-all"
+              style={team === t ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' } : { color: 'rgba(14,14,14,0.45)' }}
+            >
+              {t === 'support' ? 'Support Team' : 'Peekviewer Team'}
+            </button>
+          ))}
+        </div>
+        {!loading && notifiableCount > 0 && (
           <button
-            key={t}
-            onClick={() => setTeam(t)}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium transition-all"
-            style={team === t ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' } : { color: 'rgba(14,14,14,0.45)' }}
+            type="button"
+            onClick={() => setConfirmSendAll(true)}
+            disabled={sendingAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            style={{ backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.60)' }}
           >
-            {t === 'support' ? 'Support Team' : 'Peekviewer Team'}
+            <Send size={13} strokeWidth={1.8} />
+            {sendingAll ? 'Sending…' : 'Send all salary notifications'}
           </button>
-        ))}
+        )}
       </div>
 
       {loading ? (
@@ -104,12 +153,21 @@ export default function Salary() {
               key={row.personKey}
               row={row}
               monthLabel={monthLabel}
+              defaultMessage={messageFor(row)}
               onSaveOverride={(key, value) => handleSaveOverride(row, key, value)}
               onSaveBonuses={(bonuses) => handleSaveBonuses(row, bonuses)}
+              onSend={(message) => handleSend(row, message)}
             />
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmSendAll}
+        message={`Send salary notifications to ${notifiableCount} ${notifiableCount === 1 ? 'person' : 'people'}?`}
+        onConfirm={handleSendAll}
+        onCancel={() => setConfirmSendAll(false)}
+      />
     </div>
   );
 }
