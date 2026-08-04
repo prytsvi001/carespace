@@ -1,6 +1,6 @@
 // server/src/routes/salary.ts
 // Monthly pay calculation for the Support Team and Peekviewer Team, visible
-// only to head/lead. Auto-pulls hours (Statistics), reviews (Reviews tab),
+// only to head (Sandra Moore). Auto-pulls hours (Statistics), reviews (Reviews tab),
 // and Julia's resolved Peek Requests count; everything is overridable and
 // persisted per person per month in SalaryRecord.
 import { Router, Request, Response } from 'express';
@@ -13,8 +13,10 @@ import {
 
 const router = Router();
 
+// Salary is head-only (not lead) — deliberately narrower than other
+// head/lead-gated features in this app.
 function isAdmin(role: string): boolean {
-  return role === 'head' || role === 'lead';
+  return role === 'head';
 }
 
 function safeParseJSON<T>(raw: string | null | undefined, fallback: T): T {
