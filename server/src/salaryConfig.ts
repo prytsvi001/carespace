@@ -1,0 +1,56 @@
+// server/src/salaryConfig.ts
+// Fixed roster + pay formulas for the Salary tab. Peekviewer team members are
+// mostly not Users/Agents in this app at all (e.g. Yana Fedorova has no
+// login), so the roster lives here as plain config rather than being derived
+// from the User/Agent tables — only the Support team's auto-pulled figures
+// (hours, reviews, Peek Requests) touch the database.
+
+export type ToggleKey = 'trustpilotOn' | 'updateOn' | 'uMobixOn' | 'strukturaOn';
+
+export type SalaryFormula =
+  | { type: 'hourly_tiered_reviews'; rate: number }  // Jonathan, Julia, Nicky, Victoria Davis
+  | { type: 'hourly_no_reviews' }                    // Sandra — rate always comes from override
+  | { type: 'fixed_base' };                          // all Peekviewer team
+
+export interface SalaryPerson {
+  personKey: string;
+  displayName: string;
+  team: 'support' | 'peekviewer';
+  formula: SalaryFormula;
+  fixedBase?: number;
+  toggles?: Array<{ key: ToggleKey; label: string; amount: number }>;
+  hasPeekBonus?: boolean; // Julia only
+  agentName?: string;     // matches Agent.name, for support-team auto-pull; absent for peekviewer
+}
+
+export const REVIEW_TIERS = [
+  { min: 1, max: 10, perReview: 5 },
+  { min: 11, max: 20, perReview: 6 },
+  { min: 21, max: Infinity, perReview: 7 },
+];
+
+export function reviewsBonusForCount(count: number): number {
+  const tier = REVIEW_TIERS.find(t => count >= t.min && count <= t.max);
+  return tier ? count * tier.perReview : 0;
+}
+
+export const SUPPORT_ROSTER: SalaryPerson[] = [
+  { personKey: 'jonathan_lewis', displayName: 'Jonathan Lewis', team: 'support', agentName: 'Jonathan Lewis', formula: { type: 'hourly_tiered_reviews', rate: 5 } },
+  { personKey: 'sandra_moore',   displayName: 'Sandra Moore',   team: 'support', agentName: 'Sandra Moore',   formula: { type: 'hourly_no_reviews' } },
+  { personKey: 'julia_manson',   displayName: 'Julia Manson',   team: 'support', agentName: 'Julia Manson',   formula: { type: 'hourly_tiered_reviews', rate: 6.25 }, hasPeekBonus: true },
+  { personKey: 'nicky_brown',    displayName: 'Nicky Brown',    team: 'support', agentName: 'Nicky Brown',    formula: { type: 'hourly_tiered_reviews', rate: 6 }, toggles: [{ key: 'trustpilotOn', label: 'Trustpilot bonus', amount: 80 }] },
+  { personKey: 'victoria_davis', displayName: 'Victoria Davis', team: 'support', agentName: 'Victoria Davis', formula: { type: 'hourly_tiered_reviews', rate: 10 } },
+];
+
+export const PEEKVIEWER_ROSTER: SalaryPerson[] = [
+  { personKey: 'yana_fedorova',       displayName: 'Yana Fedorova',       team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 600 },
+  { personKey: 'viktoria_horopeka',   displayName: 'Viktoria Horopeka',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }] },
+  { personKey: 'tetyana_veremeyenko', displayName: 'Tetyana Veremeyenko', team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'uMobixOn', label: 'uMobix boost', amount: 10 }, { key: 'strukturaOn', label: 'Struktura boost', amount: 5 }] },
+  { personKey: 'iryna_kolodiyenko',   displayName: 'Iryna Kolodiyenko',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }] },
+  { personKey: 'zlata_alekseenko',    displayName: 'Zlata Alekseenko',    team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 400 },
+  { personKey: 'anna_bilous',         displayName: 'Anna Bilous',         team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 300 },
+];
+
+export function rosterForTeam(team: 'support' | 'peekviewer'): SalaryPerson[] {
+  return team === 'support' ? SUPPORT_ROSTER : PEEKVIEWER_ROSTER;
+}

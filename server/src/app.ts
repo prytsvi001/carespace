@@ -31,6 +31,7 @@ import dutyRouter from './routes/duty';
 import telegramRouter from './routes/telegram';
 import cronRouter from './routes/cron';
 import backupRouter from './routes/backup';
+import salaryRouter from './routes/salary';
 import { requireAuth } from './middleware/auth';
 
 const app = express();
@@ -127,5 +128,6 @@ app.use('/api/duty',        dutyRouter);       // requireAuth applied inside rou
 app.use('/api/telegram',    telegramRouter);   // requireAuth applied per-route (webhook has none)
 app.use('/api/cron',        cronRouter);       // secret-header check applied inside router, not requireAuth
 app.use('/api/backup',      requireAuth, backupRouter); // requireAuth + head/lead-only check applied inside router
+app.use('/api/salary',      requireAuth, salaryRouter); // requireAuth + head/lead-only check applied inside router
 
 export default app;

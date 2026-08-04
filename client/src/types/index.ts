@@ -399,6 +399,55 @@ export interface TeamUpdate {
   unreadNames?: string[]; // present only for head/lead/author viewers
 }
 
+// ─── Salary ────────────────────────────────────────────────────────────────
+
+export interface BonusEntry {
+  id: string;
+  description: string;
+  amount: number;
+}
+
+export interface SalaryToggle {
+  key: 'trustpilotOn' | 'updateOn' | 'uMobixOn' | 'strukturaOn';
+  label: string;
+  amount: number;
+  on: boolean;
+}
+
+export interface SalaryRow {
+  personKey: string;
+  displayName: string;
+  team: 'support' | 'peekviewer';
+  hours: number;
+  rate: number | null;
+  base: number;
+  hasReviews: boolean;
+  reviewsCount: number;
+  reviewsBonus: number;
+  hasPeekBonus: boolean;
+  peekCount?: number;
+  peekBonus: number;
+  shifts: number;
+  toggles: SalaryToggle[];
+  bonuses: BonusEntry[];
+  bonusesTotal: number;
+  total: number;
+  editedFields: string[];
+}
+
+export interface SalaryOverrides {
+  hours?: number | null;
+  rate?: number | null;
+  reviewsCount?: number | null;
+  reviewsBonus?: number | null;
+  peekBonus?: number | null;
+  trustpilotOn?: boolean | null;
+  updateOn?: boolean | null;
+  uMobixOn?: boolean | null;
+  strukturaOn?: boolean | null;
+  total?: number | null;
+}
+
 export interface MonthlyStats {
   year?: number;
   month?: number;

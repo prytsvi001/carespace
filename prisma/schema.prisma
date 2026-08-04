@@ -530,6 +530,26 @@ model TelegramReminderLog {
 // Calendar (CalendarEvent) since assignees here are Users directly (Iryna Kolodienko
 // and Victoria Horopeka are peek_handlers with no Agent record at all), not Agents,
 // and there's no leave-type/shift-type structure, just an optional free-form hours string.
+// One row per person (support agent or Peekviewer team member) per calendar
+// month. Peekviewer team members largely have no User/Agent record at all
+// (e.g. Yana Fedorova) — the roster, formulas and rates live in
+// server/src/salaryConfig.ts, keyed by personKey, not in the DB. This table
+// only holds what a head/lead has manually overridden or added that month.
+model SalaryRecord {
+  id        String   @id @default(cuid())
+  personKey String   // matches a personKey in salaryConfig.ts, e.g. "jonathan_lewis"
+  team      String   // "support" | "peekviewer"
+  year      Int
+  month     Int      // 1-12
+  overrides String   @default("{}") // JSON: { hours?, rate?, reviewsCount?, reviewsBonus?, peekBonus?, trustpilotOn?, updateOn?, uMobixOn?, strukturaOn?, total? }
+  bonuses   String   @default("[]") // JSON: [{ id, description, amount }]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([personKey, year, month])
+  @@index([year, month])
+}
+
 model PeekCalendarEntry {
   id        String   @id @default(cuid())
   userId    String

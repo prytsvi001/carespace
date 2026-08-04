@@ -1,0 +1,215 @@
+// server/src/routes/salary.ts
+// Monthly pay calculation for the Support Team and Peekviewer Team, visible
+// only to head/lead. Auto-pulls hours (Statistics), reviews (Reviews tab),
+// and Julia's resolved Peek Requests count; everything is overridable and
+// persisted per person per month in SalaryRecord.
+import { Router, Request, Response } from 'express';
+import prisma from '../prisma';
+import { computeMonthlyAgentStats } from '../statsHelpers';
+import {
+  SalaryPerson, ToggleKey, rosterForTeam, reviewsBonusForCount,
+} from '../salaryConfig';
+
+const router = Router();
+
+function isAdmin(role: string): boolean {
+  return role === 'head' || role === 'lead';
+}
+
+function safeParseJSON<T>(raw: string | null | undefined, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+interface BonusEntry { id: string; description: string; amount: number; }
+
+interface SalaryOverrides {
+  hours?: number;
+  rate?: number;
+  reviewsCount?: number;
+  reviewsBonus?: number;
+  peekBonus?: number;
+  trustpilotOn?: boolean;
+  updateOn?: boolean;
+  uMobixOn?: boolean;
+  strukturaOn?: boolean;
+  total?: number;
+}
+
+function computeSalary(
+  person: SalaryPerson,
+  autoHours: number,
+  autoShifts: number,
+  autoReviewsCount: number,
+  autoPeekCount: number,
+  overrides: SalaryOverrides,
+  bonuses: BonusEntry[],
+) {
+  const hours = overrides.hours ?? autoHours;
+
+  let rate: number | null = null;
+  if (person.formula.type === 'hourly_tiered_reviews') rate = overrides.rate ?? person.formula.rate;
+  else if (person.formula.type === 'hourly_no_reviews') rate = overrides.rate ?? null;
+
+  let base = 0;
+  if (person.formula.type === 'fixed_base') base = person.fixedBase ?? 0;
+  else if (rate != null) base = round2(hours * rate);
+
+  const hasReviews = person.formula.type === 'hourly_tiered_reviews';
+  const reviewsCount = hasReviews ? (overrides.reviewsCount ?? autoReviewsCount) : 0;
+  const reviewsBonus = hasReviews ? (overrides.reviewsBonus ?? reviewsBonusForCount(reviewsCount)) : 0;
+
+  const peekBonus = person.hasPeekBonus ? round2(overrides.peekBonus ?? autoPeekCount * 0.80) : 0;
+
+  let toggleAmount = 0;
+  const toggleStates: Record<string, boolean> = {};
+  for (const toggle of person.toggles ?? []) {
+    const on = !!(overrides as Record<ToggleKey, boolean | undefined>)[toggle.key];
+    toggleStates[toggle.key] = on;
+    if (on) toggleAmount += toggle.amount;
+  }
+
+  const bonusesTotal = round2(bonuses.reduce((s, b) => s + (Number(b.amount) || 0), 0));
+
+  const total = overrides.total ?? round2(base + reviewsBonus + peekBonus + toggleAmount + bonusesTotal);
+
+  const editedFields = Object.keys(overrides);
+
+  return {
+    personKey: person.personKey,
+    displayName: person.displayName,
+    team: person.team,
+    hours, rate, base,
+    hasReviews, reviewsCount, reviewsBonus,
+    hasPeekBonus: !!person.hasPeekBonus, peekCount: person.hasPeekBonus ? autoPeekCount : undefined, peekBonus,
+    shifts: autoShifts,
+    toggles: (person.toggles ?? []).map(t => ({ key: t.key, label: t.label, amount: t.amount, on: toggleStates[t.key] })),
+    bonuses, bonusesTotal,
+    total,
+    editedFields,
+  };
+}
+
+// GET /api/salary?year=&month=&team=support|peekviewer
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
+
+    const year = Number(req.query.year);
+    const month = Number(req.query.month);
+    const team = req.query.team === 'peekviewer' ? 'peekviewer' : 'support';
+    if (!year || !month) return res.status(400).json({ error: 'year and month are required' });
+
+    const roster = rosterForTeam(team);
+    const start = new Date(Date.UTC(year, month - 1, 1));
+    const end = new Date(Date.UTC(year, month, 1));
+
+    const hoursByAgentName: Record<string, { hours: number; shifts: number; agentId: string }> = {};
+    const reviewsByAgentName: Record<string, number> = {};
+    let juliaPeekDoneCount = 0;
+
+    if (team === 'support') {
+      const stats = await computeMonthlyAgentStats(year, month);
+      for (const s of stats) hoursByAgentName[s.agentName] = { hours: s.totalHours, shifts: s.totalShifts, agentId: s.agentId };
+
+      const agentNames = roster.map(p => p.agentName).filter(Boolean) as string[];
+      const users = await prisma.user.findMany({ where: { name: { in: agentNames } } });
+
+      const reviewCounts = await Promise.all(
+        users.map(u => prisma.clientReview.count({
+          where: { userId: u.id, archived: false, submittedAt: { gte: start, lt: end } },
+        }))
+      );
+      users.forEach((u, i) => { reviewsByAgentName[u.name] = reviewCounts[i]; });
+
+      const julia = roster.find(p => p.hasPeekBonus);
+      const juliaAgentId = julia?.agentName ? hoursByAgentName[julia.agentName]?.agentId : undefined;
+      if (juliaAgentId) {
+        juliaPeekDoneCount = await prisma.peakRequest.count({
+          where: { agentId: juliaAgentId, status: 'DONE', doneAt: { gte: start, lt: end } },
+        });
+      }
+    }
+
+    const stored = await prisma.salaryRecord.findMany({
+      where: { personKey: { in: roster.map(p => p.personKey) }, year, month },
+    });
+    const storedByKey = new Map(stored.map(r => [r.personKey, r]));
+
+    const rows = roster.map(person => {
+      const record = storedByKey.get(person.personKey);
+      const overrides = safeParseJSON<SalaryOverrides>(record?.overrides, {});
+      const bonuses = safeParseJSON<BonusEntry[]>(record?.bonuses, []);
+
+      const autoHours = person.agentName ? (hoursByAgentName[person.agentName]?.hours ?? 0) : 0;
+      const autoShifts = person.agentName ? (hoursByAgentName[person.agentName]?.shifts ?? 0) : 0;
+      const autoReviewsCount = person.agentName ? (reviewsByAgentName[person.agentName] ?? 0) : 0;
+      const autoPeekCount = person.hasPeekBonus ? juliaPeekDoneCount : 0;
+
+      return computeSalary(person, autoHours, autoShifts, autoReviewsCount, autoPeekCount, overrides, bonuses);
+    });
+
+    res.json({ year, month, team, rows });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch salary data' });
+  }
+});
+
+// PATCH /api/salary/:personKey  { year, month, team, overrides?, bonuses? }
+// overrides: keys set to null/undefined clear that override back to auto-calculated.
+// bonuses, if present, replaces the full bonus list (frontend owns the list client-side).
+router.patch('/:personKey', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
+
+    const { personKey } = req.params;
+    const { year, month, team, overrides, bonuses } = req.body as {
+      year: number; month: number; team: 'support' | 'peekviewer';
+      overrides?: Record<string, unknown>; bonuses?: BonusEntry[];
+    };
+    if (!year || !month || !team) return res.status(400).json({ error: 'year, month and team are required' });
+
+    const roster = rosterForTeam(team);
+    if (!roster.some(p => p.personKey === personKey)) {
+      return res.status(400).json({ error: 'Unknown personKey for this team' });
+    }
+
+    const existing = await prisma.salaryRecord.findUnique({
+      where: { personKey_year_month: { personKey, year, month } },
+    });
+
+    const mergedOverrides = safeParseJSON<Record<string, unknown>>(existing?.overrides, {});
+    if (overrides) {
+      for (const [k, v] of Object.entries(overrides)) {
+        if (v === null || v === undefined) delete mergedOverrides[k];
+        else mergedOverrides[k] = v;
+      }
+    }
+
+    const nextBonuses = bonuses ?? safeParseJSON<BonusEntry[]>(existing?.bonuses, []);
+
+    const record = await prisma.salaryRecord.upsert({
+      where: { personKey_year_month: { personKey, year, month } },
+      update: { team, overrides: JSON.stringify(mergedOverrides), bonuses: JSON.stringify(nextBonuses) },
+      create: { personKey, team, year, month, overrides: JSON.stringify(mergedOverrides), bonuses: JSON.stringify(nextBonuses) },
+    });
+
+    res.json(record);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to save salary override' });
+  }
+});
+
+export default router;

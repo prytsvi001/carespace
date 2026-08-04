@@ -1,0 +1,24 @@
+/* client/src/styles/salary-print.css
+   Scopes window.print() to a single Salary card — everything else is
+   hidden, and controls that make no sense on paper (print/delete/add-bonus
+   buttons) are hidden even on the visible card. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .salary-print-target,
+  .salary-print-target * {
+    visibility: visible;
+  }
+  .salary-print-target {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-shadow: none;
+    border: none;
+  }
+  .salary-print-target .salary-print-hide {
+    display: none !important;
+  }
+}

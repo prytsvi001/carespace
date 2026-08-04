@@ -3,7 +3,7 @@ import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react
 import {
   ClipboardList, CalendarDays, Lightbulb, Bot, ChartBar,
   ListTodo, Star, TrendingUp, FileText, LogOut, User,
-  ChevronDown, Bell, BarChart3, Send, CheckCircle2, Camera, Download,
+  ChevronDown, Bell, BarChart3, Send, CheckCircle2, Camera, Download, Wallet,
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -32,6 +32,7 @@ const Reviews = React.lazy(() => import('./pages/Reviews'));
 const PDP = React.lazy(() => import('./pages/PDP'));
 const QAReports = React.lazy(() => import('./pages/QAReports'));
 const MyKPI = React.lazy(() => import('./pages/MyKPI'));
+const Salary = React.lazy(() => import('./pages/Salary'));
 
 function TabLoadingFallback() {
   return (
@@ -44,7 +45,7 @@ function TabLoadingFallback() {
 // ── Tab types ────────────────────────────────────────────────────────────────
 
 type SharedTab = 'daily' | 'calendar' | 'requests' | 'qa' | 'stats';
-type SpaceTab  = 'plans' | 'inbox' | 'reviews' | 'pdp' | 'qa-reports' | 'kpi';
+type SpaceTab  = 'plans' | 'inbox' | 'reviews' | 'pdp' | 'qa-reports' | 'kpi' | 'salary';
 type Tab = SharedTab | SpaceTab;
 
 const SHARED_TAB_IDS = new Set<Tab>(['daily', 'calendar', 'requests', 'qa', 'stats', 'inbox']);
@@ -64,6 +65,7 @@ const ALL_SPACE_TABS: { id: SpaceTab; label: string; shortLabel: string; Icon: R
   { id: 'pdp',        label: 'PDP',        shortLabel: 'PDP',     Icon: TrendingUp, roles: ['head', 'lead', 'agent'] },
   { id: 'qa-reports', label: 'QA Reports', shortLabel: 'Reports', Icon: FileText,   roles: ['head', 'lead'] },
   { id: 'kpi',        label: 'My KPI',     shortLabel: 'KPI',     Icon: BarChart3,  roles: ['head', 'lead', 'agent'] },
+  { id: 'salary',     label: 'Salary',     shortLabel: 'Salary',  Icon: Wallet,     roles: ['head', 'lead'] },
 ];
 
 // Tabs accessible to peek_handler role
@@ -504,6 +506,7 @@ function MainApp() {
           {activeTab === 'pdp'        && <PDP />}
           {activeTab === 'qa-reports' && <QAReports />}
           {activeTab === 'kpi'        && <MyKPI />}
+          {activeTab === 'salary'     && <Salary />}
         </Suspense>
       </main>
 

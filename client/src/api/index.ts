@@ -500,4 +500,14 @@ export const setDutyStatus = (onDuty: boolean) =>
 export const downloadBackup = () =>
   api.get('/backup', { responseType: 'blob' }).then((r) => r.data as Blob);
 
+// ─── Salary ──────────────────────────────────────────────────────────────────
+export const getSalary = (params: { year: number; month: number; team: 'support' | 'peekviewer' }) =>
+  api.get('/salary', { params }).then((r) => r.data);
+
+export const patchSalary = (personKey: string, body: {
+  year: number; month: number; team: 'support' | 'peekviewer';
+  overrides?: Record<string, number | boolean | null>;
+  bonuses?: { id: string; description: string; amount: number }[];
+}) => api.patch(`/salary/${personKey}`, body).then((r) => r.data);
+
 export default api;
