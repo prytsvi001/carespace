@@ -80,10 +80,6 @@ export function SalaryCard({
     onSaveBonuses(row.bonuses.filter((b) => b.id !== id));
   };
 
-  // Sandra is the only support-team person with no reviews bonus and no peek
-  // bonus — that combination is when the shift count is shown as a reference.
-  const showShiftsReference = row.team === 'support' && !row.hasReviews && !row.hasPeekBonus;
-
   return (
     <div ref={cardRef} className="salary-print-card bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -127,30 +123,51 @@ export function SalaryCard({
         </p>
       )}
 
-      <div className="pb-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
-        <EditableField label="Hours worked" value={row.hours} prefix="" edited={isEdited('hours')}
-          onSave={(v) => onSaveOverride('hours', v)} onClear={() => onSaveOverride('hours', null)} />
+      {row.hasSupportDuties ? (
+        <div className="pb-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
+          <EditableField label="Base salary" value={row.base} edited={isEdited('base')}
+            onSave={(v) => onSaveOverride('base', v)} onClear={() => onSaveOverride('base', null)} />
+          <p className="text-[10px] -mt-1 mb-1.5" style={{ color: 'rgba(14,14,14,0.40)' }}>
+            Not based on hours worked
+          </p>
 
-        {row.rate != null ? (
-          <EditableField label="Rate / hr" value={row.rate} edited={isEdited('rate')}
-            onSave={(v) => onSaveOverride('rate', v)} onClear={() => onSaveOverride('rate', null)} />
-        ) : (
-          <EditableField label="Rate / hr (set your rate)" value={0} edited
-            onSave={(v) => onSaveOverride('rate', v)} />
-        )}
+          <p className="text-xs font-medium pt-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>Extra support duties</p>
+          <EditableField label="Hours worked" value={row.hours} prefix="" edited={isEdited('hours')}
+            onSave={(v) => onSaveOverride('hours', v)} onClear={() => onSaveOverride('hours', null)} />
+          {row.rate != null ? (
+            <EditableField label="Rate / hr" value={row.rate} edited={isEdited('rate')}
+              onSave={(v) => onSaveOverride('rate', v)} onClear={() => onSaveOverride('rate', null)} />
+          ) : (
+            <EditableField label="Rate / hr (set your rate)" value={0} edited
+              onSave={(v) => onSaveOverride('rate', v)} />
+          )}
+          <EditableField label="Extra support duties bonus" value={row.supportDutiesBonus} edited={isEdited('supportDutiesBonus')}
+            onSave={(v) => onSaveOverride('supportDutiesBonus', v)} onClear={() => onSaveOverride('supportDutiesBonus', null)} />
 
-        {showShiftsReference && (
           <div className="flex items-center justify-between gap-2 py-1">
             <span className="text-xs" style={{ color: 'rgba(14,14,14,0.45)' }}>Shifts (reference)</span>
             <span className="text-sm" style={{ color: 'rgba(14,14,14,0.65)' }}>{row.shifts}</span>
           </div>
-        )}
-
-        <div className="flex items-center justify-between gap-2 py-1">
-          <span className="text-xs font-medium" style={{ color: 'rgba(14,14,14,0.65)' }}>Base salary</span>
-          <span className="text-sm font-semibold" style={{ color: 'rgba(14,14,14,0.85)' }}>${row.base.toFixed(2)}</span>
         </div>
-      </div>
+      ) : row.team === 'support' ? (
+        <div className="pb-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
+          <EditableField label="Hours worked" value={row.hours} prefix="" edited={isEdited('hours')}
+            onSave={(v) => onSaveOverride('hours', v)} onClear={() => onSaveOverride('hours', null)} />
+          <EditableField label="Rate / hr" value={row.rate ?? 0} edited={isEdited('rate')}
+            onSave={(v) => onSaveOverride('rate', v)} onClear={() => onSaveOverride('rate', null)} />
+          <div className="flex items-center justify-between gap-2 py-1">
+            <span className="text-xs font-medium" style={{ color: 'rgba(14,14,14,0.65)' }}>Base salary</span>
+            <span className="text-sm font-semibold" style={{ color: 'rgba(14,14,14,0.85)' }}>${row.base.toFixed(2)}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="pb-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
+          <div className="flex items-center justify-between gap-2 py-1">
+            <span className="text-xs font-medium" style={{ color: 'rgba(14,14,14,0.65)' }}>Base salary</span>
+            <span className="text-sm font-semibold" style={{ color: 'rgba(14,14,14,0.85)' }}>${row.base.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
 
       {row.hasReviews && (
         <div className="py-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>

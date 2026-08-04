@@ -427,6 +427,8 @@ export interface SalaryRow {
   hasPeekBonus: boolean;
   peekCount?: number;
   peekBonus: number;
+  hasSupportDuties: boolean;
+  supportDutiesBonus: number;
   shifts: number;
   toggles: SalaryToggle[];
   bonuses: BonusEntry[];
@@ -438,11 +440,13 @@ export interface SalaryRow {
 }
 
 export interface SalaryOverrides {
+  base?: number | null;
   hours?: number | null;
   rate?: number | null;
   reviewsCount?: number | null;
   reviewsBonus?: number | null;
   peekBonus?: number | null;
+  supportDutiesBonus?: number | null;
   trustpilotOn?: boolean | null;
   updateOn?: boolean | null;
   uMobixOn?: boolean | null;

@@ -8,9 +8,9 @@
 export type ToggleKey = 'trustpilotOn' | 'updateOn' | 'uMobixOn' | 'strukturaOn';
 
 export type SalaryFormula =
-  | { type: 'hourly_tiered_reviews'; rate: number }  // Jonathan, Julia, Nicky, Victoria Davis
-  | { type: 'hourly_no_reviews' }                    // Sandra — rate always comes from override
-  | { type: 'fixed_base' };                          // all Peekviewer team
+  | { type: 'hourly_tiered_reviews'; rate: number }        // Jonathan, Julia, Nicky, Victoria Davis
+  | { type: 'fixed_base_with_support_duties' }             // Sandra — base is a flat editable number, not hours-based; any hours she covers as extra support duty are tracked (and paid) separately
+  | { type: 'fixed_base' };                                // all Peekviewer team
 
 export interface SalaryPerson {
   personKey: string;
@@ -37,7 +37,7 @@ export function reviewsBonusForCount(count: number): number {
 
 export const SUPPORT_ROSTER: SalaryPerson[] = [
   { personKey: 'jonathan_lewis', displayName: 'Jonathan Lewis', team: 'support', agentName: 'Jonathan Lewis', formula: { type: 'hourly_tiered_reviews', rate: 5 } },
-  { personKey: 'sandra_moore',   displayName: 'Sandra Moore',   team: 'support', agentName: 'Sandra Moore',   formula: { type: 'hourly_no_reviews' } },
+  { personKey: 'sandra_moore',   displayName: 'Sandra Moore',   team: 'support', agentName: 'Sandra Moore',   formula: { type: 'fixed_base_with_support_duties' } },
   { personKey: 'julia_manson',   displayName: 'Julia Manson',   team: 'support', agentName: 'Julia Manson',   formula: { type: 'hourly_tiered_reviews', rate: 6.25 }, hasPeekBonus: true },
   { personKey: 'nicky_brown',    displayName: 'Nicky Brown',    team: 'support', agentName: 'Nicky Brown',    formula: { type: 'hourly_tiered_reviews', rate: 6 }, toggles: [{ key: 'trustpilotOn', label: 'Trustpilot bonus', amount: 80 }] },
   { personKey: 'victoria_davis', displayName: 'Victoria Davis', team: 'support', agentName: 'Victoria Davis', formula: { type: 'hourly_tiered_reviews', rate: 10 } },

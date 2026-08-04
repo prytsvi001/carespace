@@ -33,11 +33,13 @@ function round2(n: number): number {
 interface BonusEntry { id: string; description: string; amount: number; }
 
 interface SalaryOverrides {
+  base?: number;
   hours?: number;
   rate?: number;
   reviewsCount?: number;
   reviewsBonus?: number;
   peekBonus?: number;
+  supportDutiesBonus?: number;
   trustpilotOn?: boolean;
   updateOn?: boolean;
   uMobixOn?: boolean;
@@ -55,20 +57,29 @@ function computeSalary(
   bonuses: BonusEntry[],
 ) {
   const hours = overrides.hours ?? autoHours;
+  const hasSupportDuties = person.formula.type === 'fixed_base_with_support_duties';
 
   let rate: number | null = null;
   if (person.formula.type === 'hourly_tiered_reviews') rate = overrides.rate ?? person.formula.rate;
-  else if (person.formula.type === 'hourly_no_reviews') rate = overrides.rate ?? null;
+  else if (hasSupportDuties) rate = overrides.rate ?? null;
 
-  let base = 0;
-  if (person.formula.type === 'fixed_base') base = person.fixedBase ?? 0;
-  else if (rate != null) base = round2(hours * rate);
+  // Base is a flat, independently-editable number for fixed_base and
+  // fixed_base_with_support_duties people (Sandra's base doesn't derive from
+  // hours at all); only hourly_tiered_reviews computes it from hours * rate.
+  let computedBase = 0;
+  if (person.formula.type === 'fixed_base') computedBase = person.fixedBase ?? 0;
+  else if (person.formula.type === 'hourly_tiered_reviews' && rate != null) computedBase = round2(hours * rate);
+  const base = overrides.base ?? computedBase;
 
   const hasReviews = person.formula.type === 'hourly_tiered_reviews';
   const reviewsCount = hasReviews ? (overrides.reviewsCount ?? autoReviewsCount) : 0;
   const reviewsBonus = hasReviews ? (overrides.reviewsBonus ?? reviewsBonusForCount(reviewsCount)) : 0;
 
   const peekBonus = person.hasPeekBonus ? round2(overrides.peekBonus ?? autoPeekCount * 0.80) : 0;
+
+  const supportDutiesBonus = hasSupportDuties
+    ? (overrides.supportDutiesBonus ?? (rate != null ? round2(hours * rate) : 0))
+    : 0;
 
   let toggleAmount = 0;
   const toggleStates: Record<string, boolean> = {};
@@ -80,7 +91,7 @@ function computeSalary(
 
   const bonusesTotal = round2(bonuses.reduce((s, b) => s + (Number(b.amount) || 0), 0));
 
-  const total = overrides.total ?? round2(base + reviewsBonus + peekBonus + toggleAmount + bonusesTotal);
+  const total = overrides.total ?? round2(base + reviewsBonus + peekBonus + supportDutiesBonus + toggleAmount + bonusesTotal);
 
   const editedFields = Object.keys(overrides);
 
@@ -91,6 +102,7 @@ function computeSalary(
     hours, rate, base,
     hasReviews, reviewsCount, reviewsBonus,
     hasPeekBonus: !!person.hasPeekBonus, peekCount: person.hasPeekBonus ? autoPeekCount : undefined, peekBonus,
+    hasSupportDuties, supportDutiesBonus,
     shifts: autoShifts,
     toggles: (person.toggles ?? []).map(t => ({ key: t.key, label: t.label, amount: t.amount, on: toggleStates[t.key] })),
     bonuses, bonusesTotal,
