@@ -92,10 +92,8 @@ export function SalaryCard({
             type="button"
             onClick={openSendModal}
             disabled={!row.canNotify}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={justSent
-              ? { backgroundColor: 'rgba(161,249,110,0.35)', color: '#0E0E0E' }
-              : { backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.60)' }}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-95"
+            style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
             title={row.canNotify ? 'Send salary notification to this person' : 'No account linked'}
             aria-label={row.canNotify ? 'Send salary notification' : 'No account linked'}
           >
