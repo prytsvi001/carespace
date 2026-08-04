@@ -1,10 +1,9 @@
 // client/src/components/SalaryCard.tsx
 // One person's pay summary for the selected month — auto-calculated line
 // items (each overridable via EditableField), toggles, a free-text bonus
-// list, and a large total. Print scopes to just this card via the
-// `salary-print-card` / `salary-print-target` classes (see Salary.tsx).
-import React, { useEffect, useRef, useState } from 'react';
-import { Printer, Plus, Trash2, Send, CheckCircle2 } from 'lucide-react';
+// list, and a large total.
+import React, { useEffect, useState } from 'react';
+import { Plus, Trash2, Send, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { EditableField } from './EditableField';
 import { Modal } from './ui';
@@ -24,19 +23,12 @@ export function SalaryCard({
   onSaveBonuses: (bonuses: BonusEntry[]) => void;
   onSend: (message: string) => Promise<void>;
 }) {
-  const cardRef = useRef<HTMLDivElement>(null);
   const [newDesc, setNewDesc] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [showSendModal, setShowSendModal] = useState(false);
   const [draftMessage, setDraftMessage] = useState(defaultMessage);
   const [sending, setSending] = useState(false);
   const [justSent, setJustSent] = useState(false);
-
-  useEffect(() => {
-    const clearPrintTarget = () => cardRef.current?.classList.remove('salary-print-target');
-    window.addEventListener('afterprint', clearPrintTarget);
-    return () => window.removeEventListener('afterprint', clearPrintTarget);
-  }, []);
 
   useEffect(() => {
     if (!justSent) return;
@@ -61,11 +53,6 @@ export function SalaryCard({
     }
   };
 
-  const handlePrint = () => {
-    cardRef.current?.classList.add('salary-print-target');
-    window.print();
-  };
-
   const isEdited = (key: string) => row.editedFields.includes(key);
 
   const addBonus = () => {
@@ -81,38 +68,27 @@ export function SalaryCard({
   };
 
   return (
-    <div ref={cardRef} className="salary-print-card bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+    <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div>
           <h3 className="font-semibold text-slate-800">{row.displayName}</h3>
           <p className="text-xs text-slate-400">{monthLabel}</p>
         </div>
-        <div className="salary-print-hide flex items-center gap-1">
-          <button
-            type="button"
-            onClick={openSendModal}
-            disabled={!row.canNotify}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-95"
-            style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
-            title={row.canNotify ? 'Send salary notification to this person' : 'No account linked'}
-            aria-label={row.canNotify ? 'Send salary notification' : 'No account linked'}
-          >
-            {justSent ? (
-              <><CheckCircle2 size={13} strokeWidth={2} /> Sent ✓</>
-            ) : (
-              <><Send size={13} strokeWidth={1.8} /> Send to Agent</>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="p-1.5 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-slate-600"
-            title="Print salary summary"
-            aria-label="Print salary summary"
-          >
-            <Printer size={15} strokeWidth={1.8} />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={openSendModal}
+          disabled={!row.canNotify}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-95"
+          style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+          title={row.canNotify ? 'Send salary notification to this person' : 'No account linked'}
+          aria-label={row.canNotify ? 'Send salary notification' : 'No account linked'}
+        >
+          {justSent ? (
+            <><CheckCircle2 size={13} strokeWidth={2} /> Sent ✓</>
+          ) : (
+            <><Send size={13} strokeWidth={1.8} /> Send to Agent</>
+          )}
+        </button>
       </div>
 
       {row.notifiedAt && (
@@ -215,7 +191,7 @@ export function SalaryCard({
                   <button
                     type="button"
                     onClick={() => deleteBonus(b.id)}
-                    className="salary-print-hide p-0.5 rounded transition-colors"
+                    className="p-0.5 rounded transition-colors"
                     style={{ color: 'rgba(14,14,14,0.30)' }}
                     aria-label="Delete bonus"
                     title="Delete bonus"
@@ -227,7 +203,7 @@ export function SalaryCard({
             ))}
           </div>
         )}
-        <div className="salary-print-hide flex gap-1.5 mt-2">
+        <div className="flex gap-1.5 mt-2">
           <input
             className="input text-xs flex-1 py-1"
             placeholder="Description"

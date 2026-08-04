@@ -5,7 +5,6 @@ import { getSalary, patchSalary, sendSalaryNotification } from '../api';
 import { BonusEntry, SalaryRow } from '../types';
 import { CardListSkeleton, EmptyState, ConfirmDialog } from '../components/ui';
 import { SalaryCard } from '../components/SalaryCard';
-import '../styles/salary-print.css';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_NAMES_UA = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
@@ -97,7 +96,7 @@ export default function Salary() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 salary-print-hide">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-800">Salary</h2>
           <p className="text-sm text-slate-400">Monthly pay for the Support and Peekviewer teams</p>
@@ -113,7 +112,7 @@ export default function Salary() {
       </div>
 
       {/* Support / Peekviewer sub-tabs */}
-      <div className="flex items-center justify-between gap-2 salary-print-hide">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex gap-1">
           {(['support', 'peekviewer'] as const).map((t) => (
             <button
