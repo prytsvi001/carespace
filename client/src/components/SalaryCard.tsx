@@ -134,17 +134,13 @@ export function SalaryCard({
           </HoursBreakdownTooltip>
           <EditableField label="Rate / hr" value={row.rate ?? 0} edited={isEdited('rate')}
             onSave={(v) => onSaveOverride('rate', v)} onClear={() => onSaveOverride('rate', null)} />
-          <div className="flex items-center justify-between gap-2 py-1">
-            <span className="text-xs font-medium" style={{ color: 'rgba(14,14,14,0.65)' }}>Base salary</span>
-            <span className="text-sm font-semibold" style={{ color: 'rgba(14,14,14,0.85)' }}>${row.base.toFixed(2)}</span>
-          </div>
+          <EditableField label="Base salary" value={row.base} edited={isEdited('base')}
+            onSave={(v) => onSaveOverride('base', v)} onClear={() => onSaveOverride('base', null)} />
         </div>
       ) : (
         <div className="pb-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
-          <div className="flex items-center justify-between gap-2 py-1">
-            <span className="text-xs font-medium" style={{ color: 'rgba(14,14,14,0.65)' }}>Base salary</span>
-            <span className="text-sm font-semibold" style={{ color: 'rgba(14,14,14,0.85)' }}>${row.base.toFixed(2)}</span>
-          </div>
+          <EditableField label="Base salary" value={row.base} edited={isEdited('base')}
+            onSave={(v) => onSaveOverride('base', v)} onClear={() => onSaveOverride('base', null)} />
         </div>
       )}
 
