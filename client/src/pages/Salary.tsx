@@ -9,8 +9,38 @@ import { SalaryCard } from '../components/SalaryCard';
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_NAMES_UA = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
 
-function defaultSalaryMessage(monthUA: string, year: number, total: number): string {
-  return `💰 Твоя зарплата за ${monthUA} ${year}: $${total.toFixed(2)}\n\nЯкщо є питання — звертайся 🙌`;
+// Itemized breakdown so the numbers always sum to Загалом — every component
+// that actually contributes to row.total gets its own line (reviews, Peek
+// Requests, active toggles, extra support duties, free-text bonuses), not
+// just the two named lines in the base template.
+function defaultSalaryMessage(monthUA: string, year: number, row: SalaryRow): string {
+  const lines: string[] = [`💰 Твоя зарплата за ${monthUA} ${year}:`, ''];
+
+  if (row.hasSupportDuties) {
+    lines.push(`База: $${row.base.toFixed(2)}`);
+    if (row.rate != null) {
+      lines.push(`Додаткові зміни підтримки: ${row.hours.toFixed(2)} год × $${row.rate.toFixed(2)} = $${row.supportDutiesBonus.toFixed(2)}`);
+    }
+  } else if (row.team === 'support') {
+    lines.push(`База: ${row.hours.toFixed(2)} год × $${(row.rate ?? 0).toFixed(2)} = $${row.base.toFixed(2)}`);
+  } else {
+    lines.push(`База: $${row.base.toFixed(2)}`);
+  }
+
+  if (row.hasReviews) lines.push(`Бонус за ревʼю: $${row.reviewsBonus.toFixed(2)}`);
+  if (row.hasPeekBonus) lines.push(`Бонус за Peek Requests: $${row.peekBonus.toFixed(2)}`);
+
+  for (const t of row.toggles) {
+    if (t.on) lines.push(`${t.label}: $${t.amount.toFixed(2)}`);
+  }
+
+  for (const b of row.bonuses) {
+    lines.push(`• ${b.description}: $${b.amount.toFixed(2)}`);
+  }
+
+  lines.push('', `Загалом: $${row.total.toFixed(2)}`, '', 'Якщо є питання — звертайся 🙌');
+
+  return lines.join('\n');
 }
 
 type SalaryTeam = 'support' | 'peekviewer';
@@ -66,7 +96,7 @@ export default function Salary() {
   const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
   const monthLabelUA = MONTH_NAMES_UA[month - 1];
 
-  const messageFor = (row: SalaryRow) => defaultSalaryMessage(monthLabelUA, year, row.total);
+  const messageFor = (row: SalaryRow) => defaultSalaryMessage(monthLabelUA, year, row);
 
   const handleSend = async (row: SalaryRow, message: string) => {
     await sendSalaryNotification(row.personKey, { year, month, team, message });
