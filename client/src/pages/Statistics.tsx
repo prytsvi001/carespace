@@ -1,14 +1,17 @@
 // client/src/pages/Statistics.tsx
-import React, { useEffect, useState, useRef } from 'react';
+import React, { Suspense, useEffect, useState, useRef } from 'react';
 import { Clock, CalendarDays, MessageCircle, Ticket, Phone, RefreshCcw, Calendar, Sun, Moon } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import type { DateRange } from 'react-day-picker';
 import { format } from 'date-fns';
 import 'react-day-picker/dist/style.css';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { getStatistics } from '../api';
 import { MonthlyStats, AgentStats } from '../types';
 import { Spinner } from '../components/ui';
+
+// recharts is ~400kB on its own — lazy so it doesn't block the rest of this
+// page (stat cards, breakdown, table) from rendering first.
+const StatisticsChart = React.lazy(() => import('../components/StatisticsChart'));
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const AGENT_ORDER = ['Jonathan Lewis', 'Julia Manson', 'Nicky Brown', 'Victoria Davis', 'Sandra Moore'];
@@ -256,22 +259,9 @@ export default function Statistics({ year, month, onYearChange, onMonthChange, r
           </div>
 
           {/* Chart */}
-          <div className="card">
-            <h3 className="font-semibold text-slate-700 mb-4">Agent Performance — {periodLabel}</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={{ borderRadius: '8px', fontSize: '12px' }} />
-                <Legend wrapperStyle={{ fontSize: '12px' }} formatter={(value) => <span style={{ color: '#0E0E0E' }}>{value}</span>} />
-                <Bar dataKey="Chats"   fill="rgba(14,14,14,0.75)"    radius={[4,4,0,0]} />
-                <Bar dataKey="Tickets" fill="rgba(161,249,110,0.75)" radius={[4,4,0,0]} />
-                <Bar dataKey="Calls"   fill="rgba(212,197,160,0.75)" radius={[4,4,0,0]} />
-                <Bar dataKey="Refunds" fill="rgba(139,157,131,0.75)" radius={[4,4,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <Suspense fallback={<div className="card flex justify-center py-12"><Spinner /></div>}>
+            <StatisticsChart chartData={chartData} periodLabel={periodLabel} />
+          </Suspense>
 
           {/* Per-agent breakdown */}
           <div className="card">

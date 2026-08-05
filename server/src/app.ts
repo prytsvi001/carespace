@@ -67,12 +67,20 @@ app.use(express.json());
 // starts / multiple warm instances, so production sessions are backed by
 // Postgres. Local dev keeps MemoryStore — DATABASE_URL there is a SQLite
 // file path, not something `pg` can connect to.
+//
+// This pool is deliberately separate from Prisma's (a raw `pg` pool vs.
+// Prisma's own connection management aren't interchangeable) but kept small
+// (max 3) since session reads/writes are simple point queries, not the
+// app's real query load — a default-sized pool here just adds needless
+// connection overhead against the Supabase pooler on every cold start.
+// createTableIfMissing is off: the `session` table already exists in
+// production, so this skips a schema-check query on every cold start too.
 const sessionStore =
   process.env.NODE_ENV === 'production'
     ? new (pgSession(session))({
-        pool: new Pool({ connectionString: process.env.DATABASE_URL }),
+        pool: new Pool({ connectionString: process.env.DATABASE_URL, max: 3 }),
         tableName: 'session',
-        createTableIfMissing: true,
+        createTableIfMissing: false,
       })
     : undefined;
 
