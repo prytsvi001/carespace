@@ -35,12 +35,16 @@ export function reviewsBonusForCount(count: number): number {
   return tier ? count * tier.perReview : 0;
 }
 
+// displayName here is the person's real name, shown only on the Salary tab —
+// agentName/userName stay the system pseudonym used everywhere else in the
+// app (Agent.name / User.name), so auto-pull and notification lookups are
+// unaffected by this Salary-only relabeling.
 export const SUPPORT_ROSTER: SalaryPerson[] = [
-  { personKey: 'jonathan_lewis', displayName: 'Jonathan Lewis', team: 'support', agentName: 'Jonathan Lewis', formula: { type: 'hourly_tiered_reviews', rate: 5 } },
-  { personKey: 'sandra_moore',   displayName: 'Sandra Moore',   team: 'support', agentName: 'Sandra Moore',   formula: { type: 'fixed_base_with_support_duties' } },
-  { personKey: 'julia_manson',   displayName: 'Julia Manson',   team: 'support', agentName: 'Julia Manson',   formula: { type: 'hourly_tiered_reviews', rate: 6.25 }, hasPeekBonus: true },
-  { personKey: 'nicky_brown',    displayName: 'Nicky Brown',    team: 'support', agentName: 'Nicky Brown',    formula: { type: 'hourly_tiered_reviews', rate: 6 }, toggles: [{ key: 'trustpilotOn', label: 'Trustpilot bonus', amount: 80 }] },
-  { personKey: 'victoria_davis', displayName: 'Victoria Davis', team: 'support', agentName: 'Victoria Davis', formula: { type: 'hourly_tiered_reviews', rate: 10 } },
+  { personKey: 'jonathan_lewis', displayName: 'Yan Horlatyi',          team: 'support', agentName: 'Jonathan Lewis', formula: { type: 'hourly_tiered_reviews', rate: 5 } },
+  { personKey: 'sandra_moore',   displayName: 'Oleksandra Kraichynska', team: 'support', agentName: 'Sandra Moore',   formula: { type: 'fixed_base_with_support_duties' } },
+  { personKey: 'julia_manson',   displayName: 'Tetiana Blazhievska',   team: 'support', agentName: 'Julia Manson',   formula: { type: 'hourly_tiered_reviews', rate: 6.25 }, hasPeekBonus: true },
+  { personKey: 'nicky_brown',    displayName: 'Myroslava Horshchar',   team: 'support', agentName: 'Nicky Brown',    formula: { type: 'hourly_tiered_reviews', rate: 6 }, toggles: [{ key: 'trustpilotOn', label: 'Trustpilot bonus', amount: 80 }] },
+  { personKey: 'victoria_davis', displayName: 'Viktoriia Pryts',       team: 'support', agentName: 'Victoria Davis', formula: { type: 'hourly_tiered_reviews', rate: 10 } },
 ];
 
 export const PEEKVIEWER_ROSTER: SalaryPerson[] = [

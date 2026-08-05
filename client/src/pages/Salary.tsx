@@ -1,10 +1,11 @@
 // client/src/pages/Salary.tsx
 import React, { useEffect, useState } from 'react';
-import { Wallet, Send } from 'lucide-react';
+import { Wallet, Send, LayoutList } from 'lucide-react';
 import { getSalary, patchSalary, sendSalaryNotification } from '../api';
 import { BonusEntry, SalaryRow } from '../types';
 import { CardListSkeleton, EmptyState, ConfirmDialog } from '../components/ui';
 import { SalaryCard } from '../components/SalaryCard';
+import { SalarySummaryModal } from '../components/SalarySummaryModal';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_NAMES_UA = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
@@ -51,6 +52,7 @@ export default function Salary() {
   const [loading, setLoading] = useState(true);
   const [confirmSendAll, setConfirmSendAll] = useState(false);
   const [sendingAll, setSendingAll] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
 
   // silent=true skips the loading flag entirely — used to reconcile with the
   // server in the background after a save, without flashing the whole grid
@@ -156,18 +158,29 @@ export default function Salary() {
             </button>
           ))}
         </div>
-        {!loading && notifiableCount > 0 && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setConfirmSendAll(true)}
-            disabled={sendingAll}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            onClick={() => setShowSummary(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
             style={{ backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.60)' }}
           >
-            <Send size={13} strokeWidth={1.8} />
-            {sendingAll ? 'Sending…' : 'Send all salary notifications'}
+            <LayoutList size={13} strokeWidth={1.8} />
+            Summary
           </button>
-        )}
+          {!loading && notifiableCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setConfirmSendAll(true)}
+              disabled={sendingAll}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+              style={{ backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.60)' }}
+            >
+              <Send size={13} strokeWidth={1.8} />
+              {sendingAll ? 'Sending…' : 'Send all salary notifications'}
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -197,6 +210,14 @@ export default function Salary() {
         message={`Send salary notifications to ${notifiableCount} ${notifiableCount === 1 ? 'person' : 'people'}?`}
         onConfirm={handleSendAll}
         onCancel={() => setConfirmSendAll(false)}
+      />
+
+      <SalarySummaryModal
+        open={showSummary}
+        onClose={() => setShowSummary(false)}
+        year={year}
+        month={month}
+        monthLabel={monthLabel}
       />
     </div>
   );
