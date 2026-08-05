@@ -437,6 +437,8 @@ export interface SalaryRow {
   hasPeekBonus: boolean;
   peekCount?: number;
   peekBonus: number;
+  hasResolvedRequestCount: boolean;
+  resolvedCount?: number;
   hasSupportDuties: boolean;
   supportDutiesBonus: number;
   shifts: number;
@@ -456,7 +458,9 @@ export interface SalaryOverrides {
   rate?: number | null;
   reviewsCount?: number | null;
   reviewsBonus?: number | null;
+  peekCount?: number | null;
   peekBonus?: number | null;
+  resolvedCount?: number | null;
   supportDutiesBonus?: number | null;
   trustpilotOn?: boolean | null;
   updateOn?: boolean | null;

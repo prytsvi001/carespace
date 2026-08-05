@@ -251,7 +251,9 @@ function recompute(row: SalaryRow, key: string, value: number | boolean | null):
   if (key === 'rate') next.rate = value === null ? row.rate : Number(value);
   if (key === 'reviewsCount') next.reviewsCount = value === null ? row.reviewsCount : Number(value);
   if (key === 'reviewsBonus') next.reviewsBonus = value === null ? row.reviewsBonus : Number(value);
+  if (key === 'peekCount') next.peekCount = value === null ? row.peekCount : Number(value);
   if (key === 'peekBonus') next.peekBonus = value === null ? row.peekBonus : Number(value);
+  if (key === 'resolvedCount') next.resolvedCount = value === null ? row.resolvedCount : Number(value);
   if (key === 'supportDutiesBonus') next.supportDutiesBonus = value === null ? row.supportDutiesBonus : Number(value);
   if (key === 'base') next.base = value === null ? row.base : Number(value);
   if (key === 'total') next.total = value === null ? row.total : Number(value);
@@ -261,6 +263,12 @@ function recompute(row: SalaryRow, key: string, value: number | boolean | null):
   // changes, unless reviewsBonus itself has separately been overridden.
   if (key === 'reviewsCount' && !next.editedFields.includes('reviewsBonus')) {
     next.reviewsBonus = reviewsBonusForCount(next.reviewsCount);
+  }
+
+  // peekBonus (Julia only) auto-recomputes at $0.80/request when peekCount
+  // changes, unless peekBonus itself has separately been overridden.
+  if (key === 'peekCount' && !next.editedFields.includes('peekBonus')) {
+    next.peekBonus = round2((next.peekCount ?? 0) * 0.80);
   }
 
   // base only derives from hours * rate for regular hourly support agents —

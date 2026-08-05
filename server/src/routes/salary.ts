@@ -40,7 +40,9 @@ interface SalaryOverrides {
   rate?: number;
   reviewsCount?: number;
   reviewsBonus?: number;
+  peekCount?: number;
   peekBonus?: number;
+  resolvedCount?: number;
   supportDutiesBonus?: number;
   trustpilotOn?: boolean;
   updateOn?: boolean;
@@ -55,6 +57,7 @@ function computeSalary(
   autoShifts: number,
   autoReviewsCount: number,
   autoPeekCount: number,
+  autoResolvedCount: number,
   overrides: SalaryOverrides,
   bonuses: BonusEntry[],
 ) {
@@ -77,7 +80,13 @@ function computeSalary(
   const reviewsCount = hasReviews ? (overrides.reviewsCount ?? autoReviewsCount) : 0;
   const reviewsBonus = hasReviews ? (overrides.reviewsBonus ?? reviewsBonusForCount(reviewsCount)) : 0;
 
-  const peekBonus = person.hasPeekBonus ? round2(overrides.peekBonus ?? autoPeekCount * 0.80) : 0;
+  const peekCount = person.hasPeekBonus ? (overrides.peekCount ?? autoPeekCount) : 0;
+  const peekBonus = person.hasPeekBonus ? round2(overrides.peekBonus ?? peekCount * 0.80) : 0;
+
+  // Reference-only — how many Peek Requests this person personally resolved
+  // that month. No bonus math: their existing Update bonus toggle already
+  // covers that, this is just context for the admin.
+  const resolvedCount = person.hasResolvedRequestCount ? (overrides.resolvedCount ?? autoResolvedCount) : undefined;
 
   const supportDutiesBonus = hasSupportDuties
     ? (overrides.supportDutiesBonus ?? (rate != null ? round2(hours * rate) : 0))
@@ -103,7 +112,8 @@ function computeSalary(
     team: person.team,
     hours, rate, base,
     hasReviews, reviewsCount, reviewsBonus,
-    hasPeekBonus: !!person.hasPeekBonus, peekCount: person.hasPeekBonus ? autoPeekCount : undefined, peekBonus,
+    hasPeekBonus: !!person.hasPeekBonus, peekCount: person.hasPeekBonus ? peekCount : undefined, peekBonus,
+    hasResolvedRequestCount: !!person.hasResolvedRequestCount, resolvedCount,
     hasSupportDuties, supportDutiesBonus,
     shifts: autoShifts,
     toggles: (person.toggles ?? []).map(t => ({ key: t.key, label: t.label, amount: t.amount, on: toggleStates[t.key] })),
@@ -167,6 +177,23 @@ router.get('/', async (req: Request, res: Response) => {
       ? await prisma.user.findMany({ where: { name: { in: notifyNames } } })
       : [];
     const notifyableNames = new Set(notifyUsers.map(u => u.name));
+    const notifyUserByName = new Map(notifyUsers.map(u => [u.name, u]));
+
+    // Reference-only count of Peek Requests personally resolved that month
+    // (PeekResolutionCredit.creditedUserId) — Viktoria Horopeka / Iryna
+    // Kolodiyenko only, no bonus math attached.
+    const resolvedCountByPersonKey: Record<string, number> = {};
+    const resolvedPeople = roster.filter(p => p.hasResolvedRequestCount);
+    if (resolvedPeople.length) {
+      await Promise.all(resolvedPeople.map(async p => {
+        const notifyName = notifyUserNameFor(p);
+        const user = notifyName ? notifyUserByName.get(notifyName) : undefined;
+        if (!user) return;
+        resolvedCountByPersonKey[p.personKey] = await prisma.peekResolutionCredit.count({
+          where: { creditedUserId: user.id, resolvedDate: { gte: start, lt: end } },
+        });
+      }));
+    }
 
     const rows = roster.map(person => {
       const record = storedByKey.get(person.personKey);
@@ -177,12 +204,13 @@ router.get('/', async (req: Request, res: Response) => {
       const autoShifts = person.agentName ? (hoursByAgentName[person.agentName]?.shifts ?? 0) : 0;
       const autoReviewsCount = person.agentName ? (reviewsByAgentName[person.agentName] ?? 0) : 0;
       const autoPeekCount = person.hasPeekBonus ? juliaPeekDoneCount : 0;
+      const autoResolvedCount = person.hasResolvedRequestCount ? (resolvedCountByPersonKey[person.personKey] ?? 0) : 0;
 
       const notifyName = notifyUserNameFor(person);
       const hoursBreakdown = person.agentName ? hoursByAgentName[person.agentName]?.breakdown : undefined;
 
       return {
-        ...computeSalary(person, autoHours, autoShifts, autoReviewsCount, autoPeekCount, overrides, bonuses),
+        ...computeSalary(person, autoHours, autoShifts, autoReviewsCount, autoPeekCount, autoResolvedCount, overrides, bonuses),
         canNotify: !!notifyName && notifyableNames.has(notifyName),
         notifiedAt: record?.notifiedAt ? record.notifiedAt.toISOString() : null,
         hoursBreakdown,

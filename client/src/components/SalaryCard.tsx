@@ -155,12 +155,17 @@ export function SalaryCard({
 
       {row.hasPeekBonus && (
         <div className="py-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
-          <div className="flex items-center justify-between gap-2 py-1">
-            <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>Peek Requests done</span>
-            <span className="text-sm" style={{ color: 'rgba(14,14,14,0.65)' }}>{row.peekCount ?? 0}</span>
-          </div>
+          <EditableField label="Peek Requests done" value={row.peekCount ?? 0} prefix="" edited={isEdited('peekCount')}
+            onSave={(v) => onSaveOverride('peekCount', v)} onClear={() => onSaveOverride('peekCount', null)} />
           <EditableField label="Peek Requests bonus" value={row.peekBonus} edited={isEdited('peekBonus')}
             onSave={(v) => onSaveOverride('peekBonus', v)} onClear={() => onSaveOverride('peekBonus', null)} />
+        </div>
+      )}
+
+      {row.hasResolvedRequestCount && (
+        <div className="py-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
+          <EditableField label="Peek Requests processed" value={row.resolvedCount ?? 0} prefix="" edited={isEdited('resolvedCount')}
+            onSave={(v) => onSaveOverride('resolvedCount', v)} onClear={() => onSaveOverride('resolvedCount', null)} />
         </div>
       )}
 

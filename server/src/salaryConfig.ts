@@ -22,6 +22,7 @@ export interface SalaryPerson {
   hasPeekBonus?: boolean; // Julia only
   agentName?: string;     // matches Agent.name, for support-team auto-pull; absent for peekviewer
   userName?: string;      // matches User.name exactly, for notifications — only set when it differs from (or isn't covered by) agentName
+  hasResolvedRequestCount?: boolean; // Viktoria Horopeka / Iryna Kolodiyenko — reference-only count of Peek Requests they personally resolved that month (PeekResolutionCredit), no bonus math attached (their existing Update bonus toggle already covers that)
 }
 
 export const REVIEW_TIERS = [
@@ -49,9 +50,9 @@ export const SUPPORT_ROSTER: SalaryPerson[] = [
 
 export const PEEKVIEWER_ROSTER: SalaryPerson[] = [
   { personKey: 'yana_fedorova',       displayName: 'Yana Fedorova',       team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 600 },
-  { personKey: 'viktoria_horopeka',   displayName: 'Viktoria Horopeka',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Victoria Horopeka' },
+  { personKey: 'viktoria_horopeka',   displayName: 'Viktoria Horopeka',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Victoria Horopeka', hasResolvedRequestCount: true },
   { personKey: 'tetyana_veremeyenko', displayName: 'Tetyana Veremeyenko', team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'uMobixOn', label: 'uMobix boost', amount: 10 }, { key: 'strukturaOn', label: 'Struktura boost', amount: 5 }] },
-  { personKey: 'iryna_kolodiyenko',   displayName: 'Iryna Kolodiyenko',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Iryna Kolodienko' },
+  { personKey: 'iryna_kolodiyenko',   displayName: 'Iryna Kolodiyenko',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Iryna Kolodienko', hasResolvedRequestCount: true },
   { personKey: 'zlata_alekseenko',    displayName: 'Zlata Alekseenko',    team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 400 },
   { personKey: 'anna_bilous',         displayName: 'Anna Bilous',         team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 300 },
 ];
