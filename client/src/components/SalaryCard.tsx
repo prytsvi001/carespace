@@ -118,13 +118,6 @@ export function SalaryCard({
             <EditableField label="Rate / hr (set your rate)" value={0} edited
               onSave={(v) => onSaveOverride('rate', v)} />
           )}
-          <EditableField label="Extra support duties bonus" value={row.supportDutiesBonus} edited={isEdited('supportDutiesBonus')}
-            onSave={(v) => onSaveOverride('supportDutiesBonus', v)} onClear={() => onSaveOverride('supportDutiesBonus', null)} />
-
-          <div className="flex items-center justify-between gap-2 py-1">
-            <span className="text-xs" style={{ color: 'rgba(14,14,14,0.45)' }}>Shifts (reference)</span>
-            <span className="text-sm" style={{ color: 'rgba(14,14,14,0.65)' }}>{row.shifts}</span>
-          </div>
         </div>
       ) : row.team === 'support' ? (
         <div className="pb-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
