@@ -21,14 +21,12 @@ function buildCsv(monthLabel: string, supportRows: SalaryRow[], peekviewerRows: 
   for (const r of supportRows) {
     lines.push([csvField(r.displayName), csvField(monthLabel), r.total.toFixed(2)].join(','));
   }
-  lines.push(['Support Team Total', '', supportRows.reduce((s, r) => s + r.total, 0).toFixed(2)].join(','));
   lines.push('');
   lines.push('Peekviewer Team');
   lines.push('Name,Month,Total');
   for (const r of peekviewerRows) {
     lines.push([csvField(r.displayName), csvField(monthLabel), r.total.toFixed(2)].join(','));
   }
-  lines.push(['Peekviewer Team Total', '', peekviewerRows.reduce((s, r) => s + r.total, 0).toFixed(2)].join(','));
 
   return lines.join('\n');
 }
@@ -63,7 +61,6 @@ export function SalarySummaryModal({
   }, [open, year, month]);
 
   const rows = view === 'support' ? supportRows : peekviewerRows;
-  const teamTotal = rows.reduce((s, r) => s + r.total, 0);
 
   const handleDownload = () => {
     const csv = buildCsv(monthLabel, supportRows, peekviewerRows);
@@ -98,27 +95,18 @@ export function SalarySummaryModal({
         {loading ? (
           <div className="flex justify-center py-8"><Spinner /></div>
         ) : (
-          <>
-            <div className="space-y-1">
-              {rows.map((r) => (
-                <div key={r.personKey} className="flex items-center justify-between gap-2 py-1.5" style={{ borderBottom: '1px solid rgba(14,14,14,0.06)' }}>
-                  <span className="text-sm" style={{ color: 'rgba(14,14,14,0.75)' }}>
-                    {r.displayName} — {monthLabel}
-                  </span>
-                  <span className="text-sm font-semibold" style={{ color: 'rgba(14,14,14,0.85)' }}>
-                    Total: ${r.total.toFixed(2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between gap-2 pt-2" style={{ borderTop: '1px solid rgba(14,14,14,0.10)' }}>
-              <span className="text-sm font-semibold" style={{ color: 'rgba(14,14,14,0.65)' }}>
-                {view === 'support' ? 'Support Team Total' : 'Peekviewer Team Total'}
-              </span>
-              <span className="text-lg font-bold" style={{ color: '#0E0E0E' }}>${teamTotal.toFixed(2)}</span>
-            </div>
-          </>
+          <div className="space-y-1">
+            {rows.map((r) => (
+              <div key={r.personKey} className="flex items-center justify-between gap-2 py-1.5" style={{ borderBottom: '1px solid rgba(14,14,14,0.06)' }}>
+                <span className="text-sm" style={{ color: 'rgba(14,14,14,0.75)' }}>
+                  {r.displayName} — {monthLabel}
+                </span>
+                <span className="text-sm font-semibold" style={{ color: 'rgba(14,14,14,0.85)' }}>
+                  Total: ${r.total.toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
 
         <button
