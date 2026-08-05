@@ -52,15 +52,19 @@ export default function Salary() {
   const [confirmSendAll, setConfirmSendAll] = useState(false);
   const [sendingAll, setSendingAll] = useState(false);
 
-  const loadData = async () => {
-    setLoading(true);
+  // silent=true skips the loading flag entirely — used to reconcile with the
+  // server in the background after a save, without flashing the whole grid
+  // back to the skeleton loader. The optimistic recompute() below already
+  // shows the correct number instantly; this just keeps it honest.
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await getSalary({ year, month, team });
       setRows(data.rows);
     } catch (e) {
       console.error(e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -68,24 +72,24 @@ export default function Salary() {
 
   const handleSaveOverride = async (row: SalaryRow, key: string, value: number | boolean | null) => {
     // Optimistic update so the field/badge/total reflect the change immediately
-    setRows((prev) => prev.map((r) => (r.personKey === row.personKey ? { ...r, ...recompute(r, key, value) } : r)));
+    setRows((prev) => prev.map((r) => (r.personKey === row.personKey ? recompute(r, key, value) : r)));
     try {
       await patchSalary(row.personKey, { year, month, team, overrides: { [key]: value } });
     } catch (e) {
       console.error(e);
     } finally {
-      loadData();
+      loadData(true);
     }
   };
 
   const handleSaveBonuses = async (row: SalaryRow, bonuses: BonusEntry[]) => {
-    setRows((prev) => prev.map((r) => (r.personKey === row.personKey ? { ...r, bonuses } : r)));
+    setRows((prev) => prev.map((r) => (r.personKey === row.personKey ? recomputeBonuses(r, bonuses) : r)));
     try {
       await patchSalary(row.personKey, { year, month, team, bonuses });
     } catch (e) {
       console.error(e);
     } finally {
-      loadData();
+      loadData(true);
     }
   };
 
@@ -97,7 +101,7 @@ export default function Salary() {
 
   const handleSend = async (row: SalaryRow, message: string) => {
     await sendSalaryNotification(row.personKey, { year, month, team, message });
-    await loadData();
+    await loadData(true);
   };
 
   const notifiableCount = rows.filter((r) => r.canNotify).length;
@@ -116,7 +120,7 @@ export default function Salary() {
       }
     } finally {
       setSendingAll(false);
-      await loadData();
+      await loadData(true);
     }
   };
 
@@ -198,31 +202,72 @@ export default function Salary() {
   );
 }
 
+// Mirrors server/src/routes/salary.ts's computeSalary() tier table, so
+// reviewsCount edits can recompute reviewsBonus client-side too.
+const REVIEW_TIERS = [
+  { min: 1, max: 10, perReview: 5 },
+  { min: 11, max: 20, perReview: 6 },
+  { min: 21, max: Infinity, perReview: 7 },
+];
+function reviewsBonusForCount(count: number): number {
+  const tier = REVIEW_TIERS.find((t) => count >= t.min && count <= t.max);
+  return tier ? count * tier.perReview : 0;
+}
+
 // Local optimistic recompute so a single field edit reflects immediately —
-// full authoritative numbers still come back from the reload triggered right after.
-function recompute(row: SalaryRow, key: string, value: number | boolean | null): Partial<SalaryRow> {
+// the silent background reload in loadData(true) still corrects it shortly
+// after using the server's authoritative numbers (this matters most for
+// "clear override" edits, where the true auto-calculated value isn't known
+// client-side — those briefly keep showing the old number, then correct).
+function recompute(row: SalaryRow, key: string, value: number | boolean | null): SalaryRow {
   const editedFields = new Set(row.editedFields);
   if (value === null) editedFields.delete(key);
   else editedFields.add(key);
 
-  if (key === 'total') {
-    return { total: value === null ? row.total : Number(value), editedFields: Array.from(editedFields) };
-  }
+  const next: SalaryRow = { ...row, editedFields: Array.from(editedFields) };
 
-  const next: SalaryRow = { ...row };
   if (key === 'hours') next.hours = value === null ? row.hours : Number(value);
   if (key === 'rate') next.rate = value === null ? row.rate : Number(value);
   if (key === 'reviewsCount') next.reviewsCount = value === null ? row.reviewsCount : Number(value);
   if (key === 'reviewsBonus') next.reviewsBonus = value === null ? row.reviewsBonus : Number(value);
   if (key === 'peekBonus') next.peekBonus = value === null ? row.peekBonus : Number(value);
+  if (key === 'supportDutiesBonus') next.supportDutiesBonus = value === null ? row.supportDutiesBonus : Number(value);
+  if (key === 'base') next.base = value === null ? row.base : Number(value);
+  if (key === 'total') next.total = value === null ? row.total : Number(value);
   next.toggles = row.toggles.map((t) => (t.key === key ? { ...t, on: !!value } : t));
 
-  const toggleAmount = next.toggles.reduce((s, t) => s + (t.on ? t.amount : 0), 0);
-  const base = next.rate != null ? next.hours * next.rate : row.base;
-  next.base = row.team === 'peekviewer' ? row.base : base;
-  next.bonusesTotal = row.bonusesTotal;
-  next.total = round2(next.base + next.reviewsBonus + next.peekBonus + toggleAmount + next.bonusesTotal);
-  next.editedFields = Array.from(editedFields);
+  // reviewsBonus auto-recomputes from the tier table when reviewsCount
+  // changes, unless reviewsBonus itself has separately been overridden.
+  if (key === 'reviewsCount' && !next.editedFields.includes('reviewsBonus')) {
+    next.reviewsBonus = reviewsBonusForCount(next.reviewsCount);
+  }
+
+  // base only derives from hours * rate for regular hourly support agents —
+  // Sandra (hasSupportDuties) and Peekviewer's base is flat/independent.
+  if (key !== 'base' && !next.editedFields.includes('base') && row.team === 'support' && !row.hasSupportDuties) {
+    next.base = next.rate != null ? round2(next.hours * next.rate) : 0;
+  }
+
+  // supportDutiesBonus (Sandra only) auto-derives from hours * rate unless overridden.
+  if (row.hasSupportDuties && key !== 'supportDutiesBonus' && !next.editedFields.includes('supportDutiesBonus')) {
+    next.supportDutiesBonus = next.rate != null ? round2(next.hours * next.rate) : 0;
+  }
+
+  if (!next.editedFields.includes('total')) {
+    const toggleAmount = next.toggles.reduce((s, t) => s + (t.on ? t.amount : 0), 0);
+    next.total = round2(next.base + next.reviewsBonus + next.peekBonus + next.supportDutiesBonus + toggleAmount + next.bonusesTotal);
+  }
+
+  return next;
+}
+
+function recomputeBonuses(row: SalaryRow, bonuses: BonusEntry[]): SalaryRow {
+  const bonusesTotal = round2(bonuses.reduce((s, b) => s + (Number(b.amount) || 0), 0));
+  const next: SalaryRow = { ...row, bonuses, bonusesTotal };
+  if (!row.editedFields.includes('total')) {
+    const toggleAmount = next.toggles.reduce((s, t) => s + (t.on ? t.amount : 0), 0);
+    next.total = round2(next.base + next.reviewsBonus + next.peekBonus + next.supportDutiesBonus + toggleAmount + bonusesTotal);
+  }
   return next;
 }
 
