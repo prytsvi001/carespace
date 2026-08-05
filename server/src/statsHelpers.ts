@@ -9,6 +9,38 @@ export function utcDateKey(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
+// Categorized hours breakdown for a month — every category's hours sum to
+// exactly totalHours below, since each branch of the day loop that adds to
+// totalHours also adds the same amount to one (and only one) category here.
+export interface HoursBreakdown {
+  morningShifts: number; morningHours: number;
+  nightShifts: number; nightHours: number;
+  vacationDays: number; vacationHours: number;
+  sickWithNoteDays: number; sickWithNoteHours: number;
+  sickWithoutNoteDays: number; sickWithoutNoteHours: number;
+  birthdayOffDays: number; birthdayOffHours: number;
+  extraShifts: number; extraHours: number;
+}
+
+function emptyBreakdown(): HoursBreakdown {
+  return {
+    morningShifts: 0, morningHours: 0,
+    nightShifts: 0, nightHours: 0,
+    vacationDays: 0, vacationHours: 0,
+    sickWithNoteDays: 0, sickWithNoteHours: 0,
+    sickWithoutNoteDays: 0, sickWithoutNoteHours: 0,
+    birthdayOffDays: 0, birthdayOffHours: 0,
+    extraShifts: 0, extraHours: 0,
+  };
+}
+
+function addLeaveToBreakdown(b: HoursBreakdown, leaveType: string, hours: number): void {
+  if (leaveType === 'VACATION') { b.vacationDays += 1; b.vacationHours += hours; }
+  else if (leaveType === 'SICK_LEAVE_WITH_NOTE') { b.sickWithNoteDays += 1; b.sickWithNoteHours += hours; }
+  else if (leaveType === 'SICK_LEAVE_WITHOUT_NOTE') { b.sickWithoutNoteDays += 1; b.sickWithoutNoteHours += hours; }
+  else if (leaveType === 'BIRTHDAY_OFF') { b.birthdayOffDays += 1; b.birthdayOffHours += hours; }
+}
+
 export interface AgentMonthStats {
   agentId: string;
   agentName: string;
@@ -20,6 +52,7 @@ export interface AgentMonthStats {
   totalTickets: number;
   totalCalls: number;
   totalRefunds: number;
+  breakdown: HoursBreakdown;
 }
 
 // [start, end) — same half-open UTC range convention used across the app.
@@ -46,6 +79,7 @@ export async function computeAgentStatsForRange(start: Date, end: Date): Promise
       agentId: agent.id, agentName: agent.name,
       totalHours: 0, totalShifts: 0, morningShifts: 0, nightShifts: 0,
       totalChats: 0, totalTickets: 0, totalCalls: 0, totalRefunds: 0,
+      breakdown: emptyBreakdown(),
     };
   }
 
@@ -100,12 +134,14 @@ export async function computeAgentStatsForRange(start: Date, end: Date): Promise
           s.totalShifts += 1;
           if (rotShiftType === 'MORNING') s.morningShifts += 1;
           else s.nightShifts += 1;
+          addLeaveToBreakdown(s.breakdown, storedEv.leaveType, 8);
         } else {
           // Regular rotation shift (stored SHIFT events for rotation agents are ignored per calendar display rules)
-          s.totalHours += rotShiftType === 'MORNING' ? 11 : 8;
+          const hrs = rotShiftType === 'MORNING' ? 11 : 8;
+          s.totalHours += hrs;
           s.totalShifts += 1;
-          if (rotShiftType === 'MORNING') s.morningShifts += 1;
-          else s.nightShifts += 1;
+          if (rotShiftType === 'MORNING') { s.morningShifts += 1; s.breakdown.morningShifts += 1; s.breakdown.morningHours += hrs; }
+          else { s.nightShifts += 1; s.breakdown.nightShifts += 1; s.breakdown.nightHours += hrs; }
         }
       }
     }
@@ -118,16 +154,22 @@ export async function computeAgentStatsForRange(start: Date, end: Date): Promise
 
       const shiftType = ev.shiftType as 'MORNING' | 'NIGHT' | null;
       if (ev.leaveType === 'SHIFT') {
-        s.totalHours += shiftType === 'MORNING' ? 11 : 8;
+        // A stored SHIFT event for a day this agent isn't natively in the
+        // rotation for is, by definition, them covering an extra shift.
+        const hrs = shiftType === 'MORNING' ? 11 : 8;
+        s.totalHours += hrs;
         s.totalShifts += 1;
         if (shiftType === 'MORNING') s.morningShifts += 1;
         else s.nightShifts += 1;
+        s.breakdown.extraShifts += 1;
+        s.breakdown.extraHours += hrs;
       } else {
         // Leave event: always 8h; shiftType may be null for non-rotation agents
         s.totalHours += 8;
         s.totalShifts += 1;
         if (shiftType === 'MORNING') s.morningShifts += 1;
         else if (shiftType === 'NIGHT') s.nightShifts += 1;
+        addLeaveToBreakdown(s.breakdown, ev.leaveType, 8);
       }
     }
   }

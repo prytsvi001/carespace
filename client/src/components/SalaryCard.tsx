@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Send, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { EditableField } from './EditableField';
+import { HoursBreakdownTooltip } from './HoursBreakdownTooltip';
 import { Modal } from './ui';
 import { BonusEntry, SalaryRow } from '../types';
 
@@ -106,8 +107,10 @@ export function SalaryCard({
           </p>
 
           <p className="text-xs font-medium pt-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>Extra support duties</p>
-          <EditableField label="Hours worked" value={row.hours} prefix="" edited={isEdited('hours')}
-            onSave={(v) => onSaveOverride('hours', v)} onClear={() => onSaveOverride('hours', null)} />
+          <HoursBreakdownTooltip breakdown={row.hoursBreakdown} totalHours={row.hours}>
+            <EditableField label="Hours worked" value={row.hours} prefix="" edited={isEdited('hours')}
+              onSave={(v) => onSaveOverride('hours', v)} onClear={() => onSaveOverride('hours', null)} />
+          </HoursBreakdownTooltip>
           {row.rate != null ? (
             <EditableField label="Rate / hr" value={row.rate} edited={isEdited('rate')}
               onSave={(v) => onSaveOverride('rate', v)} onClear={() => onSaveOverride('rate', null)} />
@@ -125,8 +128,10 @@ export function SalaryCard({
         </div>
       ) : row.team === 'support' ? (
         <div className="pb-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
-          <EditableField label="Hours worked" value={row.hours} prefix="" edited={isEdited('hours')}
-            onSave={(v) => onSaveOverride('hours', v)} onClear={() => onSaveOverride('hours', null)} />
+          <HoursBreakdownTooltip breakdown={row.hoursBreakdown} totalHours={row.hours}>
+            <EditableField label="Hours worked" value={row.hours} prefix="" edited={isEdited('hours')}
+              onSave={(v) => onSaveOverride('hours', v)} onClear={() => onSaveOverride('hours', null)} />
+          </HoursBreakdownTooltip>
           <EditableField label="Rate / hr" value={row.rate ?? 0} edited={isEdited('rate')}
             onSave={(v) => onSaveOverride('rate', v)} onClear={() => onSaveOverride('rate', null)} />
           <div className="flex items-center justify-between gap-2 py-1">

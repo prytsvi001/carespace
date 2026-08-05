@@ -5,7 +5,7 @@
 // persisted per person per month in SalaryRecord.
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
-import { computeMonthlyAgentStats } from '../statsHelpers';
+import { computeMonthlyAgentStats, HoursBreakdown } from '../statsHelpers';
 import { sendTelegramMessage } from '../telegram';
 import {
   SalaryPerson, ToggleKey, rosterForTeam, reviewsBonusForCount, notifyUserNameFor,
@@ -128,13 +128,13 @@ router.get('/', async (req: Request, res: Response) => {
     const start = new Date(Date.UTC(year, month - 1, 1));
     const end = new Date(Date.UTC(year, month, 1));
 
-    const hoursByAgentName: Record<string, { hours: number; shifts: number; agentId: string }> = {};
+    const hoursByAgentName: Record<string, { hours: number; shifts: number; agentId: string; breakdown: HoursBreakdown }> = {};
     const reviewsByAgentName: Record<string, number> = {};
     let juliaPeekDoneCount = 0;
 
     if (team === 'support') {
       const stats = await computeMonthlyAgentStats(year, month);
-      for (const s of stats) hoursByAgentName[s.agentName] = { hours: s.totalHours, shifts: s.totalShifts, agentId: s.agentId };
+      for (const s of stats) hoursByAgentName[s.agentName] = { hours: s.totalHours, shifts: s.totalShifts, agentId: s.agentId, breakdown: s.breakdown };
 
       const agentNames = roster.map(p => p.agentName).filter(Boolean) as string[];
       const users = await prisma.user.findMany({ where: { name: { in: agentNames } } });
@@ -179,11 +179,13 @@ router.get('/', async (req: Request, res: Response) => {
       const autoPeekCount = person.hasPeekBonus ? juliaPeekDoneCount : 0;
 
       const notifyName = notifyUserNameFor(person);
+      const hoursBreakdown = person.agentName ? hoursByAgentName[person.agentName]?.breakdown : undefined;
 
       return {
         ...computeSalary(person, autoHours, autoShifts, autoReviewsCount, autoPeekCount, overrides, bonuses),
         canNotify: !!notifyName && notifyableNames.has(notifyName),
         notifiedAt: record?.notifiedAt ? record.notifiedAt.toISOString() : null,
+        hoursBreakdown,
       };
     });
 

@@ -414,6 +414,16 @@ export interface SalaryToggle {
   on: boolean;
 }
 
+export interface HoursBreakdown {
+  morningShifts: number; morningHours: number;
+  nightShifts: number; nightHours: number;
+  vacationDays: number; vacationHours: number;
+  sickWithNoteDays: number; sickWithNoteHours: number;
+  sickWithoutNoteDays: number; sickWithoutNoteHours: number;
+  birthdayOffDays: number; birthdayOffHours: number;
+  extraShifts: number; extraHours: number;
+}
+
 export interface SalaryRow {
   personKey: string;
   displayName: string;
@@ -437,6 +447,7 @@ export interface SalaryRow {
   editedFields: string[];
   canNotify: boolean;
   notifiedAt: string | null;
+  hoursBreakdown?: HoursBreakdown;
 }
 
 export interface SalaryOverrides {
