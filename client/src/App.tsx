@@ -65,7 +65,7 @@ const ALL_SPACE_TABS: { id: SpaceTab; label: string; shortLabel: string; Icon: R
   { id: 'pdp',        label: 'PDP',        shortLabel: 'PDP',     Icon: TrendingUp, roles: ['head', 'lead', 'agent'] },
   { id: 'qa-reports', label: 'QA Reports', shortLabel: 'Reports', Icon: FileText,   roles: ['head', 'lead'] },
   { id: 'kpi',        label: 'My KPI',     shortLabel: 'KPI',     Icon: BarChart3,  roles: ['head', 'lead', 'agent'] },
-  { id: 'salary',     label: 'Salary',     shortLabel: 'Salary',  Icon: Wallet,     roles: ['head'] },
+  { id: 'salary',     label: 'Salary',     shortLabel: 'Salary',  Icon: Wallet,     roles: ['head', 'lead'] },
 ];
 
 // Tabs accessible to peek_handler role

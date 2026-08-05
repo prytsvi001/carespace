@@ -1,8 +1,9 @@
 // server/src/routes/salary.ts
 // Monthly pay calculation for the Support Team and Peekviewer Team, visible
-// only to head (Sandra Moore). Auto-pulls hours (Statistics), reviews (Reviews tab),
-// and Julia's resolved Peek Requests count; everything is overridable and
-// persisted per person per month in SalaryRecord.
+// to head (Sandra Moore) and lead (Victoria Davis). Auto-pulls hours
+// (Statistics), reviews (Reviews tab), and Julia's resolved Peek Requests
+// count; everything is overridable and persisted per person per month in
+// SalaryRecord.
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { computeMonthlyAgentStats, HoursBreakdown } from '../statsHelpers';
@@ -13,10 +14,8 @@ import {
 
 const router = Router();
 
-// Salary is head-only (not lead) — deliberately narrower than other
-// head/lead-gated features in this app.
 function isAdmin(role: string): boolean {
-  return role === 'head';
+  return role === 'head' || role === 'lead';
 }
 
 function safeParseJSON<T>(raw: string | null | undefined, fallback: T): T {
