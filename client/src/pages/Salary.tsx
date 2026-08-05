@@ -162,8 +162,8 @@ export default function Salary() {
           <button
             type="button"
             onClick={() => setShowSummary(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            style={{ backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.60)' }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95"
+            style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
           >
             <LayoutList size={13} strokeWidth={1.8} />
             Summary
@@ -173,8 +173,8 @@ export default function Salary() {
               type="button"
               onClick={() => setConfirmSendAll(true)}
               disabled={sendingAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-              style={{ backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.60)' }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95 disabled:opacity-50"
+              style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
             >
               <Send size={13} strokeWidth={1.8} />
               {sendingAll ? 'Sending…' : 'Send all salary notifications'}
