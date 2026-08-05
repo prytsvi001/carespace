@@ -9,10 +9,12 @@ import { SalaryCard } from '../components/SalaryCard';
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_NAMES_UA = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
 
-// Itemized breakdown so the numbers always sum to Загалом — every component
-// that actually contributes to row.total gets its own line (reviews, Peek
-// Requests, active toggles, extra support duties, free-text bonuses), not
-// just the two named lines in the base template.
+// Support Team: База (hours × rate) + Бонус за ревʼю + additional bonuses
+// + Загалом. Peekviewer Team: База (flat) + additional bonuses + Загалом.
+// No Peek Requests / toggle-bonus lines for either, per spec — Julia's Peek
+// Requests bonus, Nicky's Trustpilot bonus, and Peekviewer toggle bonuses
+// (Update bonus, uMobix/Struktura boosts) still count toward Загалом, they
+// just don't get their own line in the message.
 function defaultSalaryMessage(monthUA: string, year: number, row: SalaryRow): string {
   const lines: string[] = [`💰 Твоя зарплата за ${monthUA} ${year}:`, ''];
 
@@ -28,11 +30,6 @@ function defaultSalaryMessage(monthUA: string, year: number, row: SalaryRow): st
   }
 
   if (row.hasReviews) lines.push(`Бонус за ревʼю: $${row.reviewsBonus.toFixed(2)}`);
-  if (row.hasPeekBonus) lines.push(`Бонус за Peek Requests: $${row.peekBonus.toFixed(2)}`);
-
-  for (const t of row.toggles) {
-    if (t.on) lines.push(`${t.label}: $${t.amount.toFixed(2)}`);
-  }
 
   for (const b of row.bonuses) {
     lines.push(`• ${b.description}: $${b.amount.toFixed(2)}`);
