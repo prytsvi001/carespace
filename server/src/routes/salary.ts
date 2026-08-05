@@ -47,6 +47,7 @@ interface SalaryOverrides {
   updateOn?: boolean;
   uMobixOn?: boolean;
   strukturaOn?: boolean;
+  smmDutyOn?: boolean;
   total?: number;
 }
 

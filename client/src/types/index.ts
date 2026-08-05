@@ -408,7 +408,7 @@ export interface BonusEntry {
 }
 
 export interface SalaryToggle {
-  key: 'trustpilotOn' | 'updateOn' | 'uMobixOn' | 'strukturaOn';
+  key: 'trustpilotOn' | 'updateOn' | 'uMobixOn' | 'strukturaOn' | 'smmDutyOn';
   label: string;
   amount: number;
   on: boolean;
@@ -466,6 +466,7 @@ export interface SalaryOverrides {
   updateOn?: boolean | null;
   uMobixOn?: boolean | null;
   strukturaOn?: boolean | null;
+  smmDutyOn?: boolean | null;
   total?: number | null;
 }
 
