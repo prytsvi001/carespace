@@ -40,7 +40,9 @@ card (and reopen the popup) to pick up the change.
 ## Notes
 
 - Shortcuts are cached in `chrome.storage.local` for 5 minutes; the popup
-  shows cached data instantly and only re-fetches once that expires.
+  shows cached data instantly and only re-fetches once that expires. The 🔄
+  button in the popup header clears the cache and re-fetches immediately, for
+  when you don't want to wait out the TTL.
 - The extension only ever talks to `https://carespace.struktura.io` (see
   `host_permissions` in `manifest.json`) — there's no separate dev/staging
   target, since a Chrome extension can't be pointed at `localhost` for

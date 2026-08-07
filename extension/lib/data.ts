@@ -37,6 +37,13 @@ export async function refreshShortcutsCache(): Promise<Shortcut[]> {
   return shortcuts;
 }
 
+// Backs the popup's manual Refresh button — drops the cache entirely (not
+// just re-fetching over it) so a stale entry can never be served even if the
+// following fetch fails; the caller falls back to refreshShortcutsCache().
+export async function clearShortcutsCache(): Promise<void> {
+  await chrome.storage.local.remove(CACHE_KEY);
+}
+
 export async function pinShortcut(id: string, pinned: boolean): Promise<Shortcut> {
   const res = await fetch(`${API_BASE}/shortcuts/${id}/pin`, {
     method: 'PATCH',

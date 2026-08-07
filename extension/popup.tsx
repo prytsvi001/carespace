@@ -4,6 +4,7 @@ import { Star } from 'lucide-react';
 import './popup.css';
 import type { AuthUser, Shortcut, ShortcutVariant } from './lib/types';
 import {
+  clearShortcutsCache,
   fetchAuthUser,
   getCachedShortcuts,
   isCacheFresh,
@@ -179,6 +180,7 @@ function App() {
   const [shortcuts, setShortcuts] = useState<Shortcut[] | null>(null);
   const [shortcutsLoading, setShortcutsLoading] = useState(false);
   const [shortcutsError, setShortcutsError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -208,6 +210,22 @@ function App() {
       }
     } finally {
       setShortcutsLoading(false);
+    }
+  }, []);
+
+  // Manual "Refresh" button — drops the cache first so this always hits the
+  // API, regardless of how much of the 5-minute TTL is left.
+  const handleManualRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await clearShortcutsCache();
+      const fresh = await refreshShortcutsCache();
+      setShortcuts(fresh);
+      setShortcutsError(false);
+    } catch {
+      setShortcutsError(true);
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
@@ -360,7 +378,20 @@ function App() {
           <img src="/icons/icon48.png" alt="" className="w-4 h-4" />
           <span className="text-sm font-semibold">Quick Actions</span>
         </div>
-        {user && <span className="text-xs text-slate-400 truncate max-w-[160px]">{user.name}</span>}
+        {user && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleManualRefresh}
+              disabled={refreshing || shortcutsLoading}
+              className="text-sm text-slate-400 hover:text-ink transition-colors disabled:opacity-40"
+              aria-label="Refresh shortcuts"
+              title="Refresh shortcuts"
+            >
+              <span className={refreshing ? 'inline-block animate-spin' : 'inline-block'}>🔄</span>
+            </button>
+            <span className="text-xs text-slate-400 truncate max-w-[160px]">{user.name}</span>
+          </div>
+        )}
       </div>
 
       {!authChecked ? (
