@@ -606,8 +606,18 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // The ClientCard.id (not the activeRequest.id) behind the request being
+  // edited — needed so the duplicate-email check below excludes the card's
+  // own email from matching against itself.
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  // Duplicate-email check on the New Peak Request modal — 'blocking' (an
+  // In Progress card already exists for this email) disables Submit until
+  // the agent changes the email or clicks the override link below; 'info'
+  // (a New-column card exists) is advisory only and never blocks.
+  const [emailWarning, setEmailWarning] = useState<{ type: 'blocking' | 'info'; email: string } | null>(null);
+  const [overrideDuplicate, setOverrideDuplicate] = useState(false);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterAgent, setFilterAgent]   = useState('');
   const [search, setSearch]             = useState('');
@@ -686,8 +696,44 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     return () => clearInterval(id);
   }, [filterStatus, filterAgent, search, showArchived]);
 
+  // Looks for an existing card with the given status whose contactEmail
+  // matches (case/whitespace-insensitive), other than the card currently
+  // being edited. Returns the matching card, or undefined.
+  const findDuplicateCard = (email: string, status: RequestStatus) => {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return undefined;
+    return cards.find(c =>
+      c.id !== editingCardId &&
+      c.status === status &&
+      (c.contactEmail || '').trim().toLowerCase() === normalized
+    );
+  };
+
+  const checkDuplicateEmail = (email: string) => {
+    const inProgress = findDuplicateCard(email, 'IN_PROGRESS');
+    if (inProgress) {
+      setEmailWarning({ type: 'blocking', email: inProgress.contactEmail! });
+      return;
+    }
+    const inNew = findDuplicateCard(email, 'NEW');
+    if (inNew) {
+      setEmailWarning({ type: 'info', email: inNew.contactEmail! });
+      return;
+    }
+    setEmailWarning(null);
+  };
+
   const handleSubmit = async () => {
     if (!form.agentId || !form.requestText) return;
+    // Re-check on submit (not just blur) so a blocking duplicate can't slip
+    // through via autofill or a submit before the field ever blurred.
+    if (!overrideDuplicate) {
+      const inProgress = findDuplicateCard(form.contactEmail, 'IN_PROGRESS');
+      if (inProgress) {
+        setEmailWarning({ type: 'blocking', email: inProgress.contactEmail! });
+        return;
+      }
+    }
     setSubmitting(true);
     setFormError('');
     try {
@@ -698,7 +744,10 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       }
       setShowForm(false);
       setEditingId(null);
+      setEditingCardId(null);
       setForm({ agentId: '', contactEmail: '', profileNickname: '', requestText: '' });
+      setEmailWarning(null);
+      setOverrideDuplicate(false);
       await loadData();
       onDataChanged?.();
     } catch (e: any) {
@@ -811,7 +860,10 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
 
   const openNewForm = () => {
     setEditingId(null);
+    setEditingCardId(null);
     setFormError('');
+    setEmailWarning(null);
+    setOverrideDuplicate(false);
     setForm({
       agentId: user?.agentId || '',
       contactEmail: '',
@@ -925,7 +977,10 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                       highlightNew={isPeekHandler && col.status === 'NEW'}
                       onEdit={(item) => {
                         setEditingId(item.activeRequest.id);
+                        setEditingCardId(item.id);
                         setFormError('');
+                        setEmailWarning(null);
+                        setOverrideDuplicate(false);
                         setForm({
                           agentId: item.activeRequest.agentId,
                           contactEmail: item.contactEmail || '',
@@ -952,14 +1007,41 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       )}
 
       {/* Add / Edit Request Modal */}
-      <Modal open={showForm} onClose={() => { setShowForm(false); setEditingId(null); }}
+      <Modal open={showForm} onClose={() => { setShowForm(false); setEditingId(null); setEditingCardId(null); }}
         title={editingId ? 'Edit Peak Request' : 'New Peak Request'}>
         <div className="space-y-4">
           <div>
             <label className="label">Customer Email</label>
             <input className="input" value={form.contactEmail || ''}
-              onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))}
+              onChange={e => {
+                const value = e.target.value;
+                setForm(f => ({ ...f, contactEmail: value }));
+                setEmailWarning(null);
+                setOverrideDuplicate(false);
+              }}
+              onBlur={e => checkDuplicateEmail(e.target.value)}
               placeholder="support@example.com" />
+            {emailWarning?.type === 'blocking' && !overrideDuplicate && (
+              <div className="mt-1.5">
+                <p className="text-xs text-amber-600 flex items-start gap-1">
+                  <span className="shrink-0">⚠️</span>
+                  <span>Цей клієнт вже опрацьовується. Картка зі статусом In Progress вже існує для {emailWarning.email}.</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setOverrideDuplicate(true)}
+                  className="mt-1 text-[11px] text-slate-400 hover:text-slate-600 underline transition-colors"
+                >
+                  Все одно створити запит
+                </button>
+              </div>
+            )}
+            {emailWarning?.type === 'info' && (
+              <p className="mt-1.5 text-xs text-blue-500 flex items-start gap-1">
+                <span className="shrink-0">ℹ️</span>
+                <span>Запит для цього клієнта вже є у черзі (New). Перевір перед створенням нового.</span>
+              </p>
+            )}
           </div>
           <div>
             <label className="label">Profile nickname</label>
@@ -1004,11 +1086,11 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
           )}
           {formError && <p className="text-xs text-red-500">{formError}</p>}
           <div className="flex gap-3 pt-2">
-            <button className="btn-secondary flex-1" onClick={() => { setShowForm(false); setEditingId(null); }}>Cancel</button>
+            <button className="btn-secondary flex-1" onClick={() => { setShowForm(false); setEditingId(null); setEditingCardId(null); }}>Cancel</button>
             <button
               className="btn-accent flex-1"
               onClick={handleSubmit}
-              disabled={submitting || !form.agentId || !form.requestText}
+              disabled={submitting || !form.agentId || !form.requestText || (emailWarning?.type === 'blocking' && !overrideDuplicate)}
             >
               {submitting ? 'Submitting...' : editingId ? 'Save Changes' : 'Submit Request'}
             </button>
