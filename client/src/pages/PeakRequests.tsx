@@ -224,6 +224,10 @@ function ClientCard({
   // the compact chip view rather than staying open.
   const [showTagPicker, setShowTagPicker] = useState(false);
 
+  // In Progress + "Account problem" gets a subtle red accent so it stands
+  // out while scanning that column — not applied in New/Done even if tagged.
+  const accountProblemHighlight = card.status === 'IN_PROGRESS' && activeTags.includes('account_problem');
+
   // Sync when parent refreshes (e.g. after Edit modal save, or a new request lands)
   useEffect(() => {
     setComments(active.comments);
@@ -317,8 +321,13 @@ function ClientCard({
   }
 
   return (
-    <div className={`bg-white rounded-xl border p-2.5 shadow-sm hover:shadow-md transition-shadow
-      ${highlightNew ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-100'}`}>
+    <div
+      className={`bg-white rounded-xl border p-2.5 shadow-sm hover:shadow-md transition-shadow
+        ${highlightNew ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-100'}`}
+      style={accountProblemHighlight
+        ? { borderLeftWidth: '4px', borderLeftColor: '#E57373', backgroundColor: 'rgba(229, 115, 115, 0.05)' }
+        : undefined}
+    >
 
       {/* peek_handler new indicator */}
       {highlightNew && (
