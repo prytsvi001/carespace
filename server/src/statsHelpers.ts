@@ -3,7 +3,7 @@
 // GET /api/statistics (the Statistics tab) and GET /api/salary (hours worked
 // auto-pull) — kept in one place so the two never silently diverge.
 import prisma from './prisma';
-import { getRotationPair } from './rotationSchedule';
+import { getRotationPair, SHIFT_REASSIGNED } from './rotationSchedule';
 
 export function utcDateKey(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
@@ -128,7 +128,13 @@ export async function computeAgentStatsForRange(start: Date, end: Date): Promise
 
         const storedEv = storedForDay[agent.id];
 
-        if (storedEv && storedEv.leaveType !== 'SHIFT') {
+        if (storedEv && storedEv.leaveType === SHIFT_REASSIGNED) {
+          // This native rotation shift was dragged away to another day (see
+          // calendar.ts's PATCH /:id/reschedule) — it's now counted as an
+          // extra shift on whichever day it landed on instead, so crediting
+          // it again here would double-count it.
+          continue;
+        } else if (storedEv && storedEv.leaveType !== 'SHIFT') {
           // Leave day: always 8h; morning/night attribution follows rotation
           s.totalHours += 8;
           s.totalShifts += 1;
@@ -151,6 +157,8 @@ export async function computeAgentStatsForRange(start: Date, end: Date): Promise
       if (rotationAgentIds.has(agentId)) continue;
       const s = statsMap[agentId];
       if (!s) continue;
+
+      if (ev.leaveType === SHIFT_REASSIGNED) continue; // only ever stamped on a native rotation day — defensive
 
       const shiftType = ev.shiftType as 'MORNING' | 'NIGHT' | null;
       if (ev.leaveType === 'SHIFT') {

@@ -13,7 +13,7 @@ import {
   useDraggable,
 } from '@dnd-kit/core';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths } from 'date-fns';
-import { getAgents, getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../api';
+import { getAgents, getCalendarEvents, createCalendarEvent, updateCalendarEvent, rescheduleCalendarEvent, deleteCalendarEvent, fixVictoriaNickyAugustSwap } from '../api';
 import { Agent, CalendarEvent, LeaveType, ShiftType } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
@@ -245,6 +245,7 @@ function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentM
 
 export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChanged?: () => void; readOnly?: boolean }) {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'head' || user?.role === 'lead';
   const [viewMode, setViewMode] = useState<'all' | 'mine'>('all');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -254,6 +255,10 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // One-off admin action — see calendar.ts / api/index.ts for the full writeup.
+  const [showFixSwapConfirm, setShowFixSwapConfirm] = useState(false);
+  const [fixSwapStatus, setFixSwapStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [fixSwapResults, setFixSwapResults] = useState<string[]>([]);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [editForm, setEditForm] = useState<{ leaveType: LeaveType; shiftType: ShiftType | ''; isExtraShift: boolean; notes: string }>({
     leaveType: 'SHIFT', shiftType: 'MORNING', isExtraShift: false, notes: '',
@@ -317,33 +322,35 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
     const oldDate = format(new Date(draggedEvent.eventDate), 'yyyy-MM-dd');
     if (oldDate === newDate) return;
 
-    // If the target day already has a stored event for the same agent, swap their dates.
-    // Otherwise just move.
-    const targetEvent = events.find(
-      e => e.id !== draggedEvent.id &&
-           e.agentId === draggedEvent.agentId &&
-           format(new Date(e.eventDate), 'yyyy-MM-dd') === newDate
-    );
-
+    // Move-or-swap (and, when applicable, stamping the vacated native rotation
+    // day) all happens atomically server-side — see calendar.ts's
+    // PATCH /:id/reschedule — rather than as two independent client-issued PUTs.
     try {
-      if (targetEvent) {
-        const [updatedDragged, updatedTarget] = await Promise.all([
-          updateCalendarEvent(draggedEvent.id, { eventDate: newDate }),
-          updateCalendarEvent(targetEvent.id, { eventDate: oldDate }),
-        ]);
-        setEvents(prev => prev.map(e => {
-          if (e.id === updatedDragged.id) return updatedDragged;
-          if (e.id === updatedTarget.id) return updatedTarget;
-          return e;
-        }));
-      } else {
-        const updated = await updateCalendarEvent(draggedEvent.id, { eventDate: newDate });
-        setEvents(prev => prev.map(e => (e.id === updated.id ? updated : e)));
-      }
+      const { moved, swappedWith } = await rescheduleCalendarEvent(draggedEvent.id, newDate);
+      setEvents(prev => prev.map(e => {
+        if (e.id === moved.id) return moved;
+        if (swappedWith && e.id === swappedWith.id) return swappedWith;
+        return e;
+      }));
       onDataChanged?.();
     } catch (e) {
       console.error(e);
       await loadData();
+    }
+  };
+
+  const handleFixVictoriaNickySwap = async () => {
+    setShowFixSwapConfirm(false);
+    setFixSwapStatus('running');
+    try {
+      const { results } = await fixVictoriaNickyAugustSwap();
+      setFixSwapResults(results);
+      setFixSwapStatus('done');
+      await loadData();
+      onDataChanged?.();
+    } catch (e) {
+      console.error(e);
+      setFixSwapStatus('error');
     }
   };
 
@@ -416,6 +423,29 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
           <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>
             {readOnly ? 'View-only mode' : 'Drag & drop to reschedule'}
           </p>
+          {isAdmin && fixSwapStatus === 'idle' && (
+            <button
+              type="button"
+              onClick={() => setShowFixSwapConfirm(true)}
+              className="text-xs font-medium text-slate-400 hover:text-slate-600 underline mt-0.5"
+            >
+              Fix Aug 4/7 ↔ 18/19 shift swap (Victoria/Nicky)
+            </button>
+          )}
+          {fixSwapStatus === 'running' && (
+            <p className="text-xs text-slate-400 mt-0.5">Applying fix…</p>
+          )}
+          {fixSwapStatus === 'done' && (
+            <div className="text-xs mt-0.5" style={{ color: '#3ba648' }}>
+              <p className="font-medium">✓ Fix applied</p>
+              <ul className="list-disc pl-4" style={{ color: 'rgba(14,14,14,0.45)' }}>
+                {fixSwapResults.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+          {fixSwapStatus === 'error' && (
+            <p className="text-xs text-red-500 mt-0.5">Failed to apply fix — check console and try again.</p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button className="btn-secondary px-3" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>‹</button>
@@ -666,6 +696,13 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
         message="Delete this calendar entry permanently?"
         onConfirm={handleConfirmDelete}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={showFixSwapConfirm}
+        message="Apply the one-off correction for the Aug 4/7 (Nicky → Victoria) and Aug 18/19 (Victoria → Nicky) shift swap? This updates calendar and stats data directly — safe to run more than once."
+        onConfirm={handleFixVictoriaNickySwap}
+        onCancel={() => setShowFixSwapConfirm(false)}
       />
     </div>
   );
