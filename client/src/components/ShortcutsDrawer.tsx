@@ -13,8 +13,55 @@ import {
   getShortcutTags, reorderShortcutTags, recolorShortcutTag,
   getPersonalShortcuts, createPersonalShortcut, updatePersonalShortcut, deletePersonalShortcut,
   pinPersonalShortcut, getPersonalShortcutTags, reorderPersonalShortcutTags, recolorPersonalShortcutTag,
+  bulkImportVictoriaTemplates,
 } from '../api';
 import { ShortcutsPanel, ShortcutsPanelApi } from './ShortcutsPanel';
+
+// One-off banner (see personalShortcuts.ts's bulk-import-victoria-templates
+// route) — only ever shown to that one account, since the templates are
+// hers. Remove this + the API call + the server route once the import is
+// confirmed; it has no ongoing purpose.
+const VICTORIA_BULK_IMPORT_EMAIL = 'victoria_pryts@struktura.io';
+
+function BulkImportBanner({ onToast }: { onToast: (msg: string) => void }) {
+  const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [summary, setSummary] = useState<{ created: number; skipped: number; total: number } | null>(null);
+
+  if (status === 'done') {
+    return (
+      <div className="mx-4 mt-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'rgba(161,249,110,0.15)', color: 'rgba(14,14,14,0.65)' }}>
+        ✓ Imported {summary?.created} new template{summary?.created === 1 ? '' : 's'}
+        {summary && summary.skipped > 0 ? ` (${summary.skipped} already present, skipped)` : ''}.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-4 mt-3 flex items-center justify-between gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(14,14,14,0.04)' }}>
+      <span className="text-xs text-slate-500">Import your 101 email templates from the shared CSV?</span>
+      <button
+        type="button"
+        disabled={status === 'running'}
+        onClick={async () => {
+          setStatus('running');
+          try {
+            const result = await bulkImportVictoriaTemplates();
+            setSummary(result);
+            setStatus('done');
+            onToast(`Imported ${result.created} template${result.created === 1 ? '' : 's'}`);
+          } catch (e) {
+            console.error(e);
+            setStatus('error');
+          }
+        }}
+        className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors hover:brightness-95 disabled:opacity-50"
+        style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+      >
+        {status === 'running' ? 'Importing…' : status === 'error' ? 'Retry import' : 'Import'}
+      </button>
+    </div>
+  );
+}
 
 type DrawerTab = 'templates' | 'personal';
 
@@ -133,14 +180,17 @@ export function ShortcutsDrawer() {
             onToast={setToastMessage}
           />
         ) : (
-          <ShortcutsPanel
-            key="personal"
-            facetMode="direct"
-            canManage
-            cacheNamespace="personal"
-            api={personalApi}
-            onToast={setToastMessage}
-          />
+          <>
+            {user?.email === VICTORIA_BULK_IMPORT_EMAIL && <BulkImportBanner onToast={setToastMessage} />}
+            <ShortcutsPanel
+              key="personal"
+              facetMode="direct"
+              canManage
+              cacheNamespace="personal"
+              api={personalApi}
+              onToast={setToastMessage}
+            />
+          </>
         )}
       </div>
 

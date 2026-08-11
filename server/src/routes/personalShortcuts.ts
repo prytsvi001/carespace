@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
 import prisma from '../prisma';
+import victoriaEmailTemplates from '../data/victoria-email-templates.json';
 
 const router = Router();
 router.use(requireAuth);
@@ -138,6 +139,64 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to create personal shortcut' });
+  }
+});
+
+// POST /api/personal-shortcuts/bulk-import-victoria-templates — one-off
+// import of ~100 email templates from a CSV Victoria shared in chat. Every
+// other route in this file scopes to getUserId(req) (the caller's own
+// account) with no admin override anywhere — this one keeps that same
+// self-only scoping (still only ever writes to the caller's own list), and
+// additionally checks the caller's email specifically, purely as a guard so
+// a teammate poking around the API can't accidentally seed Victoria's
+// personal templates into their own list via this route's fixed data file.
+// Idempotent by (title, content) pair — safe to click more than once.
+// Remove this route + its data file + its button in ShortcutsDrawer.tsx once
+// the import is confirmed; it has no ongoing purpose.
+const VICTORIA_BULK_IMPORT_EMAIL = 'victoria_pryts@struktura.io';
+
+router.post('/bulk-import-victoria-templates', async (req: Request, res: Response) => {
+  try {
+    const user = req.user as Express.User;
+    if (user.email !== VICTORIA_BULK_IMPORT_EMAIL) {
+      return res.status(403).json({ error: 'Not allowed' });
+    }
+    const userId = user.id;
+
+    const templates = victoriaEmailTemplates as { title: string; content: string }[];
+
+    const existing = await (prisma as any).personalShortcut.findMany({
+      where: { userId },
+      select: { title: true, content: true },
+    });
+    const existingKeys = new Set(existing.map((e: { title: string; content: string }) => `${e.title}||${e.content}`));
+
+    let created = 0;
+    let skipped = 0;
+    for (const t of templates) {
+      const key = `${t.title}||${t.content}`;
+      if (existingKeys.has(key)) { skipped++; continue; }
+
+      const variants: Variant[] = [{ id: randomUUID(), label: 'Variant 1', content: t.content }];
+      await (prisma as any).personalShortcut.create({
+        data: {
+          userId,
+          title: t.title,
+          type: 'text',
+          content: t.content,
+          variants: JSON.stringify(variants),
+          product: '',
+          topic: '',
+        },
+      });
+      existingKeys.add(key);
+      created++;
+    }
+
+    return res.json({ success: true, created, skipped, total: templates.length });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to bulk-import templates' });
   }
 });
 

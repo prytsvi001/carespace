@@ -495,6 +495,14 @@ export const recolorPersonalShortcutTag = (kind: 'product' | 'topic', name: stri
   api.patch(`/personal-shortcuts/tags/${kind}/${encodeURIComponent(name)}/color`, { color })
     .then((r) => { invalidateCache('shortcut-tags:personal'); return r.data; });
 
+// One-off (see personalShortcuts.ts) — remove alongside its button once the
+// import is confirmed.
+export const bulkImportVictoriaTemplates = () =>
+  api.post('/personal-shortcuts/bulk-import-victoria-templates').then((r) => {
+    invalidateCache('shortcuts:personal');
+    return r.data as { success: boolean; created: number; skipped: number; total: number };
+  });
+
 // ─── Duty status (Peek Requests) ────────────────────────────────────────────
 export interface DutyStatus {
   myOnDuty: boolean;
