@@ -47,6 +47,13 @@ card (and reopen the popup) to pick up the change.
   `host_permissions` in `manifest.json`) — there's no separate dev/staging
   target, since a Chrome extension can't be pointed at `localhost` for
   a teammate's non-technical machine.
-- Personal (private) shortcuts are intentionally **not** included — this
-  extension only surfaces the shared, team-wide shortcut list from
-  `GET /api/shortcuts`.
+- Both the shared team-wide list (`GET /api/shortcuts`) and the signed-in
+  user's own private list (`GET /api/personal-shortcuts`, already scoped
+  server-side to that user's `userId`) are fetched and merged — personal
+  items show a small "🔒 Personal" badge and their own "MY PERSONAL" section
+  in the default (no-query) view, but are otherwise searchable and
+  pinnable just like team shortcuts. No one else's personal items are ever
+  reachable from here.
+- Category browse chips are team-only — personal items don't have a
+  `category`, only `product`/`topic` — but they're still fully included in
+  the default view and in search results.

@@ -8,6 +8,7 @@ import {
   fetchAuthUser,
   getCachedShortcuts,
   isCacheFresh,
+  pinPersonalShortcut,
   pinShortcut,
   refreshShortcutsCache,
   updateCachedShortcut,
@@ -109,9 +110,14 @@ function ResultRow({
 }) {
   const isVariant = row.kind === 'variant';
   const isLink = !isVariant && row.shortcut.type === 'link';
+  const isPersonal = !isVariant && row.shortcut.scope === 'personal';
   const icon = isVariant ? '' : row.shortcut.type === 'text' ? '📋' : '🔗';
   const title = isVariant ? row.variant.label : row.shortcut.title;
-  const subtitle = isVariant ? null : row.shortcut.category || null;
+  // Personal items have no `category` (only product/topic) — fall back to
+  // those so the subtitle line isn't just blank for them.
+  const subtitle = isVariant
+    ? null
+    : row.shortcut.category || [row.shortcut.product, row.shortcut.topic].filter(Boolean).join(' · ') || null;
   const pinned = !isVariant && row.shortcut.pinned;
 
   const previewText = isVariant ? row.variant.content : row.shortcut.content;
@@ -143,7 +149,11 @@ function ResultRow({
             </span>
             {subtitle && <span className="block text-xs text-slate-400 truncate">{subtitle}</span>}
           </span>
-          {copied && <span className="text-xs font-medium shrink-0" style={{ color: '#3ba648' }}>Copied! ✓</span>}
+          {copied ? (
+            <span className="text-xs font-medium shrink-0" style={{ color: '#3ba648' }}>Copied! ✓</span>
+          ) : isPersonal ? (
+            <span className="text-[10px] font-medium text-slate-400 shrink-0 px-1.5 py-0.5 rounded bg-slate-100">🔒 Personal</span>
+          ) : null}
         </button>
       </div>
       {previewOpen && previewText && (
@@ -273,16 +283,19 @@ function App() {
     const trimmed = query.trim();
     if (!trimmed) {
       if (category) {
-        // One flat group, both types mixed — this is the "both types appear
-        // together within the same category" browse mode.
-        const items = shortcuts.filter((s) => s.category === category).sort(byPinnedFirst);
+        // Category chips are team-only (personal items have no `category`,
+        // only product/topic) — one flat group, both text+link types mixed,
+        // is the "both types appear together within the same category" browse mode.
+        const items = shortcuts.filter((s) => s.scope === 'team' && s.category === category).sort(byPinnedFirst);
         return [{ label: null, icon: null, items }];
       }
-      const templates = shortcuts.filter((s) => s.type === 'text').sort(byPinnedFirst).slice(0, 5);
-      const links = shortcuts.filter((s) => s.type === 'link').sort(byPinnedFirst).slice(0, 5);
+      const templates = shortcuts.filter((s) => s.scope === 'team' && s.type === 'text').sort(byPinnedFirst).slice(0, 5);
+      const links = shortcuts.filter((s) => s.scope === 'team' && s.type === 'link').sort(byPinnedFirst).slice(0, 5);
+      const personal = shortcuts.filter((s) => s.scope === 'personal').sort(byPinnedFirst).slice(0, 5);
       return [
         { label: 'TEMPLATES', icon: '📋', items: templates },
         { label: 'SHORTCUTS', icon: '⌨️', items: links },
+        { label: 'MY PERSONAL', icon: '🔒', items: personal },
       ];
     }
     const q = trimmed.toLowerCase();
@@ -360,7 +373,8 @@ function App() {
   const handleTogglePin = useCallback((s: Shortcut) => {
     const next = !s.pinned;
     setShortcuts((prev) => prev && prev.map((x) => (x.id === s.id ? { ...x, pinned: next } : x)));
-    pinShortcut(s.id, next)
+    const pin = s.scope === 'personal' ? pinPersonalShortcut : pinShortcut;
+    pin(s.id, next)
       .then(() => updateCachedShortcut(s.id, { pinned: next }))
       .catch(() => {
         setShortcuts((prev) => prev && prev.map((x) => (x.id === s.id ? { ...x, pinned: !next } : x)));
