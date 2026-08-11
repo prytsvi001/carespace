@@ -155,9 +155,16 @@ function ResultRow({
           >
             {previewText}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Click again to {isLink ? 'open' : 'copy'}
-          </p>
+          <div className="flex justify-end mt-1.5">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onActivate(); }}
+              className="text-[11px] font-semibold px-2.5 py-1 rounded-md text-ink transition-colors hover:brightness-95"
+              style={{ backgroundColor: '#A1F96E' }}
+            >
+              {isLink ? '🔗 Open' : '📋 Copy'}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -183,6 +190,7 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [query, setQuery] = useState('');
+  const [category, setCategory] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -251,11 +259,25 @@ function App() {
     inputRef.current?.focus();
   }, [authChecked]);
 
+  // Distinct categories actually present, for the browse-by-category chips —
+  // text and link shortcuts share the same `category` field, so a category's
+  // chip naturally covers both types with no separate plumbing.
+  const categories = useMemo(() => {
+    if (!shortcuts) return [];
+    return Array.from(new Set(shortcuts.map((s) => s.category).filter(Boolean))).sort();
+  }, [shortcuts]);
+
   const groups = useMemo(() => {
     if (!shortcuts) return null;
     const byPinnedFirst = (a: Shortcut, b: Shortcut) => Number(b.pinned) - Number(a.pinned);
     const trimmed = query.trim();
     if (!trimmed) {
+      if (category) {
+        // One flat group, both types mixed — this is the "both types appear
+        // together within the same category" browse mode.
+        const items = shortcuts.filter((s) => s.category === category).sort(byPinnedFirst);
+        return [{ label: null, icon: null, items }];
+      }
       const templates = shortcuts.filter((s) => s.type === 'text').sort(byPinnedFirst).slice(0, 5);
       const links = shortcuts.filter((s) => s.type === 'link').sort(byPinnedFirst).slice(0, 5);
       return [
@@ -269,7 +291,7 @@ function App() {
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score || byPinnedFirst(a.s, b.s));
     return [{ label: null, icon: null, items: ranked.map((r) => r.s) }];
-  }, [shortcuts, query]);
+  }, [shortcuts, query, category]);
 
   const flatRows = useMemo(() => {
     if (!groups) return [];
@@ -279,7 +301,7 @@ function App() {
   useEffect(() => {
     setSelectedIndex(0);
     setPreviewOpenKey(null);
-  }, [query, expandedId]);
+  }, [query, expandedId, category]);
 
   useEffect(() => {
     if (selectedIndex >= flatRows.length && flatRows.length > 0) {
@@ -442,6 +464,34 @@ function App() {
               )}
             </div>
           </div>
+
+          {!query.trim() && categories.length > 0 && (
+            <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={() => setCategory(null)}
+                className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
+                  category === null ? 'text-ink' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}
+                style={category === null ? { backgroundColor: '#A1F96E' } : undefined}
+              >
+                All
+              </button>
+              {categories.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategory(c)}
+                  className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
+                    category === c ? 'text-ink' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                  style={category === c ? { backgroundColor: '#A1F96E' } : undefined}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto">
             {shortcutsLoading ? (
