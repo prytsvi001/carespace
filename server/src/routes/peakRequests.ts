@@ -42,40 +42,27 @@ function todayDayMarker(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-// Credit-assignment rule: if whoever moved the card to Done is themselves one
-// of the 3 tracked peek agents, they're always self-credited (covers "Julia
-// resolves it herself" as just a special case of this, not a separate rule).
-// Otherwise (e.g. a regular support agent resolved it), defer to the Peek
-// Calendar for that day — but only if exactly one agent was scheduled; 0 or
-// 2+ is too ambiguous to guess, so no credit is recorded.
+// Credit-assignment rule: only counts when whoever moved the card to Done is
+// themselves one of the 3 tracked peek agents (self-credited). A regular
+// support agent resolving a card records no credit at all — this used to
+// fall back to crediting whoever was the sole agent scheduled on the Peek
+// Calendar that day, but that guessed credit for work they didn't actually
+// do (see the August 2026 Julia Manson correction — request from Victoria
+// Davis to only count a peek agent's own resolutions).
 // Never allowed to throw past this point — credit-tracking must not break
 // the status change it's attached to.
 async function recordResolutionCredit(clientCardId: string, sessionUser: Express.User) {
   try {
     const actor = await prisma.user.findUnique({ where: { id: sessionUser.id } });
-    if (!actor) return;
-
-    let creditedUserId: string | null;
-    let creditedName: string;
-
-    if (isTrackedAgent(actor)) {
-      creditedUserId = actor.id;
-      creditedName = actor.name;
-    } else {
-      const day = todayDayMarker();
-      const entries = await prisma.peekCalendarEntry.findMany({ where: { eventDate: day }, include: { user: true } });
-      if (entries.length !== 1) return;
-      creditedUserId = entries[0].userId;
-      creditedName = entries[0].user.name;
-    }
+    if (!actor || !isTrackedAgent(actor)) return;
 
     await prisma.peekResolutionCredit.create({
       data: {
         clientCardId,
         movedByUserId: actor.id,
         movedByName: actor.name,
-        creditedUserId,
-        creditedName,
+        creditedUserId: actor.id,
+        creditedName: actor.name,
         resolvedDate: todayDayMarker(),
       },
     });

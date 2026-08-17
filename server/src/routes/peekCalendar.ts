@@ -17,6 +17,11 @@ function canEdit(u: { role: string; peekCalendarAccess: boolean }): boolean {
   return u.role === 'peek_handler' || u.role === 'head' || u.role === 'lead' || u.peekCalendarAccess;
 }
 
+function isAdmin(req: Request): boolean {
+  const role = (req.user as Express.User).role;
+  return role === 'head' || role === 'lead';
+}
+
 // Only these get scheduled on the calendar: the two peek_handlers plus whichever
 // non-peek_handler user has been granted peekCalendarAccess (currently Julia Manson).
 function isAssignable(u: { role: string; peekCalendarAccess: boolean }): boolean {
@@ -183,6 +188,57 @@ router.get('/resolution-stats', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to fetch resolution stats' });
+  }
+});
+
+// POST /api/peek-calendar/fix-august-2026-julia-credits — head/lead only,
+// one-off admin action (button in PeekRequestsCalendar.tsx). Before this fix,
+// a resolution by a regular support agent fell back to crediting whoever was
+// the sole peek agent scheduled that day, even though they never touched the
+// request. Julia Manson was that sole-scheduled person often enough in August
+// 2026 that most of her "resolved" count was actually other people's work
+// (flagged by Victoria Davis). Removes exactly those over-credited rows —
+// distinguished from her real resolutions by movedByName !== creditedName,
+// since a genuine self-resolution always has the two match (see
+// recordResolutionCredit in peakRequests.ts) — and leaves everything else,
+// including any similar fallback credits for Iryna/Victoria H., untouched.
+//
+// Idempotent — the bogus rows are gone after the first run, so a second
+// click just reports 0 removed. Delete this route (and its button) once
+// August's numbers have been confirmed correct; it has no ongoing purpose.
+router.post('/fix-august-2026-julia-credits', async (req: Request, res: Response) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Not allowed' });
+
+    const start = new Date(Date.UTC(2026, 7, 1));
+    const end = new Date(Date.UTC(2026, 8, 1));
+
+    const creditedToJulia = await prisma.peekResolutionCredit.findMany({
+      where: { creditedName: 'Julia Manson', resolvedDate: { gte: start, lt: end } },
+    });
+    const totalBefore = creditedToJulia.length;
+    const actuallyHers = creditedToJulia.filter((c) => c.movedByName === 'Julia Manson');
+    const bogus = creditedToJulia.filter((c) => c.movedByName !== 'Julia Manson');
+
+    if (bogus.length > 0) {
+      await prisma.peekResolutionCredit.deleteMany({ where: { id: { in: bogus.map((b) => b.id) } } });
+    }
+
+    const byMover = new Map<string, number>();
+    for (const b of bogus) byMover.set(b.movedByName, (byMover.get(b.movedByName) ?? 0) + 1);
+
+    const results = [
+      `Before fix: ${totalBefore} request(s) credited to Julia Manson in August 2026.`,
+      `Actually resolved by Julia herself: ${actuallyHers.length}.`,
+      `Removed ${bogus.length} incorrect credit(s) assigned via the old calendar-fallback rule.`,
+      ...Array.from(byMover.entries()).map(([name, count]) => `— ${count} of those were actually resolved by ${name}`),
+      `Julia Manson's corrected August 2026 total: ${actuallyHers.length}.`,
+    ];
+
+    return res.json({ success: true, removed: bogus.length, correctedTotal: actuallyHers.length, results });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to apply fix' });
   }
 });
 

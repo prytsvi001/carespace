@@ -18,9 +18,11 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isTod
 import {
   getPeekCalendarAssignees, getPeekCalendarEntries, getPeekResolutionStats,
   createPeekCalendarEntry, updatePeekCalendarEntry, deletePeekCalendarEntry,
+  fixAugustJuliaCredits,
 } from '../api';
 import { PeekCalendarEntry, PeekResolutionStats } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 
 // Each agent's color is pinned to an existing Support Calendar event color, per
 // request — Iryna = Night Shift, Victoria H. = Sick leave without note, Julia =
@@ -162,6 +164,8 @@ function DayCell({ date, entries, resolvedCounts, onAdd, onRequestDelete, onEdit
 }
 
 export default function PeekRequestsCalendar() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'head' || user?.role === 'lead';
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [assignees, setAssignees] = useState<{ id: string; name: string }[]>([]);
   const [entries, setEntries] = useState<PeekCalendarEntry[]>([]);
@@ -175,6 +179,10 @@ export default function PeekRequestsCalendar() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editingEntry, setEditingEntry] = useState<PeekCalendarEntry | null>(null);
   const [editHours, setEditHours] = useState('');
+  // One-off admin action — see peekCalendar.ts's fix-august-2026-julia-credits for the full writeup.
+  const [showFixCreditConfirm, setShowFixCreditConfirm] = useState(false);
+  const [fixCreditStatus, setFixCreditStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [fixCreditResults, setFixCreditResults] = useState<string[]>([]);
 
   const [form, setForm] = useState({ userId: '', hours: '' });
 
@@ -282,6 +290,20 @@ export default function PeekRequestsCalendar() {
     }
   };
 
+  const handleFixJuliaCredits = async () => {
+    setShowFixCreditConfirm(false);
+    setFixCreditStatus('running');
+    try {
+      const { results } = await fixAugustJuliaCredits();
+      setFixCreditResults(results);
+      setFixCreditStatus('done');
+      await loadData();
+    } catch (e) {
+      console.error(e);
+      setFixCreditStatus('error');
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -289,6 +311,29 @@ export default function PeekRequestsCalendar() {
         <div>
           <h2 className="text-xl font-bold text-ink">Peek Requests Calendar</h2>
           <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>Drag & drop to reschedule</p>
+          {isAdmin && fixCreditStatus === 'idle' && (
+            <button
+              type="button"
+              onClick={() => setShowFixCreditConfirm(true)}
+              className="text-xs font-medium text-slate-400 hover:text-slate-600 underline mt-0.5"
+            >
+              Fix Julia Manson's August 2026 resolved count
+            </button>
+          )}
+          {fixCreditStatus === 'running' && (
+            <p className="text-xs text-slate-400 mt-0.5">Applying fix…</p>
+          )}
+          {fixCreditStatus === 'done' && (
+            <div className="text-xs mt-0.5" style={{ color: '#3ba648' }}>
+              <p className="font-medium">✓ Fix applied</p>
+              <ul className="list-disc pl-4" style={{ color: 'rgba(14,14,14,0.45)' }}>
+                {fixCreditResults.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+          {fixCreditStatus === 'error' && (
+            <p className="text-xs text-red-500 mt-0.5">Failed to apply fix — check console and try again.</p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button className="btn-secondary px-3" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>‹</button>
@@ -451,6 +496,13 @@ export default function PeekRequestsCalendar() {
         message="Delete this calendar entry permanently?"
         onConfirm={handleConfirmDelete}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={showFixCreditConfirm}
+        message="Remove August 2026 resolution credits that were assigned to Julia Manson under the old calendar-fallback rule (i.e. a support agent actually closed the request, not her)? Her genuine self-resolved credits are left untouched. Safe to run more than once."
+        onConfirm={handleFixJuliaCredits}
+        onCancel={() => setShowFixCreditConfirm(false)}
       />
     </div>
   );
