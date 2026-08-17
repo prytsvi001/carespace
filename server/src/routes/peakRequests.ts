@@ -477,4 +477,56 @@ router.delete('/cards/delete/:id', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/peak-requests/analysis/all-tagged — head/lead only, read-only,
+// temporary audit for Victoria Davis. The Blocked/Lost access tab on the
+// board (PeakRequests.tsx) only ever looks at each card's ACTIVE request's
+// tags, since that's the current live issue — this checks every ClientCard
+// (any status, archived included) across its FULL history to catch the one
+// case the tab can't show: a card whose active request has no tag but an
+// older, already-resolved request under the same card once carried one.
+// Delete this route once the reconciliation is confirmed; no ongoing purpose.
+router.get('/analysis/all-tagged', async (req: Request, res: Response) => {
+  try {
+    const sessionUser = req.user as Express.User;
+    const me = await prisma.user.findUnique({ where: { id: sessionUser.id } });
+    if (!me || !(me.role === 'head' || me.role === 'lead')) return res.status(403).json({ error: 'Not allowed' });
+
+    const cards = await prisma.clientCard.findMany({ include: CARD_INCLUDE });
+
+    const visibleInTab: { clientCardId: string; profileNickname: string | null; contactEmail: string | null; status: string; archived: boolean; tags: string[] }[] = [];
+    const hiddenFromTab: { clientCardId: string; profileNickname: string | null; contactEmail: string | null; status: string; archived: boolean; taggedRequestTags: string[]; taggedRequestCreatedAt: Date }[] = [];
+
+    for (const card of cards) {
+      const [active, ...history] = card.requests;
+      const activeTags = (active?.tags || '').split(',').filter(Boolean);
+      if (hasNonCountableTag(active?.tags)) {
+        visibleInTab.push({
+          clientCardId: card.id, profileNickname: card.profileNickname, contactEmail: card.contactEmail,
+          status: card.status, archived: card.archived, tags: activeTags,
+        });
+        continue;
+      }
+      const taggedHistoryEntry = history.find((h) => hasNonCountableTag(h.tags));
+      if (taggedHistoryEntry) {
+        hiddenFromTab.push({
+          clientCardId: card.id, profileNickname: card.profileNickname, contactEmail: card.contactEmail,
+          status: card.status, archived: card.archived,
+          taggedRequestTags: taggedHistoryEntry.tags.split(',').filter(Boolean),
+          taggedRequestCreatedAt: taggedHistoryEntry.createdAt,
+        });
+      }
+    }
+
+    return res.json({
+      visibleCount: visibleInTab.length,
+      hiddenCount: hiddenFromTab.length,
+      visibleInTab,
+      hiddenFromTab,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to run audit' });
+  }
+});
+
 export default router;

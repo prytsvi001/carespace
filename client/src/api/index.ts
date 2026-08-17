@@ -172,6 +172,16 @@ export const archivePeakRequestCard = (cardId: string) =>
 export const deletePeakRequestCard = (cardId: string) =>
   api.delete(`/peak-requests/cards/delete/${cardId}`).then(r => r.data);
 
+// Temporary read-only audit (head/lead only) — see peakRequests.ts's
+// analysis/all-tagged for the full writeup. Remove once reconciled.
+export const getAllTaggedAudit = () =>
+  api.get('/peak-requests/analysis/all-tagged').then(r => r.data as {
+    visibleCount: number;
+    hiddenCount: number;
+    visibleInTab: { clientCardId: string; profileNickname: string | null; contactEmail: string | null; status: string; archived: boolean; tags: string[] }[];
+    hiddenFromTab: { clientCardId: string; profileNickname: string | null; contactEmail: string | null; status: string; archived: boolean; taggedRequestTags: string[]; taggedRequestCreatedAt: string }[];
+  });
+
 // ─── Statistics ────────────────────────────────────────────────────────────
 export const getStatistics = (params?: { year?: number; month?: number; dateFrom?: string; dateTo?: string }) =>
   api.get('/statistics', { params }).then(r => r.data);
