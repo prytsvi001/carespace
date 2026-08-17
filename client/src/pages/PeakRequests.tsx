@@ -1006,10 +1006,13 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   // Starred cards always lead their column; within each of those two groups,
   // ordered by the active request's createdAt (the same timestamp shown on
   // the card as "Created: ..."), direction per the column's own toggle.
+  // Excludes Blocked/Lost access-tagged cards — those move exclusively to
+  // their own tab the moment the tag is applied, out of every status column
+  // (including "All"), and reappear here the moment it's removed.
   const byStatus = (status: RequestStatus) => {
     const dir = sortDirection[status];
     return cards
-      .filter(c => c.status === status)
+      .filter(c => c.status === status && !cardHasCrossStatusTag(c))
       .sort((a, b) => {
         if (a.starred !== b.starred) return a.starred ? -1 : 1;
         const diff = new Date(b.activeRequest.createdAt).getTime() - new Date(a.activeRequest.createdAt).getTime();
