@@ -105,10 +105,6 @@ export const deletePeekCalendarEntry = (id: string) =>
 export const getPeekResolutionStats = (params?: { year?: number; month?: number }) =>
   api.get('/peek-calendar/resolution-stats', { params }).then(r => r.data);
 
-// One-off admin action — see peekCalendar.ts's fix-august-2026-peek-credits for the full writeup.
-export const fixAugustPeekCredits = () =>
-  api.post('/peek-calendar/fix-august-2026-peek-credits').then(r => r.data as { success: boolean; removed: number; results: string[] });
-
 // ─── QA ────────────────────────────────────────────────────────────────────
 export const getQAEntries = (params?: { channel?: string; dateFrom?: string; dateTo?: string; limit?: number; offset?: number; includeArchived?: boolean }) =>
   api.get('/qa', { params }).then(r => r.data);
