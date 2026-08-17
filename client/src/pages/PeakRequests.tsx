@@ -1,6 +1,6 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User, ArrowUp, ArrowDown, Eye } from 'lucide-react';
+import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User, ArrowUp, ArrowDown, Eye, X } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
@@ -41,6 +41,15 @@ const TAGS = [
 
 type TagKey = typeof TAGS[number]['key'];
 
+// "Blocked" / "Lost access" outcomes matter across every status column — a
+// card can pick either tag up while New, In Progress, or Done. Same tag keys
+// used server-side for the resolution-credit exclusion (peakRequests.ts).
+const CROSS_STATUS_TAGS: TagKey[] = ['blocked', 'lost_access'];
+const cardHasCrossStatusTag = (card: ClientCardView) => {
+  const keys = (card.activeRequest.tags || '').split(',').filter(Boolean);
+  return keys.some(k => CROSS_STATUS_TAGS.includes(k as TagKey));
+};
+
 const REQUEST_PRESETS = [
   'Profile temporarily unavailable',
   'Refresh error',
@@ -60,6 +69,15 @@ const STATUS_LABEL: Record<RequestStatus, string> = {
   IN_PROGRESS: 'In Progress',
   DONE: 'Done',
 };
+
+// Same hues as each column's own bg (STATUS_COLS above), just promoted to a
+// small badge — lets a flat search result still read as "which column".
+const STATUS_BADGE_STYLE: Record<RequestStatus, React.CSSProperties> = {
+  NEW:          { backgroundColor: '#EFF6FF', color: '#2563EB' },
+  IN_PROGRESS:  { backgroundColor: '#FFFBEB', color: '#D97706' },
+  DONE:         { backgroundColor: '#ECFDF5', color: '#059669' },
+};
+const ARCHIVED_BADGE_STYLE: React.CSSProperties = { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.45)' };
 
 // One primary action per column — status is already conveyed by the column
 // itself, so the card no longer needs its own status badge/dropdown. Reopen
@@ -181,7 +199,7 @@ function EyeCheckButton({ card, canCheck, onCheck }: {
 
 function ClientCard({
   card, onEdit, onStatusChange, onToggleStar, onArchive, onDelete, onFieldsUpdated, onCheckAccount,
-  highlightNew, showEyeCheck, canCheckAccounts,
+  highlightNew, showEyeCheck, canCheckAccounts, showStatusBadge,
 }: {
   card: ClientCardView;
   onEdit: (card: ClientCardView) => void;
@@ -194,6 +212,10 @@ function ClientCard({
   highlightNew?: boolean;
   showEyeCheck?: boolean;
   canCheckAccounts?: boolean;
+  // Shown in cross-status views (e.g. the Blocked/Lost access tab) where the
+  // card isn't sitting inside its own status column, so there's nothing else
+  // to convey which one it's actually in — same badge as SearchResultCard.
+  showStatusBadge?: boolean;
 }) {
   const [confirm, setConfirm]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -334,6 +356,15 @@ function ClientCard({
         <div className="flex items-center gap-1.5 mb-1.5">
           <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse inline-block" />
           <span className="text-[10px] text-blue-400 font-semibold uppercase tracking-wide">New</span>
+        </div>
+      )}
+
+      {/* Status badge — cross-status views only (there's no column here to convey it) */}
+      {showStatusBadge && (
+        <div className="flex justify-end mb-1">
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={STATUS_BADGE_STYLE[card.status]}>
+            {STATUS_LABEL[card.status]}
+          </span>
         </div>
       )}
 
@@ -602,6 +633,65 @@ function ClientCard({
   );
 }
 
+// ── SearchResultCard ──────────────────────────────────────────────────────────
+// Flat, read-only row for the global search overlay — spans every status and
+// archived cards alike, so unlike ClientCard it always shows its own status
+// (there's no column to convey that) and skips the interactive bits (star,
+// comments, primary action) that only make sense inside the board.
+
+function SearchResultCard({ card, onOpen }: { card: ClientCardView; onOpen: (card: ClientCardView) => void }) {
+  const tagKeys = (card.activeRequest.tags || '').split(',').filter(Boolean) as TagKey[];
+  const badgeStyle = card.archived ? ARCHIVED_BADGE_STYLE : STATUS_BADGE_STYLE[card.status];
+  const badgeLabel = card.archived ? 'Archived' : STATUS_LABEL[card.status];
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(card)}
+      className="w-full text-left bg-white rounded-xl border border-slate-100 p-2.5 shadow-sm hover:shadow-md transition-shadow"
+    >
+      <div className="flex items-center gap-1.5 justify-between mb-1">
+        {card.contactEmail ? (
+          <span className="flex-1 min-w-0 flex items-center gap-1 truncate" style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(14,14,14,0.65)' }}>
+            <Mail size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+            <span className="truncate">{card.contactEmail}</span>
+          </span>
+        ) : (
+          <span className="flex-1 min-w-0 text-xs text-slate-400 italic">No email</span>
+        )}
+        <span className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={badgeStyle}>
+          {badgeLabel}
+        </span>
+      </div>
+
+      {card.profileNickname && (
+        <div className="flex items-center gap-1 truncate mb-1.5" style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(14,14,14,0.65)' }}>
+          <User size={11} strokeWidth={1.8} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+          <span className="truncate">{card.profileNickname}</span>
+        </div>
+      )}
+
+      <p className="truncate text-slate-700 mb-1.5" style={{ fontSize: '13px', fontWeight: 400 }} title={card.activeRequest.requestText}>
+        {card.activeRequest.requestText}
+      </p>
+
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1">
+          {TAGS.filter(tag => tagKeys.includes(tag.key)).map(tag => (
+            <span key={tag.key} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border ${tag.selected}`}>
+              <span>{tag.emoji}</span>
+              <span>{tag.label}</span>
+            </span>
+          ))}
+        </div>
+        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">
+          {format(new Date(card.lastActivityAt), 'MMM d, yyyy')}
+        </span>
+      </div>
+    </button>
+  );
+}
+
 // ── PeakRequests page ─────────────────────────────────────────────────────────
 
 export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => void }) {
@@ -629,11 +719,65 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const [overrideDuplicate, setOverrideDuplicate] = useState(false);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterAgent, setFilterAgent]   = useState('');
-  const [search, setSearch]             = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  // The "Blocked/Lost access" tab — a tag filter that cuts across all three
+  // status columns, not a status of its own. Mutually exclusive with
+  // filterStatus: selecting it clears filterStatus (so the fetch below pulls
+  // every status), and selecting any status tab clears this back off.
+  const [showTaggedView, setShowTaggedView] = useState(false);
   const [dutyInfo, setDutyInfo] = useState<DutyStatus | null>(null);
   const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
   const [activeShiftLogs, setActiveShiftLogs] = useState<ShiftLog[]>([]);
+
+  // ── Global search (all statuses + archived, at once) ───────────────────────
+  // Separate from the Kanban board's own data: on mount we pull every card
+  // (including archived) once into `allCards` and filter it entirely
+  // client-side, so search never depends on the board's current status/
+  // archive filters and never needs a request per keystroke.
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [allCards, setAllCards] = useState<ClientCardView[]>([]);
+  const searchActive = debouncedSearch.trim().length > 0;
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const refreshAllCards = () =>
+    getPeakRequests({ includeArchived: true, limit: 100_000 })
+      .then(res => setAllCards(res.cards))
+      .catch(e => console.error(e));
+
+  useEffect(() => { refreshAllCards(); }, []);
+
+  const clearSearch = () => { setSearchInput(''); setDebouncedSearch(''); };
+
+  // customer email, profile nickname, request text, comments, tags — across
+  // every request in the card's history, not just the active one.
+  const cardMatchesSearch = (card: ClientCardView, query: string) => {
+    const allRequests = [card.activeRequest, ...card.history];
+    const tagText = allRequests
+      .flatMap(r => (r.tags || '').split(',').filter(Boolean))
+      .flatMap(key => {
+        const tag = TAGS.find(t => t.key === key);
+        return tag ? [tag.key, tag.label] : [key];
+      });
+    const haystack = [
+      card.contactEmail,
+      card.profileNickname,
+      ...allRequests.map(r => r.requestText),
+      ...allRequests.flatMap(r => r.comments.map(c => c.text)),
+      ...tagText,
+    ].filter(Boolean).join(' \n ').toLowerCase();
+    return haystack.includes(query);
+  };
+
+  const searchResults = searchActive
+    ? allCards
+        .filter(c => cardMatchesSearch(c, debouncedSearch.trim().toLowerCase()))
+        .sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime())
+    : [];
 
   // Ids (of ClientCards) with an in-flight optimistic mutation (status change /
   // star toggle / archive / delete). The 20s background poll below does a
@@ -672,9 +816,8 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     if (showSpinner) setLoading(true);
     try {
       const reqData = await getPeakRequests({
-        status: filterStatus || undefined,
+        status: showTaggedView ? undefined : (filterStatus || undefined),
         agentId: filterAgent || undefined,
-        search: search || undefined,
         limit: 200,
         includeArchived: showArchived,
       });
@@ -703,7 +846,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     // Poll so requests submitted by other agents show up without a manual refresh
     const id = setInterval(() => loadData(false), 20_000);
     return () => clearInterval(id);
-  }, [filterStatus, filterAgent, search, showArchived]);
+  }, [filterStatus, filterAgent, showArchived, showTaggedView]);
 
   // Looks for an existing card with the given status whose contactEmail
   // matches (case/whitespace-insensitive), other than the card currently
@@ -758,6 +901,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       setEmailWarning(null);
       setOverrideDuplicate(false);
       await loadData();
+      refreshAllCards();
       onDataChanged?.();
     } catch (e: any) {
       setFormError(e?.response?.data?.error ?? 'Failed to save. Please try again.');
@@ -777,6 +921,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     setCards(prev => prev.map(c => c.id === cardId ? { ...c, status } : c));
     try {
       await updatePeakRequestCardStatus(cardId, status);
+      refreshAllCards();
       onDataChanged?.();
     } catch {
       // Clear the pending flag BEFORE this recovery reload — it needs to be
@@ -821,6 +966,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     setCards(prev => prev.filter(c => c.id !== cardId));
     try {
       await archivePeakRequestCard(cardId);
+      refreshAllCards();
       onDataChanged?.();
     } finally {
       pendingMutations.current.delete(cardId);
@@ -832,6 +978,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
     setCards(prev => prev.filter(c => c.id !== cardId));
     try {
       await deletePeakRequestCard(cardId);
+      refreshAllCards();
       onDataChanged?.();
     } finally {
       pendingMutations.current.delete(cardId);
@@ -867,6 +1014,16 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       });
   };
 
+  // Blocked/Lost access tab — every card carrying either tag, regardless of
+  // status column. `cards` already holds all statuses whenever showTaggedView
+  // is on (loadData skips the status param above), so this is a pure filter.
+  const taggedCards = cards
+    .filter(cardHasCrossStatusTag)
+    .sort((a, b) => {
+      if (a.starred !== b.starred) return a.starred ? -1 : 1;
+      return new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime();
+    });
+
   const openNewForm = () => {
     setEditingId(null);
     setEditingCardId(null);
@@ -878,6 +1035,23 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
       contactEmail: '',
       profileNickname: '',
       requestText: '',
+    });
+    setShowForm(true);
+  };
+
+  // Shared by the Kanban card's Edit pencil and the flat search-result card
+  // (clicking a search hit opens the same edit form).
+  const openEditForm = (item: ClientCardView) => {
+    setEditingId(item.activeRequest.id);
+    setEditingCardId(item.id);
+    setFormError('');
+    setEmailWarning(null);
+    setOverrideDuplicate(false);
+    setForm({
+      agentId: item.activeRequest.agentId,
+      contactEmail: item.contactEmail || '',
+      profileNickname: item.profileNickname || '',
+      requestText: item.activeRequest.requestText,
     });
     setShowForm(true);
   };
@@ -919,30 +1093,112 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        <input className="input w-auto text-sm" placeholder="Search email or words"
-          value={search} onChange={e => setSearch(e.target.value)} />
-        <div className="flex gap-1">
-          {['', ...STATUS_COLS.map(s => s.status)].map(s => (
+        <div className="relative w-auto">
+          <input
+            className="input w-auto text-sm pr-7"
+            placeholder="Search email or words"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') clearSearch(); }}
+          />
+          {searchInput && (
             <button
-              key={s}
-              onClick={() => setFilterStatus(s)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                filterStatus === s ? 'text-[#0E0E0E]' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-              style={filterStatus === s ? { backgroundColor: 'rgba(161,249,110,0.30)' } : {}}
+              type="button"
+              onClick={clearSearch}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-black/5 transition-colors"
+              aria-label="Clear search"
+              title="Clear search"
             >
-              {s === '' ? 'All' : STATUS_COLS.find(c => c.status === s)?.label}
+              <X size={13} strokeWidth={2} />
             </button>
-          ))}
+          )}
         </div>
+        {!searchActive && (
+          <div className="flex gap-1">
+            {['', ...STATUS_COLS.map(s => s.status)].map(s => (
+              <button
+                key={s}
+                onClick={() => { setFilterStatus(s); setShowTaggedView(false); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  !showTaggedView && filterStatus === s ? 'text-[#0E0E0E]' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                style={!showTaggedView && filterStatus === s ? { backgroundColor: 'rgba(161,249,110,0.30)' } : {}}
+              >
+                {s === '' ? 'All' : STATUS_COLS.find(c => c.status === s)?.label}
+              </button>
+            ))}
+            {/* Tag filter, not a status — cuts across all three columns. As
+                soon as a card picks up either tag it shows up here regardless
+                of which column it's actually sitting in. */}
+            <button
+              onClick={() => setShowTaggedView(v => !v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                showTaggedView ? 'text-[#0E0E0E]' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+              style={showTaggedView ? { backgroundColor: 'rgba(161,249,110,0.30)' } : {}}
+            >
+              Blocked / Lost access
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Kanban board */}
-      {loading ? (
+      {/* Search results — flat, spans every status + archived at once, replaces the Kanban board while active */}
+      {searchActive ? (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500">
+            {searchResults.length === 0
+              ? `Нічого не знайдено для '${debouncedSearch.trim()}'`
+              : `${searchResults.length} ${searchResults.length === 1 ? 'result' : 'results'} for '${debouncedSearch.trim()}'`}
+          </p>
+          {searchResults.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {searchResults.map(card => (
+                <SearchResultCard key={card.id} card={card} onOpen={openEditForm} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <CardListSkeleton count={2} />
           <CardListSkeleton count={1} />
           <CardListSkeleton count={2} />
+        </div>
+      ) : showTaggedView ? (
+        <div className="rounded-xl p-3 bg-red-50/60">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span>🔴🔑</span>
+              <h3 className="font-semibold text-slate-700 text-sm">Blocked / Lost access</h3>
+            </div>
+            <span className="bg-white text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full shadow-sm">
+              {taggedCards.length}
+            </span>
+          </div>
+          {taggedCards.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-4">No requests tagged Blocked or Lost access right now</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {taggedCards.map(card => (
+                <ClientCard
+                  key={card.id}
+                  card={card}
+                  showStatusBadge
+                  highlightNew={isPeekHandler && card.status === 'NEW'}
+                  onEdit={openEditForm}
+                  onStatusChange={handleStatusChange}
+                  onToggleStar={handleToggleStar}
+                  onArchive={handleArchive}
+                  onDelete={handleDelete}
+                  onFieldsUpdated={handleFieldsUpdated}
+                  onCheckAccount={handleCheckAccount}
+                  showEyeCheck={card.status === 'IN_PROGRESS'}
+                  canCheckAccounts={canCheckAccounts}
+                />
+              ))}
+            </div>
+          )}
         </div>
       ) : cards.length === 0 ? (
         <EmptyState icon={<ClipboardList size={44} strokeWidth={1} />} message="No requests yet" action={
@@ -984,20 +1240,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                       key={card.id}
                       card={card}
                       highlightNew={isPeekHandler && col.status === 'NEW'}
-                      onEdit={(item) => {
-                        setEditingId(item.activeRequest.id);
-                        setEditingCardId(item.id);
-                        setFormError('');
-                        setEmailWarning(null);
-                        setOverrideDuplicate(false);
-                        setForm({
-                          agentId: item.activeRequest.agentId,
-                          contactEmail: item.contactEmail || '',
-                          profileNickname: item.profileNickname || '',
-                          requestText: item.activeRequest.requestText,
-                        });
-                        setShowForm(true);
-                      }}
+                      onEdit={openEditForm}
                       onStatusChange={handleStatusChange}
                       onToggleStar={handleToggleStar}
                       onArchive={handleArchive}
