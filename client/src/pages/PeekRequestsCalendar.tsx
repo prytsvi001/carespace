@@ -18,7 +18,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isTod
 import {
   getPeekCalendarAssignees, getPeekCalendarEntries, getPeekResolutionStats,
   createPeekCalendarEntry, updatePeekCalendarEntry, deletePeekCalendarEntry,
-  fixAugustJuliaCredits,
+  fixAugustPeekCredits,
 } from '../api';
 import { PeekCalendarEntry, PeekResolutionStats } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
@@ -290,11 +290,11 @@ export default function PeekRequestsCalendar() {
     }
   };
 
-  const handleFixJuliaCredits = async () => {
+  const handleFixPeekCredits = async () => {
     setShowFixCreditConfirm(false);
     setFixCreditStatus('running');
     try {
-      const { results } = await fixAugustJuliaCredits();
+      const { results } = await fixAugustPeekCredits();
       setFixCreditResults(results);
       setFixCreditStatus('done');
       await loadData();
@@ -317,7 +317,7 @@ export default function PeekRequestsCalendar() {
               onClick={() => setShowFixCreditConfirm(true)}
               className="text-xs font-medium text-slate-400 hover:text-slate-600 underline mt-0.5"
             >
-              Fix Julia Manson's August 2026 resolved count
+              Fix Julia/Iryna/Victoria H.'s August 2026 resolved counts
             </button>
           )}
           {fixCreditStatus === 'running' && (
@@ -500,8 +500,8 @@ export default function PeekRequestsCalendar() {
 
       <ConfirmDialog
         open={showFixCreditConfirm}
-        message="Remove August 2026 resolution credits that were assigned to Julia Manson under the old calendar-fallback rule (i.e. a support agent actually closed the request, not her)? Her genuine self-resolved credits are left untouched. Safe to run more than once."
-        onConfirm={handleFixJuliaCredits}
+        message="Remove August 2026 resolution credits that were assigned to Julia Manson, Iryna Kolodienko, or Victoria Horopeka under the old calendar-fallback rule (i.e. a support agent actually closed the request, not them)? Genuine self-resolved credits are left untouched. Safe to run more than once."
+        onConfirm={handleFixPeekCredits}
         onCancel={() => setShowFixCreditConfirm(false)}
       />
     </div>
