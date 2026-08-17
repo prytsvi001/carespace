@@ -1,5 +1,5 @@
 // client/src/pages/ShiftCalendar.tsx
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Sun, Moon, TreePalm, FileText, Ban, Gift, Star } from 'lucide-react';
 import {
   DndContext,
@@ -243,21 +243,10 @@ function DayCell({ date, events, onAdd, onRequestDelete, onEditEvent, isCurrentM
   );
 }
 
-type ViewMode = 'all' | 'mine' | 'agent';
-
-const VIEW_MODE_LABELS: Record<ViewMode, string> = {
-  all: 'All',
-  mine: 'My shifts',
-  agent: 'By agent',
-};
-
 export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChanged?: () => void; readOnly?: boolean }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'head' || user?.role === 'lead';
-  const [viewMode, setViewMode] = useState<ViewMode>('all');
-  // Only meaningful in 'agent' mode; '' there means "no agent picked yet" and
-  // behaves like 'all' so the grid never looks empty while choosing.
-  const [filterAgentId, setFilterAgentId] = useState('');
+  const [viewMode, setViewMode] = useState<'all' | 'mine'>('all');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [agents, setAgents] = useState<Agent[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -312,35 +301,10 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
   const startPad = startOfMonth(currentMonth).getDay();
   const paddedDays: (Date | null)[] = [...Array(startPad).fill(null), ...days];
 
-  const matchesViewMode = useCallback((ev: CalendarEvent) => {
-    if (viewMode === 'mine') return ev.agentId === user?.agentId;
-    if (viewMode === 'agent') return !filterAgentId || ev.agentId === filterAgentId;
-    return true;
-  }, [viewMode, filterAgentId, user?.agentId]);
-
   const getEventsForDate = (date: Date) =>
     events
       .filter(ev => format(new Date(ev.eventDate), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'))
-      .filter(matchesViewMode);
-
-  // Month roll-up for the picked agent — the point of the filter is seeing that
-  // agent's whole month at a glance, so summarise it above the grid.
-  const agentSummary = useMemo(() => {
-    if (viewMode !== 'agent' || !filterAgentId) return null;
-    const own = events.filter(ev => ev.agentId === filterAgentId);
-    const shifts = own.filter(ev => ev.leaveType === 'SHIFT');
-    return {
-      name: agents.find(a => a.id === filterAgentId)?.name ?? '',
-      // A SHIFT with no shiftType renders as morning (see getEventColor), so count it there.
-      morning: shifts.filter(ev => ev.shiftType !== 'NIGHT').length,
-      night: shifts.filter(ev => ev.shiftType === 'NIGHT').length,
-      extra: shifts.filter(ev => ev.isExtraShift).length,
-      leave: own.length - shifts.length,
-      total: shifts.length,
-    };
-  }, [viewMode, filterAgentId, events, agents]);
-
-  const viewModes: ViewMode[] = user?.agentId ? ['all', 'mine', 'agent'] : ['all', 'agent'];
+      .filter(ev => viewMode === 'all' || ev.agentId === user?.agentId);
 
   const handleDragStart = (event: DragStartEvent) => {
     const found = events.find(e => e.id === event.active.id);
@@ -505,52 +469,23 @@ export default function ShiftCalendar({ onDataChanged, readOnly }: { onDataChang
           ))}
         </div>
 
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1 p-0.5 rounded-lg" style={{ backgroundColor: 'rgba(14,14,14,0.06)' }}>
-              {viewModes.map(mode => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setViewMode(mode)}
-                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
-                    viewMode === mode ? 'text-[#0E0E0E]' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                  style={viewMode === mode ? { backgroundColor: '#A1F96E' } : undefined}
-                >
-                  {VIEW_MODE_LABELS[mode]}
-                </button>
-              ))}
-            </div>
-
-            {viewMode === 'agent' && (
-              <select
-                className="input w-auto text-xs py-1"
-                value={filterAgentId}
-                onChange={e => setFilterAgentId(e.target.value)}
-                aria-label="Filter calendar by agent"
+        {user?.agentId && (
+          <div className="flex gap-1 p-0.5 rounded-lg" style={{ backgroundColor: 'rgba(14,14,14,0.06)' }}>
+            {(['all', 'mine'] as const).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setViewMode(mode)}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                  viewMode === mode ? 'text-[#0E0E0E]' : 'text-slate-500 hover:text-slate-700'
+                }`}
+                style={viewMode === mode ? { backgroundColor: '#A1F96E' } : undefined}
               >
-                <option value="">All agents</option>
-                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            )}
+                {mode === 'all' ? 'All' : 'My shifts'}
+              </button>
+            ))}
           </div>
-
-          {agentSummary && (
-            <p className="text-[11px]" style={{ color: 'rgba(14,14,14,0.45)' }}>
-              {agentSummary.total === 0 ? (
-                <>No shifts for {agentSummary.name} in {format(currentMonth, 'MMMM')}</>
-              ) : (
-                <>
-                  {agentSummary.name} — {agentSummary.total} shift{agentSummary.total === 1 ? '' : 's'} in {format(currentMonth, 'MMMM')}
-                  {' · '}{agentSummary.morning} morning / {agentSummary.night} night
-                  {agentSummary.extra > 0 && <> · {agentSummary.extra} extra</>}
-                </>
-              )}
-              {agentSummary.leave > 0 && <> · {agentSummary.leave} leave/other</>}
-            </p>
-          )}
-        </div>
+        )}
       </div>
 
       {loading ? (
