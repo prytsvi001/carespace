@@ -526,4 +526,51 @@ router.get('/analysis/tagged-done', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/peak-requests/fix-tagged-done-credits — head/lead only, one-off
+// admin action (button in PeekRequestsCalendar.tsx). Removes existing
+// PeekResolutionCredit rows for cards whose active request carries "Blocked"
+// or "Lost access" — these predate the tag exclusion added to
+// recordResolutionCredit above and are still sitting in the "Resolved this
+// month" totals. Request from Victoria Davis, found via analysis/tagged-done.
+//
+// Idempotent — matching rows are gone after the first run, so a second click
+// just reports 0 removed. Delete this route (and its button) once the
+// corrected totals have been confirmed; it has no ongoing purpose.
+router.post('/fix-tagged-done-credits', async (req: Request, res: Response) => {
+  try {
+    const sessionUser = req.user as Express.User;
+    const me = await prisma.user.findUnique({ where: { id: sessionUser.id } });
+    if (!me || !(me.role === 'head' || me.role === 'lead')) return res.status(403).json({ error: 'Not allowed' });
+
+    const cards = await prisma.clientCard.findMany({
+      where: { status: 'DONE' },
+      include: CARD_INCLUDE,
+    });
+    const taggedCardIds = cards
+      .filter((card) => hasNonCountableTag(card.requests[0]?.tags))
+      .map((card) => card.id);
+
+    const bogus = await prisma.peekResolutionCredit.findMany({
+      where: { clientCardId: { in: taggedCardIds } },
+    });
+
+    if (bogus.length > 0) {
+      await prisma.peekResolutionCredit.deleteMany({ where: { id: { in: bogus.map((b) => b.id) } } });
+    }
+
+    const byCredited = new Map<string, number>();
+    for (const b of bogus) byCredited.set(b.creditedName, (byCredited.get(b.creditedName) ?? 0) + 1);
+
+    const results = [
+      `Removed ${bogus.length} credit(s) for Blocked/Lost access requests.`,
+      ...Array.from(byCredited.entries()).map(([name, count]) => `— ${count} removed from ${name}`),
+    ];
+
+    return res.json({ success: true, removed: bogus.length, results });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to apply fix' });
+  }
+});
+
 export default router;

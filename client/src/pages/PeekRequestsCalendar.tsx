@@ -18,7 +18,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isTod
 import {
   getPeekCalendarAssignees, getPeekCalendarEntries, getPeekResolutionStats,
   createPeekCalendarEntry, updatePeekCalendarEntry, deletePeekCalendarEntry,
-  getTaggedDoneAnalysis,
+  getTaggedDoneAnalysis, fixTaggedDoneCredits,
 } from '../api';
 import { PeekCalendarEntry, PeekResolutionStats } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
@@ -182,6 +182,10 @@ export default function PeekRequestsCalendar() {
   // Temporary read-only investigation — see peakRequests.ts's analysis/tagged-done.
   const [taggedDoneStatus, setTaggedDoneStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [taggedDoneResults, setTaggedDoneResults] = useState<Awaited<ReturnType<typeof getTaggedDoneAnalysis>> | null>(null);
+  // One-off admin action — see peakRequests.ts's fix-tagged-done-credits for the full writeup.
+  const [showFixTaggedConfirm, setShowFixTaggedConfirm] = useState(false);
+  const [fixTaggedStatus, setFixTaggedStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [fixTaggedResults, setFixTaggedResults] = useState<string[]>([]);
 
   const [form, setForm] = useState({ userId: '', hours: '' });
 
@@ -289,6 +293,20 @@ export default function PeekRequestsCalendar() {
     }
   };
 
+  const handleFixTaggedCredits = async () => {
+    setShowFixTaggedConfirm(false);
+    setFixTaggedStatus('running');
+    try {
+      const { results } = await fixTaggedDoneCredits();
+      setFixTaggedResults(results);
+      setFixTaggedStatus('done');
+      await loadData();
+    } catch (e) {
+      console.error(e);
+      setFixTaggedStatus('error');
+    }
+  };
+
   const handleConfirmDelete = async () => {
     const id = confirmDeleteId;
     if (!id) return;
@@ -378,6 +396,28 @@ export default function PeekRequestsCalendar() {
               )}
             </div>
           )}
+
+          <div className="mt-1">
+            {fixTaggedStatus === 'idle' && (
+              <button
+                type="button"
+                onClick={() => setShowFixTaggedConfirm(true)}
+                className="font-medium text-slate-400 hover:text-slate-600 underline"
+              >
+                Remove existing credit for tagged Done requests
+              </button>
+            )}
+            {fixTaggedStatus === 'running' && <p className="text-slate-400">Applying fix…</p>}
+            {fixTaggedStatus === 'error' && <p className="text-red-500">Failed to apply fix — check console and try again.</p>}
+            {fixTaggedStatus === 'done' && (
+              <div style={{ color: '#3ba648' }}>
+                <p className="font-medium">✓ Fix applied</p>
+                <ul className="list-disc pl-4" style={{ color: 'rgba(14,14,14,0.45)' }}>
+                  {fixTaggedResults.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -503,6 +543,13 @@ export default function PeekRequestsCalendar() {
         message="Delete this calendar entry permanently?"
         onConfirm={handleConfirmDelete}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={showFixTaggedConfirm}
+        message="Remove existing resolution credit for every Done request tagged Blocked or Lost access? These predate the tag exclusion and are still counted in the monthly totals. Safe to run more than once."
+        onConfirm={handleFixTaggedCredits}
+        onCancel={() => setShowFixTaggedConfirm(false)}
       />
     </div>
   );

@@ -180,6 +180,10 @@ export const getTaggedDoneAnalysis = () =>
     results: { clientCardId: string; contactEmail: string | null; profileNickname: string | null; tags: string[]; doneAt: string | null; movedBy: string; wasCredited: string | null }[];
   });
 
+// One-off admin action (head/lead only) — see peakRequests.ts's fix-tagged-done-credits for the full writeup.
+export const fixTaggedDoneCredits = () =>
+  api.post('/peak-requests/fix-tagged-done-credits').then(r => r.data as { success: boolean; removed: number; results: string[] });
+
 // ─── Statistics ────────────────────────────────────────────────────────────
 export const getStatistics = (params?: { year?: number; month?: number; dateFrom?: string; dateTo?: string }) =>
   api.get('/statistics', { params }).then(r => r.data);
