@@ -585,27 +585,13 @@ router.post('/fix-tagged-done-credits', async (req: Request, res: Response) => {
 // after ruling out a full database point-in-time rollback as too risky (it
 // would revert every other change made in the same window, not just this).
 //
-// Recreates exactly the 17 rows below (profileNickname, mover, doneAt date).
-// Run this ONCE against the state left by fix-tagged-done-credits — it does
-// not check for existing duplicates. Delete this route immediately after running.
+// Recreates the rows below (profileNickname, mover, doneAt date). 16 of the
+// original 17 already succeeded on the first run (exact profileNickname
+// match) — only "susieyoonn" is left, matched here case/whitespace-insensitively
+// since an exact-string findFirst missed it (likely stray casing or padding
+// in the stored value). Run this ONCE more, then delete this route.
 const RECOVERABLE_CREDITS: { profileNickname: string; moverName: string; doneAt: string }[] = [
-  { profileNickname: 'jannagomezz93', moverName: 'Victoria Horopeka', doneAt: '2026-08-12' },
-  { profileNickname: 'joelle_ocean', moverName: 'Victoria Horopeka', doneAt: '2026-08-13' },
-  { profileNickname: 'dahianeramos', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
-  { profileNickname: 'blasian.lotus.x', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
-  { profileNickname: 'yomnatarek92', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
-  { profileNickname: '_barbygirl_202', moverName: 'Victoria Horopeka', doneAt: '2026-08-12' },
-  { profileNickname: 'bodybypoptarts', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
-  { profileNickname: 'alessandrasays', moverName: 'Victoria Horopeka', doneAt: '2026-08-14' },
-  { profileNickname: 'shannonlamoureaux', moverName: 'Victoria Horopeka', doneAt: '2026-08-06' },
-  { profileNickname: 'anika_maeder', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
-  { profileNickname: 'arbor.pilates', moverName: 'Iryna Kolodienko', doneAt: '2026-08-14' },
-  { profileNickname: 'jcarl7098', moverName: 'Iryna Kolodienko', doneAt: '2026-08-04' },
-  { profileNickname: 'rida.rafik_', moverName: 'Iryna Kolodienko', doneAt: '2026-08-10' },
-  { profileNickname: 'pamella.ribeiro_', moverName: 'Iryna Kolodienko', doneAt: '2026-08-14' },
-  { profileNickname: 'ghufranmadany', moverName: 'Iryna Kolodienko', doneAt: '2026-08-14' },
   { profileNickname: 'susieyoonn', moverName: 'Julia Manson', doneAt: '2026-08-15' },
-  { profileNickname: 'kathieee_2', moverName: 'Julia Manson', doneAt: '2026-08-15' },
 ];
 
 router.post('/restore-tagged-done-credits', async (req: Request, res: Response) => {
@@ -614,11 +600,13 @@ router.post('/restore-tagged-done-credits', async (req: Request, res: Response) 
     const me = await prisma.user.findUnique({ where: { id: sessionUser.id } });
     if (!me || !(me.role === 'head' || me.role === 'lead')) return res.status(403).json({ error: 'Not allowed' });
 
+    const doneCards = await prisma.clientCard.findMany({ where: { status: 'DONE' } });
     const results: string[] = [];
     let created = 0;
 
     for (const entry of RECOVERABLE_CREDITS) {
-      const card = await prisma.clientCard.findFirst({ where: { profileNickname: entry.profileNickname } });
+      const target = entry.profileNickname.trim().toLowerCase();
+      const card = doneCards.find((c) => (c.profileNickname || '').trim().toLowerCase() === target);
       const mover = await prisma.user.findFirst({ where: { name: entry.moverName } });
       if (!card || !mover) {
         results.push(`${entry.profileNickname}: skipped — ${!card ? 'card' : 'user'} not found`);
