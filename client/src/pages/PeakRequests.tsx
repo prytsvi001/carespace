@@ -6,7 +6,7 @@ import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
   updatePeakRequestCardStatus, togglePeakRequestCardStar, checkPeakRequestCard, archivePeakRequestCard, deletePeakRequestCard,
   patchPeakRequestFields, addPeakRequestComment, getDutyStatus, DutyStatus,
-  getTodayLogs, getAllTaggedAudit,
+  getTodayLogs,
 } from '../api';
 import { ClientCardView, PeakRequestComment, RequestStatus, ShiftLog } from '../types';
 import { Modal, EmptyState, ConfirmDialog, StatusStrip, CardListSkeleton } from '../components/ui';
@@ -697,10 +697,6 @@ function SearchResultCard({ card, onOpen }: { card: ClientCardView; onOpen: (car
 export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => void }) {
   const { user } = useAuth();
   const isPeekHandler = user?.role === 'peek_handler';
-  const isAdmin = user?.role === 'head' || user?.role === 'lead';
-  // Temporary read-only audit — see peakRequests.ts's analysis/all-tagged for the full writeup.
-  const [taggedAuditStatus, setTaggedAuditStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
-  const [taggedAuditResult, setTaggedAuditResult] = useState<Awaited<ReturnType<typeof getAllTaggedAudit>> | null>(null);
   const [cards, setCards] = useState<ClientCardView[]>([]);
   // Whether the current viewer is one of the 3 peek team members (Iryna,
   // Victoria Horopeka, Julia Manson) allowed to stamp the "account checked" eye
@@ -1146,52 +1142,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
           </div>
         )}
       </div>
-
-      {/* Temporary read-only audit (head/lead only) — see peakRequests.ts's
-          analysis/all-tagged for the full writeup. Checks every card's FULL
-          history, not just the active request, since the tab above only
-          ever looks at the active one. */}
-      {isAdmin && !searchActive && (
-        <div className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
-          {taggedAuditStatus !== 'running' && (
-            <button
-              type="button"
-              onClick={async () => {
-                setTaggedAuditStatus('running');
-                try {
-                  const data = await getAllTaggedAudit();
-                  setTaggedAuditResult(data);
-                  setTaggedAuditStatus('done');
-                } catch (e) {
-                  console.error(e);
-                  setTaggedAuditStatus('error');
-                }
-              }}
-              className="font-medium text-slate-400 hover:text-slate-600 underline"
-            >
-              Reconcile every card tagged Blocked/Lost access (incl. history)
-            </button>
-          )}
-          {taggedAuditStatus === 'running' && <p className="text-slate-400">Running…</p>}
-          {taggedAuditStatus === 'error' && <p className="text-red-500">Failed — check console and try again.</p>}
-          {taggedAuditStatus === 'done' && taggedAuditResult && (
-            <div className="mt-1">
-              <p className="font-medium text-ink">
-                {taggedAuditResult.visibleCount} card(s) correctly visible in the tab · {taggedAuditResult.hiddenCount} card(s) tagged only on an older (non-active) request
-              </p>
-              {taggedAuditResult.hiddenCount > 0 && (
-                <ul className="list-disc pl-4 mt-1 space-y-0.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
-                  {taggedAuditResult.hiddenFromTab.map((r) => (
-                    <li key={r.clientCardId}>
-                      {r.profileNickname || r.contactEmail || r.clientCardId} — now {r.status}{r.archived ? ' (archived)' : ''} — old request tagged {r.taggedRequestTags.join(', ')} on {format(new Date(r.taggedRequestCreatedAt), 'dd MMM yyyy')}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Search results — flat, spans every status + archived at once, replaces the Kanban board while active */}
       {searchActive ? (
