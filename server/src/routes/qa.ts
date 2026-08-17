@@ -7,9 +7,9 @@ const router = Router();
 // GET /api/qa?channel=LIVE_CHAT&dateFrom=...&dateTo=...
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { channel, dateFrom, dateTo, limit = '50', offset = '0', includeArchived } = req.query;
+    const { channel, dateFrom, dateTo, limit = '50', offset = '0' } = req.query;
 
-    const where: Record<string, unknown> = includeArchived === 'true' ? {} : { archived: false };
+    const where: Record<string, unknown> = {};
 
     if (channel) {
       where.channel = channel as string;
@@ -93,21 +93,10 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE (archive) /api/qa/:id
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    await prisma.aIChatQA.update({
-      where: { id },
-      data: { archived: true },
-    });
-    res.json({ success: true });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to archive QA entry' });
-  }
-});
-
+// DELETE /api/qa/delete/:id — permanent. The archive feature is gone
+// (request from Victoria Davis), so this is the only removal path left —
+// used by the manual Delete button; the client also calls it directly when
+// a status change lands on DONE, instead of persisting that status at all.
 router.delete('/delete/:id', async (req: Request, res: Response) => {
   try {
     await prisma.aIChatQA.delete({ where: { id: req.params.id } });
@@ -115,6 +104,37 @@ router.delete('/delete/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to delete QA entry' });
+  }
+});
+
+// POST /api/qa/purge-archived — head/lead only, one-off cleanup. Removes the
+// archive feature's leftover data: every entry still flagged archived=true
+// from before the feature was removed. Returns what was deleted (not just a
+// count) since this is permanent and irreversible. Delete this route once
+// the cleanup is confirmed; no ongoing purpose (nothing sets archived=true anymore).
+router.post('/purge-archived', async (req: Request, res: Response) => {
+  try {
+    const role = (req.user as Express.User).role;
+    if (role !== 'head' && role !== 'lead') return res.status(403).json({ error: 'Not allowed' });
+
+    const toDelete = await prisma.aIChatQA.findMany({
+      where: { archived: true },
+      orderBy: { issueDate: 'desc' },
+    });
+
+    if (toDelete.length > 0) {
+      await prisma.aIChatQA.deleteMany({ where: { id: { in: toDelete.map((e) => e.id) } } });
+    }
+
+    return res.json({
+      deletedCount: toDelete.length,
+      deleted: toDelete.map((e) => ({
+        id: e.id, channel: e.channel, issueDate: e.issueDate, comment: e.comment.slice(0, 80),
+      })),
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to purge archived QA entries' });
   }
 });
 

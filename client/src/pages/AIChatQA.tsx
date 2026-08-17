@@ -2,9 +2,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TriangleAlert, Bot } from 'lucide-react';
 import { format } from 'date-fns';
-import { getQAEntries, createQAEntry, updateQAEntry, archiveQAEntry, deleteQAEntry } from '../api';
+import { getQAEntries, createQAEntry, updateQAEntry, deleteQAEntry, purgeArchivedQAEntries } from '../api';
 import { AIChatQA as QAEntry, QAChannel, QAStatus } from '../types';
 import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 
 const CHANNEL_LABELS: Record<QAChannel, string> = {
   PEEKVIEWER_AI: 'Peekviewer AI',
@@ -95,9 +96,8 @@ function StatusSelect({ value, onChange }: { value: QAStatus; onChange: (v: QASt
   );
 }
 
-function QACard({ entry, onStatusChange, onEdit, onArchive, onDelete }: { entry: QAEntry; onStatusChange: (id: string, status: QAStatus) => void; onEdit: (entry: QAEntry) => void; onArchive: (id: string) => void; onDelete: (id: string) => void }) {
+function QACard({ entry, onStatusChange, onEdit, onDelete }: { entry: QAEntry; onStatusChange: (id: string, status: QAStatus) => void; onEdit: (entry: QAEntry) => void; onDelete: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const [confirm, setConfirm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const preview = entry.chatText.slice(0, 120);
 
@@ -116,7 +116,6 @@ function QACard({ entry, onStatusChange, onEdit, onArchive, onDelete }: { entry:
             onChange={v => onStatusChange(entry.id, v)}
           />
           <button onClick={() => onEdit(entry)} className="text-xs text-brand-600 hover:text-brand-700">Edit</button>
-          <button onClick={() => setConfirm(true)} className="text-xs text-amber-600 hover:text-amber-700">Archive</button>
           <button onClick={() => setConfirmDelete(true)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
         </div>
       </div>
@@ -137,12 +136,6 @@ function QACard({ entry, onStatusChange, onEdit, onArchive, onDelete }: { entry:
       </div>
 
       <ConfirmDialog
-        open={confirm}
-        message="Archive this QA entry?"
-        onConfirm={() => { onArchive(entry.id); setConfirm(false); }}
-        onCancel={() => setConfirm(false)}
-      />
-      <ConfirmDialog
         open={confirmDelete}
         message="Delete this QA entry permanently?"
         onConfirm={() => { onDelete(entry.id); setConfirmDelete(false); }}
@@ -154,12 +147,17 @@ function QACard({ entry, onStatusChange, onEdit, onArchive, onDelete }: { entry:
 
 export default function AIChatQA() {
   const [entries, setEntries] = useState<QAEntry[]>([]);
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'head' || user?.role === 'lead';
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
   const [editingEntry, setEditingEntry] = useState<QAEntry | null>(null);
+  // One-off cleanup (head/lead only) — see qa.ts's purge-archived for the full writeup.
+  const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
+  const [purgeStatus, setPurgeStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [purgeResults, setPurgeResults] = useState<string[]>([]);
 
   // Form
   const [form, setForm] = useState({
@@ -173,10 +171,7 @@ export default function AIChatQA() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const result = await getQAEntries({
-        limit: 50,
-        includeArchived: showArchived,
-      });
+      const result = await getQAEntries({ limit: 50 });
       setEntries(result.entries);
       setTotal(result.total);
     } catch (e) {
@@ -186,7 +181,7 @@ export default function AIChatQA() {
     }
   };
 
-  useEffect(() => { loadData(); }, [showArchived]);
+  useEffect(() => { loadData(); }, []);
 
   const closeForm = () => {
     setShowForm(false);
@@ -224,7 +219,21 @@ export default function AIChatQA() {
     }
   };
 
+  // Moving to Done doesn't persist that status at all — the entry is deleted
+  // permanently the moment it lands there (request from Victoria Davis; the
+  // archive feature is gone, so this is now the only way entries leave the board).
   const handleStatusChange = async (id: string, status: QAStatus) => {
+    if (status === 'DONE') {
+      setEntries(prev => prev.filter(entry => entry.id !== id));
+      try {
+        await deleteQAEntry(id);
+        setTotal(t => t - 1);
+      } catch (error) {
+        console.error(error);
+        await loadData();
+      }
+      return;
+    }
     setEntries(prev => prev.map(entry => entry.id === id ? { ...entry, status } : entry));
     try {
       await updateQAEntry(id, { status });
@@ -234,13 +243,31 @@ export default function AIChatQA() {
     }
   };
 
-  const handleArchive = async (id: string) => {
-    await archiveQAEntry(id);
-    setEntries(prev => prev.filter(e => e.id !== id));
-  };
   const handleDelete = async (id: string) => {
     await deleteQAEntry(id);
     setEntries(prev => prev.filter(e => e.id !== id));
+    setTotal(t => t - 1);
+  };
+
+  const handlePurgeArchived = async () => {
+    setShowPurgeConfirm(false);
+    setPurgeStatus('running');
+    try {
+      const { deletedCount, deleted } = await purgeArchivedQAEntries();
+      setPurgeResults(
+        deletedCount === 0
+          ? ['No archived entries found — nothing to delete.']
+          : [
+              `Permanently deleted ${deletedCount} archived entry/entries:`,
+              ...deleted.map(d => `${CHANNEL_LABELS[d.channel as QAChannel] ?? d.channel} · ${format(new Date(d.issueDate), 'dd MMM yyyy')} · ${d.comment}`),
+            ]
+      );
+      setPurgeStatus('done');
+      await loadData();
+    } catch (e) {
+      console.error(e);
+      setPurgeStatus('error');
+    }
   };
 
   return (
@@ -252,10 +279,34 @@ export default function AIChatQA() {
           <p className="text-sm text-slate-400">Flag problematic bot responses — {total} entries total</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn-secondary whitespace-nowrap" onClick={() => setShowArchived(v => !v)}>{showArchived ? 'Hide Archive' : 'Show Archive'}</button>
           <button className="btn-accent whitespace-nowrap" onClick={() => setShowForm(true)}>+ Add QA Issue</button>
         </div>
       </div>
+
+      {/* Temporary one-off cleanup (head/lead only) — see qa.ts's purge-archived. */}
+      {isAdmin && (
+        <div className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
+          {purgeStatus === 'idle' && (
+            <button
+              type="button"
+              onClick={() => setShowPurgeConfirm(true)}
+              className="font-medium text-slate-400 hover:text-slate-600 underline"
+            >
+              Permanently delete all archived QA entries
+            </button>
+          )}
+          {purgeStatus === 'running' && <p className="text-slate-400">Deleting…</p>}
+          {purgeStatus === 'error' && <p className="text-red-500">Failed — check console and try again.</p>}
+          {purgeStatus === 'done' && (
+            <div style={{ color: '#3ba648' }}>
+              <p className="font-medium">✓ Done</p>
+              <ul className="list-disc pl-4" style={{ color: 'rgba(14,14,14,0.45)' }}>
+                {purgeResults.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Entries */}
       {loading ? (
@@ -267,7 +318,7 @@ export default function AIChatQA() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {entries.map(entry => (
-            <QACard key={entry.id} entry={entry} onStatusChange={handleStatusChange} onEdit={handleEdit} onArchive={handleArchive} onDelete={handleDelete} />
+            <QACard key={entry.id} entry={entry} onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
           ))}
         </div>
       )}
@@ -285,7 +336,10 @@ export default function AIChatQA() {
             <div>
               <label className="label">Status</label>
               <select className="input" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as QAStatus }))}>
-                {['OPEN','IN_PROGRESS','DONE'].map(v => <option key={v} value={v}>{v.replace('_',' ')}</option>)}
+                {/* DONE isn't offered here — moving to Done permanently deletes the
+                    entry (see handleStatusChange), so it only makes sense from the
+                    card's own status dropdown, not while creating/editing. */}
+                {['OPEN','IN_PROGRESS'].map(v => <option key={v} value={v}>{v.replace('_',' ')}</option>)}
               </select>
             </div>
             <div>
@@ -328,6 +382,13 @@ export default function AIChatQA() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={showPurgeConfirm}
+        message="Permanently delete every archived QA entry? This cannot be undone."
+        onConfirm={handlePurgeArchived}
+        onCancel={() => setShowPurgeConfirm(false)}
+      />
     </div>
   );
 }
