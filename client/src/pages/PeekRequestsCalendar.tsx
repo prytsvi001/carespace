@@ -18,9 +18,11 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isTod
 import {
   getPeekCalendarAssignees, getPeekCalendarEntries, getPeekResolutionStats,
   createPeekCalendarEntry, updatePeekCalendarEntry, deletePeekCalendarEntry,
+  getTaggedDoneAnalysis,
 } from '../api';
 import { PeekCalendarEntry, PeekResolutionStats } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 
 // Each agent's color is pinned to an existing Support Calendar event color, per
 // request — Iryna = Night Shift, Victoria H. = Sick leave without note, Julia =
@@ -162,6 +164,8 @@ function DayCell({ date, entries, resolvedCounts, onAdd, onRequestDelete, onEdit
 }
 
 export default function PeekRequestsCalendar() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'head' || user?.role === 'lead';
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [assignees, setAssignees] = useState<{ id: string; name: string }[]>([]);
   const [entries, setEntries] = useState<PeekCalendarEntry[]>([]);
@@ -175,6 +179,9 @@ export default function PeekRequestsCalendar() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editingEntry, setEditingEntry] = useState<PeekCalendarEntry | null>(null);
   const [editHours, setEditHours] = useState('');
+  // Temporary read-only investigation — see peakRequests.ts's analysis/tagged-done.
+  const [taggedDoneStatus, setTaggedDoneStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [taggedDoneResults, setTaggedDoneResults] = useState<Awaited<ReturnType<typeof getTaggedDoneAnalysis>> | null>(null);
 
   const [form, setForm] = useState({ userId: '', hours: '' });
 
@@ -270,6 +277,18 @@ export default function PeekRequestsCalendar() {
     }
   };
 
+  const handleRunTaggedDoneAnalysis = async () => {
+    setTaggedDoneStatus('running');
+    try {
+      const data = await getTaggedDoneAnalysis();
+      setTaggedDoneResults(data);
+      setTaggedDoneStatus('done');
+    } catch (e) {
+      console.error(e);
+      setTaggedDoneStatus('error');
+    }
+  };
+
   const handleConfirmDelete = async () => {
     const id = confirmDeleteId;
     if (!id) return;
@@ -326,6 +345,39 @@ export default function PeekRequestsCalendar() {
               <span className="font-semibold text-ink">{shortNameFor(t.name)}</span>: {t.count}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Temporary read-only investigation (head/lead only) — see
+          peakRequests.ts's analysis/tagged-done for the full writeup. */}
+      {isAdmin && (
+        <div className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
+          {taggedDoneStatus !== 'running' && (
+            <button
+              type="button"
+              onClick={handleRunTaggedDoneAnalysis}
+              className="font-medium text-slate-400 hover:text-slate-600 underline"
+            >
+              Analyze Done requests tagged Blocked / Lost access
+            </button>
+          )}
+          {taggedDoneStatus === 'running' && <p className="text-slate-400">Running…</p>}
+          {taggedDoneStatus === 'error' && <p className="text-red-500">Failed — check console and try again.</p>}
+          {taggedDoneStatus === 'done' && taggedDoneResults && (
+            <div className="mt-1">
+              <p className="font-medium text-ink">{taggedDoneResults.count} Done request(s) tagged Blocked/Lost access</p>
+              {taggedDoneResults.count > 0 && (
+                <ul className="list-disc pl-4 mt-1 space-y-0.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
+                  {taggedDoneResults.results.map((r) => (
+                    <li key={r.clientCardId}>
+                      {r.profileNickname || r.contactEmail || r.clientCardId} — tags: {r.tags.join(', ')} — moved by {r.movedBy}
+                      {r.doneAt && ` — ${format(new Date(r.doneAt), 'dd MMM yyyy')}`}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -42,17 +42,32 @@ function todayDayMarker(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
+// Tags (see TAGS in PeakRequests.tsx) that mean the card didn't actually get
+// resolved as a support outcome — the client lost access / is blocked, not
+// something the peek agent fixed — so it shouldn't count as a processed
+// request even when a tracked peek agent is the one who moved it to Done.
+const NON_COUNTABLE_TAGS = ['blocked', 'lost_access'];
+
+function hasNonCountableTag(tags: string | null | undefined): boolean {
+  const keys = (tags || '').split(',').filter(Boolean);
+  return keys.some((k) => NON_COUNTABLE_TAGS.includes(k));
+}
+
 // Credit-assignment rule: only counts when whoever moved the card to Done is
 // themselves one of the 3 tracked peek agents (self-credited). A regular
 // support agent resolving a card records no credit at all — this used to
 // fall back to crediting whoever was the sole agent scheduled on the Peek
 // Calendar that day, but that guessed credit for work they didn't actually
 // do (see the August 2026 Julia Manson correction — request from Victoria
-// Davis to only count a peek agent's own resolutions).
+// Davis to only count a peek agent's own resolutions). Also skips entirely
+// when the active request carries a non-countable tag (request from Victoria
+// Davis: "Blocked"/"Lost access" outcomes shouldn't count as processed).
 // Never allowed to throw past this point — credit-tracking must not break
 // the status change it's attached to.
-async function recordResolutionCredit(clientCardId: string, sessionUser: Express.User) {
+async function recordResolutionCredit(clientCardId: string, sessionUser: Express.User, activeRequestTags: string | null | undefined) {
   try {
+    if (hasNonCountableTag(activeRequestTags)) return;
+
     const actor = await prisma.user.findUnique({ where: { id: sessionUser.id } });
     if (!actor || !isTrackedAgent(actor)) return;
 
@@ -394,7 +409,7 @@ router.patch('/cards/:id/status', async (req: Request, res: Response) => {
     }
 
     if (status === 'DONE' && !wasAlreadyDone) {
-      await recordResolutionCredit(id, req.user as Express.User);
+      await recordResolutionCredit(id, req.user as Express.User, active?.tags);
     }
 
     const updated = await prisma.clientCard.findUnique({ where: { id }, include: CARD_INCLUDE });
@@ -459,6 +474,55 @@ router.delete('/cards/delete/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to delete client card' });
+  }
+});
+
+// GET /api/peak-requests/analysis/tagged-done — head/lead only, read-only,
+// temporary investigation route for Victoria Davis. Lists every ClientCard
+// currently DONE whose active request carries "Blocked" or "Lost access",
+// plus who actually moved it to Done when that's on record. movedByName only
+// exists in PeekResolutionCredit for a tracked peek agent's own action (see
+// recordResolutionCredit above) — a support agent's close on a day with 0 or
+// 2+ people scheduled left no such record even before the tag exclusion
+// existed, so those show as "unknown". Delete this route once the
+// investigation is done; it has no ongoing purpose.
+router.get('/analysis/tagged-done', async (req: Request, res: Response) => {
+  try {
+    const sessionUser = req.user as Express.User;
+    const me = await prisma.user.findUnique({ where: { id: sessionUser.id } });
+    if (!me || !(me.role === 'head' || me.role === 'lead')) return res.status(403).json({ error: 'Not allowed' });
+
+    const cards = await prisma.clientCard.findMany({
+      where: { status: 'DONE' },
+      include: CARD_INCLUDE,
+    });
+
+    const tagged = cards
+      .map((card) => ({ card, active: card.requests[0] }))
+      .filter(({ active }) => hasNonCountableTag(active?.tags));
+
+    const credits = await prisma.peekResolutionCredit.findMany({
+      where: { clientCardId: { in: tagged.map(({ card }) => card.id) } },
+    });
+    const creditByCardId = new Map(credits.map((c) => [c.clientCardId, c]));
+
+    const results = tagged.map(({ card, active }) => {
+      const credit = creditByCardId.get(card.id);
+      return {
+        clientCardId: card.id,
+        contactEmail: card.contactEmail,
+        profileNickname: card.profileNickname,
+        tags: (active?.tags || '').split(',').filter(Boolean),
+        doneAt: card.doneAt,
+        movedBy: credit?.movedByName ?? 'unknown — support agent close, no record',
+        wasCredited: credit ? credit.creditedName : null,
+      };
+    });
+
+    return res.json({ count: results.length, results });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to run analysis' });
   }
 });
 
