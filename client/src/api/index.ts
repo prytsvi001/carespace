@@ -184,6 +184,10 @@ export const getTaggedDoneAnalysis = () =>
 export const fixTaggedDoneCredits = () =>
   api.post('/peak-requests/fix-tagged-done-credits').then(r => r.data as { success: boolean; removed: number; results: string[] });
 
+// One-off recovery action (head/lead only), run once — see peakRequests.ts's restore-tagged-done-credits.
+export const restoreTaggedDoneCredits = () =>
+  api.post('/peak-requests/restore-tagged-done-credits').then(r => r.data as { success: boolean; created: number; results: string[] });
+
 // ─── Statistics ────────────────────────────────────────────────────────────
 export const getStatistics = (params?: { year?: number; month?: number; dateFrom?: string; dateTo?: string }) =>
   api.get('/statistics', { params }).then(r => r.data);

@@ -18,7 +18,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isTod
 import {
   getPeekCalendarAssignees, getPeekCalendarEntries, getPeekResolutionStats,
   createPeekCalendarEntry, updatePeekCalendarEntry, deletePeekCalendarEntry,
-  getTaggedDoneAnalysis, fixTaggedDoneCredits,
+  getTaggedDoneAnalysis, fixTaggedDoneCredits, restoreTaggedDoneCredits,
 } from '../api';
 import { PeekCalendarEntry, PeekResolutionStats } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
@@ -186,6 +186,10 @@ export default function PeekRequestsCalendar() {
   const [showFixTaggedConfirm, setShowFixTaggedConfirm] = useState(false);
   const [fixTaggedStatus, setFixTaggedStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [fixTaggedResults, setFixTaggedResults] = useState<string[]>([]);
+  // One-off recovery action, run once — see peakRequests.ts's restore-tagged-done-credits.
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [restoreResults, setRestoreResults] = useState<string[]>([]);
 
   const [form, setForm] = useState({ userId: '', hours: '' });
 
@@ -307,6 +311,20 @@ export default function PeekRequestsCalendar() {
     }
   };
 
+  const handleRestoreCredits = async () => {
+    setShowRestoreConfirm(false);
+    setRestoreStatus('running');
+    try {
+      const { results } = await restoreTaggedDoneCredits();
+      setRestoreResults(results);
+      setRestoreStatus('done');
+      await loadData();
+    } catch (e) {
+      console.error(e);
+      setRestoreStatus('error');
+    }
+  };
+
   const handleConfirmDelete = async () => {
     const id = confirmDeleteId;
     if (!id) return;
@@ -414,6 +432,28 @@ export default function PeekRequestsCalendar() {
                 <p className="font-medium">✓ Fix applied</p>
                 <ul className="list-disc pl-4" style={{ color: 'rgba(14,14,14,0.45)' }}>
                   {fixTaggedResults.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-1">
+            {restoreStatus === 'idle' && (
+              <button
+                type="button"
+                onClick={() => setShowRestoreConfirm(true)}
+                className="font-medium text-slate-400 hover:text-slate-600 underline"
+              >
+                Restore recoverable credits (run once)
+              </button>
+            )}
+            {restoreStatus === 'running' && <p className="text-slate-400">Restoring…</p>}
+            {restoreStatus === 'error' && <p className="text-red-500">Failed to restore — check console and try again.</p>}
+            {restoreStatus === 'done' && (
+              <div style={{ color: '#3ba648' }}>
+                <p className="font-medium">✓ Restore applied</p>
+                <ul className="list-disc pl-4" style={{ color: 'rgba(14,14,14,0.45)' }}>
+                  {restoreResults.map((r, i) => <li key={i}>{r}</li>)}
                 </ul>
               </div>
             )}
@@ -550,6 +590,13 @@ export default function PeekRequestsCalendar() {
         message="Remove existing resolution credit for every Done request tagged Blocked or Lost access? These predate the tag exclusion and are still counted in the monthly totals. Safe to run more than once."
         onConfirm={handleFixTaggedCredits}
         onCancel={() => setShowFixTaggedConfirm(false)}
+      />
+
+      <ConfirmDialog
+        open={showRestoreConfirm}
+        message="Recreate the 17 recoverable credits removed by the fix above (Julia +2, Iryna +5, Victoria H +10)? This does not recover the other 10 (lost reopen-cycle records) — only click this once."
+        onConfirm={handleRestoreCredits}
+        onCancel={() => setShowRestoreConfirm(false)}
       />
     </div>
   );

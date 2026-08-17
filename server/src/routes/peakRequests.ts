@@ -573,4 +573,77 @@ router.post('/fix-tagged-done-credits', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/peak-requests/restore-tagged-done-credits — head/lead only,
+// one-off recovery action. fix-tagged-done-credits (above) permanently
+// deleted 27 PeekResolutionCredit rows without first exporting them; only 17
+// are reconstructable from the analysis run just before the delete (one per
+// currently-tagged-Done card that had a tracked-agent mover on record) — the
+// other 10 existed from earlier reopen/re-resolve cycles on some of those
+// same cards and left no trace anywhere (not in this DB, not in backup.ts,
+// which never exported PeekResolutionCredit at all). Request from Victoria
+// Davis to get as close to the original 48/84/61 totals as still possible,
+// after ruling out a full database point-in-time rollback as too risky (it
+// would revert every other change made in the same window, not just this).
+//
+// Recreates exactly the 17 rows below (profileNickname, mover, doneAt date).
+// Run this ONCE against the state left by fix-tagged-done-credits — it does
+// not check for existing duplicates. Delete this route immediately after running.
+const RECOVERABLE_CREDITS: { profileNickname: string; moverName: string; doneAt: string }[] = [
+  { profileNickname: 'jannagomezz93', moverName: 'Victoria Horopeka', doneAt: '2026-08-12' },
+  { profileNickname: 'joelle_ocean', moverName: 'Victoria Horopeka', doneAt: '2026-08-13' },
+  { profileNickname: 'dahianeramos', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
+  { profileNickname: 'blasian.lotus.x', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
+  { profileNickname: 'yomnatarek92', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
+  { profileNickname: '_barbygirl_202', moverName: 'Victoria Horopeka', doneAt: '2026-08-12' },
+  { profileNickname: 'bodybypoptarts', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
+  { profileNickname: 'alessandrasays', moverName: 'Victoria Horopeka', doneAt: '2026-08-14' },
+  { profileNickname: 'shannonlamoureaux', moverName: 'Victoria Horopeka', doneAt: '2026-08-06' },
+  { profileNickname: 'anika_maeder', moverName: 'Victoria Horopeka', doneAt: '2026-08-11' },
+  { profileNickname: 'arbor.pilates', moverName: 'Iryna Kolodienko', doneAt: '2026-08-14' },
+  { profileNickname: 'jcarl7098', moverName: 'Iryna Kolodienko', doneAt: '2026-08-04' },
+  { profileNickname: 'rida.rafik_', moverName: 'Iryna Kolodienko', doneAt: '2026-08-10' },
+  { profileNickname: 'pamella.ribeiro_', moverName: 'Iryna Kolodienko', doneAt: '2026-08-14' },
+  { profileNickname: 'ghufranmadany', moverName: 'Iryna Kolodienko', doneAt: '2026-08-14' },
+  { profileNickname: 'susieyoonn', moverName: 'Julia Manson', doneAt: '2026-08-15' },
+  { profileNickname: 'kathieee_2', moverName: 'Julia Manson', doneAt: '2026-08-15' },
+];
+
+router.post('/restore-tagged-done-credits', async (req: Request, res: Response) => {
+  try {
+    const sessionUser = req.user as Express.User;
+    const me = await prisma.user.findUnique({ where: { id: sessionUser.id } });
+    if (!me || !(me.role === 'head' || me.role === 'lead')) return res.status(403).json({ error: 'Not allowed' });
+
+    const results: string[] = [];
+    let created = 0;
+
+    for (const entry of RECOVERABLE_CREDITS) {
+      const card = await prisma.clientCard.findFirst({ where: { profileNickname: entry.profileNickname } });
+      const mover = await prisma.user.findFirst({ where: { name: entry.moverName } });
+      if (!card || !mover) {
+        results.push(`${entry.profileNickname}: skipped — ${!card ? 'card' : 'user'} not found`);
+        continue;
+      }
+
+      await prisma.peekResolutionCredit.create({
+        data: {
+          clientCardId: card.id,
+          movedByUserId: mover.id,
+          movedByName: mover.name,
+          creditedUserId: mover.id,
+          creditedName: mover.name,
+          resolvedDate: new Date(`${entry.doneAt}T00:00:00.000Z`),
+        },
+      });
+      created++;
+      results.push(`${entry.profileNickname}: restored — credited to ${mover.name} on ${entry.doneAt}`);
+    }
+
+    return res.json({ success: true, created, results });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to restore credits' });
+  }
+});
+
 export default router;
