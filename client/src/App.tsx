@@ -42,6 +42,34 @@ function TabLoadingFallback() {
   );
 }
 
+// Catches lazy-chunk load failures (e.g. a transient CDN cache miss right after
+// a deploy) so one tab failing to load shows a retry prompt instead of an
+// uncaught error unmounting the whole app to a blank page.
+class TabErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error(error);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-16 text-center">
+          <p className="text-sm" style={{ color: 'rgba(14,14,14,0.55)' }}>
+            This tab failed to load. This can happen briefly right after an update.
+          </p>
+          <button className="btn-secondary px-4" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── Tab types ────────────────────────────────────────────────────────────────
 
 type SharedTab = 'daily' | 'calendar' | 'requests' | 'qa' | 'stats';
@@ -494,20 +522,22 @@ function MainApp() {
 
       {/* ── Main content ── */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-5 pb-24 md:pb-5">
-        <Suspense fallback={<TabLoadingFallback />}>
-          {activeTab === 'daily'      && <DailyLog onSyncStats={syncStatsMonth} onDataChanged={notifyStatsRefresh} />}
-          {activeTab === 'stats'      && <Statistics year={statsYear} month={statsMonth} onYearChange={setStatsYear} onMonthChange={setStatsMonth} refreshKey={statsRefreshKey} />}
-          {activeTab === 'calendar'   && <CalendarTab onDataChanged={notifyStatsRefresh} />}
-          {activeTab === 'qa'         && <AIChatQA />}
-          {activeTab === 'requests'   && <PeakRequests onDataChanged={fetchNewRequestsCount} />}
-          {activeTab === 'plans'      && <MyPlans />}
-          {activeTab === 'inbox'      && <Inbox onRead={fetchUnreadCount} />}
-          {activeTab === 'reviews'    && <Reviews />}
-          {activeTab === 'pdp'        && <PDP />}
-          {activeTab === 'qa-reports' && <QAReports />}
-          {activeTab === 'kpi'        && <MyKPI />}
-          {activeTab === 'salary'     && <Salary />}
-        </Suspense>
+        <TabErrorBoundary key={activeTab}>
+          <Suspense fallback={<TabLoadingFallback />}>
+            {activeTab === 'daily'      && <DailyLog onSyncStats={syncStatsMonth} onDataChanged={notifyStatsRefresh} />}
+            {activeTab === 'stats'      && <Statistics year={statsYear} month={statsMonth} onYearChange={setStatsYear} onMonthChange={setStatsMonth} refreshKey={statsRefreshKey} />}
+            {activeTab === 'calendar'   && <CalendarTab onDataChanged={notifyStatsRefresh} />}
+            {activeTab === 'qa'         && <AIChatQA />}
+            {activeTab === 'requests'   && <PeakRequests onDataChanged={fetchNewRequestsCount} />}
+            {activeTab === 'plans'      && <MyPlans />}
+            {activeTab === 'inbox'      && <Inbox onRead={fetchUnreadCount} />}
+            {activeTab === 'reviews'    && <Reviews />}
+            {activeTab === 'pdp'        && <PDP />}
+            {activeTab === 'qa-reports' && <QAReports />}
+            {activeTab === 'kpi'        && <MyKPI />}
+            {activeTab === 'salary'     && <Salary />}
+          </Suspense>
+        </TabErrorBoundary>
       </main>
 
       {/* ── Mobile bottom nav ── */}
