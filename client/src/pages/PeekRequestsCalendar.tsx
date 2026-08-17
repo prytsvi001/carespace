@@ -18,11 +18,9 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isTod
 import {
   getPeekCalendarAssignees, getPeekCalendarEntries, getPeekResolutionStats,
   createPeekCalendarEntry, updatePeekCalendarEntry, deletePeekCalendarEntry,
-  getTaggedDoneAnalysis, fixTaggedDoneCredits, restoreTaggedDoneCredits,
 } from '../api';
 import { PeekCalendarEntry, PeekResolutionStats } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
-import { useAuth } from '../context/AuthContext';
 
 // Each agent's color is pinned to an existing Support Calendar event color, per
 // request — Iryna = Night Shift, Victoria H. = Sick leave without note, Julia =
@@ -164,8 +162,6 @@ function DayCell({ date, entries, resolvedCounts, onAdd, onRequestDelete, onEdit
 }
 
 export default function PeekRequestsCalendar() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'head' || user?.role === 'lead';
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [assignees, setAssignees] = useState<{ id: string; name: string }[]>([]);
   const [entries, setEntries] = useState<PeekCalendarEntry[]>([]);
@@ -179,17 +175,6 @@ export default function PeekRequestsCalendar() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editingEntry, setEditingEntry] = useState<PeekCalendarEntry | null>(null);
   const [editHours, setEditHours] = useState('');
-  // Temporary read-only investigation — see peakRequests.ts's analysis/tagged-done.
-  const [taggedDoneStatus, setTaggedDoneStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
-  const [taggedDoneResults, setTaggedDoneResults] = useState<Awaited<ReturnType<typeof getTaggedDoneAnalysis>> | null>(null);
-  // One-off admin action — see peakRequests.ts's fix-tagged-done-credits for the full writeup.
-  const [showFixTaggedConfirm, setShowFixTaggedConfirm] = useState(false);
-  const [fixTaggedStatus, setFixTaggedStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
-  const [fixTaggedResults, setFixTaggedResults] = useState<string[]>([]);
-  // One-off recovery action, run once — see peakRequests.ts's restore-tagged-done-credits.
-  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
-  const [restoreStatus, setRestoreStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
-  const [restoreResults, setRestoreResults] = useState<string[]>([]);
 
   const [form, setForm] = useState({ userId: '', hours: '' });
 
@@ -285,46 +270,6 @@ export default function PeekRequestsCalendar() {
     }
   };
 
-  const handleRunTaggedDoneAnalysis = async () => {
-    setTaggedDoneStatus('running');
-    try {
-      const data = await getTaggedDoneAnalysis();
-      setTaggedDoneResults(data);
-      setTaggedDoneStatus('done');
-    } catch (e) {
-      console.error(e);
-      setTaggedDoneStatus('error');
-    }
-  };
-
-  const handleFixTaggedCredits = async () => {
-    setShowFixTaggedConfirm(false);
-    setFixTaggedStatus('running');
-    try {
-      const { results } = await fixTaggedDoneCredits();
-      setFixTaggedResults(results);
-      setFixTaggedStatus('done');
-      await loadData();
-    } catch (e) {
-      console.error(e);
-      setFixTaggedStatus('error');
-    }
-  };
-
-  const handleRestoreCredits = async () => {
-    setShowRestoreConfirm(false);
-    setRestoreStatus('running');
-    try {
-      const { results } = await restoreTaggedDoneCredits();
-      setRestoreResults(results);
-      setRestoreStatus('done');
-      await loadData();
-    } catch (e) {
-      console.error(e);
-      setRestoreStatus('error');
-    }
-  };
-
   const handleConfirmDelete = async () => {
     const id = confirmDeleteId;
     if (!id) return;
@@ -381,83 +326,6 @@ export default function PeekRequestsCalendar() {
               <span className="font-semibold text-ink">{shortNameFor(t.name)}</span>: {t.count}
             </span>
           ))}
-        </div>
-      )}
-
-      {/* Temporary read-only investigation (head/lead only) — see
-          peakRequests.ts's analysis/tagged-done for the full writeup. */}
-      {isAdmin && (
-        <div className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
-          {taggedDoneStatus !== 'running' && (
-            <button
-              type="button"
-              onClick={handleRunTaggedDoneAnalysis}
-              className="font-medium text-slate-400 hover:text-slate-600 underline"
-            >
-              Analyze Done requests tagged Blocked / Lost access
-            </button>
-          )}
-          {taggedDoneStatus === 'running' && <p className="text-slate-400">Running…</p>}
-          {taggedDoneStatus === 'error' && <p className="text-red-500">Failed — check console and try again.</p>}
-          {taggedDoneStatus === 'done' && taggedDoneResults && (
-            <div className="mt-1">
-              <p className="font-medium text-ink">{taggedDoneResults.count} Done request(s) tagged Blocked/Lost access</p>
-              {taggedDoneResults.count > 0 && (
-                <ul className="list-disc pl-4 mt-1 space-y-0.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
-                  {taggedDoneResults.results.map((r) => (
-                    <li key={r.clientCardId}>
-                      {r.profileNickname || r.contactEmail || r.clientCardId} — tags: {r.tags.join(', ')} — moved by {r.movedBy}
-                      {r.doneAt && ` — ${format(new Date(r.doneAt), 'dd MMM yyyy')}`}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          <div className="mt-1">
-            {fixTaggedStatus === 'idle' && (
-              <button
-                type="button"
-                onClick={() => setShowFixTaggedConfirm(true)}
-                className="font-medium text-slate-400 hover:text-slate-600 underline"
-              >
-                Remove existing credit for tagged Done requests
-              </button>
-            )}
-            {fixTaggedStatus === 'running' && <p className="text-slate-400">Applying fix…</p>}
-            {fixTaggedStatus === 'error' && <p className="text-red-500">Failed to apply fix — check console and try again.</p>}
-            {fixTaggedStatus === 'done' && (
-              <div style={{ color: '#3ba648' }}>
-                <p className="font-medium">✓ Fix applied</p>
-                <ul className="list-disc pl-4" style={{ color: 'rgba(14,14,14,0.45)' }}>
-                  {fixTaggedResults.map((r, i) => <li key={i}>{r}</li>)}
-                </ul>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-1">
-            {restoreStatus === 'idle' && (
-              <button
-                type="button"
-                onClick={() => setShowRestoreConfirm(true)}
-                className="font-medium text-slate-400 hover:text-slate-600 underline"
-              >
-                Restore recoverable credits (run once)
-              </button>
-            )}
-            {restoreStatus === 'running' && <p className="text-slate-400">Restoring…</p>}
-            {restoreStatus === 'error' && <p className="text-red-500">Failed to restore — check console and try again.</p>}
-            {restoreStatus === 'done' && (
-              <div style={{ color: '#3ba648' }}>
-                <p className="font-medium">✓ Restore applied</p>
-                <ul className="list-disc pl-4" style={{ color: 'rgba(14,14,14,0.45)' }}>
-                  {restoreResults.map((r, i) => <li key={i}>{r}</li>)}
-                </ul>
-              </div>
-            )}
-          </div>
         </div>
       )}
 
@@ -583,20 +451,6 @@ export default function PeekRequestsCalendar() {
         message="Delete this calendar entry permanently?"
         onConfirm={handleConfirmDelete}
         onCancel={() => setConfirmDeleteId(null)}
-      />
-
-      <ConfirmDialog
-        open={showFixTaggedConfirm}
-        message="Remove existing resolution credit for every Done request tagged Blocked or Lost access? These predate the tag exclusion and are still counted in the monthly totals. Safe to run more than once."
-        onConfirm={handleFixTaggedCredits}
-        onCancel={() => setShowFixTaggedConfirm(false)}
-      />
-
-      <ConfirmDialog
-        open={showRestoreConfirm}
-        message="Recreate the 17 recoverable credits removed by the fix above (Julia +2, Iryna +5, Victoria H +10)? This does not recover the other 10 (lost reopen-cycle records) — only click this once."
-        onConfirm={handleRestoreCredits}
-        onCancel={() => setShowRestoreConfirm(false)}
       />
     </div>
   );

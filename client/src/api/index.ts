@@ -172,22 +172,6 @@ export const archivePeakRequestCard = (cardId: string) =>
 export const deletePeakRequestCard = (cardId: string) =>
   api.delete(`/peak-requests/cards/delete/${cardId}`).then(r => r.data);
 
-// Temporary read-only investigation (head/lead only) — see peakRequests.ts's
-// analysis/tagged-done for the full writeup. Remove once the investigation is done.
-export const getTaggedDoneAnalysis = () =>
-  api.get('/peak-requests/analysis/tagged-done').then(r => r.data as {
-    count: number;
-    results: { clientCardId: string; contactEmail: string | null; profileNickname: string | null; tags: string[]; doneAt: string | null; movedBy: string; wasCredited: string | null }[];
-  });
-
-// One-off admin action (head/lead only) — see peakRequests.ts's fix-tagged-done-credits for the full writeup.
-export const fixTaggedDoneCredits = () =>
-  api.post('/peak-requests/fix-tagged-done-credits').then(r => r.data as { success: boolean; removed: number; results: string[] });
-
-// One-off recovery action (head/lead only), run once — see peakRequests.ts's restore-tagged-done-credits.
-export const restoreTaggedDoneCredits = () =>
-  api.post('/peak-requests/restore-tagged-done-credits').then(r => r.data as { success: boolean; created: number; results: string[] });
-
 // ─── Statistics ────────────────────────────────────────────────────────────
 export const getStatistics = (params?: { year?: number; month?: number; dateFrom?: string; dateTo?: string }) =>
   api.get('/statistics', { params }).then(r => r.data);
