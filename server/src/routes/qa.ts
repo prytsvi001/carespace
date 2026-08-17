@@ -107,35 +107,5 @@ router.delete('/delete/:id', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/qa/purge-archived — head/lead only, one-off cleanup. Removes the
-// archive feature's leftover data: every entry still flagged archived=true
-// from before the feature was removed. Returns what was deleted (not just a
-// count) since this is permanent and irreversible. Delete this route once
-// the cleanup is confirmed; no ongoing purpose (nothing sets archived=true anymore).
-router.post('/purge-archived', async (req: Request, res: Response) => {
-  try {
-    const role = (req.user as Express.User).role;
-    if (role !== 'head' && role !== 'lead') return res.status(403).json({ error: 'Not allowed' });
-
-    const toDelete = await prisma.aIChatQA.findMany({
-      where: { archived: true },
-      orderBy: { issueDate: 'desc' },
-    });
-
-    if (toDelete.length > 0) {
-      await prisma.aIChatQA.deleteMany({ where: { id: { in: toDelete.map((e) => e.id) } } });
-    }
-
-    return res.json({
-      deletedCount: toDelete.length,
-      deleted: toDelete.map((e) => ({
-        id: e.id, channel: e.channel, issueDate: e.issueDate, comment: e.comment.slice(0, 80),
-      })),
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to purge archived QA entries' });
-  }
-});
 
 export default router;

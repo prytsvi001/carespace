@@ -128,13 +128,6 @@ export const updateQAEntry = (id: string, data: Partial<{
 export const deleteQAEntry = (id: string) =>
   api.delete(`/qa/delete/${id}`).then(r => r.data);
 
-// One-off cleanup (head/lead only) — see qa.ts's purge-archived for the full writeup.
-export const purgeArchivedQAEntries = () =>
-  api.post('/qa/purge-archived').then(r => r.data as {
-    deletedCount: number;
-    deleted: { id: string; channel: string; issueDate: string; comment: string }[];
-  });
-
 // ─── Peak Requests ─────────────────────────────────────────────────────────
 export const getPeakRequests = (params?: { status?: string; agentId?: string; limit?: number; offset?: number; includeArchived?: boolean; search?: string }) =>
   api.get('/peak-requests', { params }).then(r => r.data);

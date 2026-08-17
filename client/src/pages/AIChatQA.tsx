@@ -2,10 +2,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TriangleAlert, Bot } from 'lucide-react';
 import { format } from 'date-fns';
-import { getQAEntries, createQAEntry, updateQAEntry, deleteQAEntry, purgeArchivedQAEntries } from '../api';
+import { getQAEntries, createQAEntry, updateQAEntry, deleteQAEntry } from '../api';
 import { AIChatQA as QAEntry, QAChannel, QAStatus } from '../types';
 import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
-import { useAuth } from '../context/AuthContext';
 
 const CHANNEL_LABELS: Record<QAChannel, string> = {
   PEEKVIEWER_AI: 'Peekviewer AI',
@@ -147,17 +146,11 @@ function QACard({ entry, onStatusChange, onEdit, onDelete }: { entry: QAEntry; o
 
 export default function AIChatQA() {
   const [entries, setEntries] = useState<QAEntry[]>([]);
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'head' || user?.role === 'lead';
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editingEntry, setEditingEntry] = useState<QAEntry | null>(null);
-  // One-off cleanup (head/lead only) — see qa.ts's purge-archived for the full writeup.
-  const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
-  const [purgeStatus, setPurgeStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
-  const [purgeResults, setPurgeResults] = useState<string[]>([]);
 
   // Form
   const [form, setForm] = useState({
@@ -249,27 +242,6 @@ export default function AIChatQA() {
     setTotal(t => t - 1);
   };
 
-  const handlePurgeArchived = async () => {
-    setShowPurgeConfirm(false);
-    setPurgeStatus('running');
-    try {
-      const { deletedCount, deleted } = await purgeArchivedQAEntries();
-      setPurgeResults(
-        deletedCount === 0
-          ? ['No archived entries found — nothing to delete.']
-          : [
-              `Permanently deleted ${deletedCount} archived entry/entries:`,
-              ...deleted.map(d => `${CHANNEL_LABELS[d.channel as QAChannel] ?? d.channel} · ${format(new Date(d.issueDate), 'dd MMM yyyy')} · ${d.comment}`),
-            ]
-      );
-      setPurgeStatus('done');
-      await loadData();
-    } catch (e) {
-      console.error(e);
-      setPurgeStatus('error');
-    }
-  };
-
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -283,30 +255,6 @@ export default function AIChatQA() {
         </div>
       </div>
 
-      {/* Temporary one-off cleanup (head/lead only) — see qa.ts's purge-archived. */}
-      {isAdmin && (
-        <div className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
-          {purgeStatus === 'idle' && (
-            <button
-              type="button"
-              onClick={() => setShowPurgeConfirm(true)}
-              className="font-medium text-slate-400 hover:text-slate-600 underline"
-            >
-              Permanently delete all archived QA entries
-            </button>
-          )}
-          {purgeStatus === 'running' && <p className="text-slate-400">Deleting…</p>}
-          {purgeStatus === 'error' && <p className="text-red-500">Failed — check console and try again.</p>}
-          {purgeStatus === 'done' && (
-            <div style={{ color: '#3ba648' }}>
-              <p className="font-medium">✓ Done</p>
-              <ul className="list-disc pl-4" style={{ color: 'rgba(14,14,14,0.45)' }}>
-                {purgeResults.map((r, i) => <li key={i}>{r}</li>)}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Entries */}
       {loading ? (
@@ -382,13 +330,6 @@ export default function AIChatQA() {
           </div>
         </div>
       </Modal>
-
-      <ConfirmDialog
-        open={showPurgeConfirm}
-        message="Permanently delete every archived QA entry? This cannot be undone."
-        onConfirm={handlePurgeArchived}
-        onCancel={() => setShowPurgeConfirm(false)}
-      />
     </div>
   );
 }
