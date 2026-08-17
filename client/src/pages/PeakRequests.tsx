@@ -819,7 +819,10 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
         status: showTaggedView ? undefined : (filterStatus || undefined),
         agentId: filterAgent || undefined,
         limit: 200,
-        includeArchived: showArchived,
+        // The Blocked/Lost access tab always includes archived cards, regardless
+        // of the board's own Show Archive toggle — a tagged card shouldn't
+        // disappear from this view just because it auto-archived 24h after Done.
+        includeArchived: showTaggedView || showArchived,
       });
       setCards(prev => {
         if (pendingMutations.current.size === 0) return reqData.cards;
@@ -1066,9 +1069,13 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
         </div>
         <div className="flex gap-2 flex-wrap">
           <PeekDutyToggle />
-          <button className="btn-secondary whitespace-nowrap" onClick={() => setShowArchived(v => !v)}>
-            {showArchived ? 'Hide Archive' : 'Show Archive'}
-          </button>
+          {/* Moot while on the Blocked/Lost access tab — that view always
+              includes archived cards regardless of this toggle's state. */}
+          {!showTaggedView && (
+            <button className="btn-secondary whitespace-nowrap" onClick={() => setShowArchived(v => !v)}>
+              {showArchived ? 'Hide Archive' : 'Show Archive'}
+            </button>
+          )}
           <button className="btn-accent whitespace-nowrap" onClick={openNewForm}>+ New Request</button>
         </div>
       </div>
