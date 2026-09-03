@@ -81,12 +81,12 @@ const ARCHIVED_BADGE_STYLE: React.CSSProperties = { backgroundColor: 'rgba(14,14
 
 // One primary action per column — status is already conveyed by the column
 // itself, so the card no longer needs its own status badge/dropdown. Reopen
-// (Done -> In Progress) is styled neutral/ghost rather than accent — it's a
-// step backward, not forward progress like Start/Done.
+// (Done -> New) is styled neutral/ghost rather than accent — it's a step
+// backward, not forward progress like Start/Done.
 const PRIMARY_ACTION: Record<RequestStatus, { label: string; target: RequestStatus; accent: boolean }> = {
   NEW: { label: '→ Start', target: 'IN_PROGRESS', accent: true },
   IN_PROGRESS: { label: '→ Done', target: 'DONE', accent: true },
-  DONE: { label: 'Reopen', target: 'IN_PROGRESS', accent: false },
+  DONE: { label: 'Reopen', target: 'NEW', accent: false },
 };
 
 // ── CardMenu ───────────────────────────────────────────────────────────────────
