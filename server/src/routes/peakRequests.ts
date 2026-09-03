@@ -3,13 +3,17 @@
 // profileNickname), holding the full history of their requests. The "active"
 // request for a card is simply the one with the latest (createdAt, id) —
 // derived, not a stored flag — everything older is read-only history.
+import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { sendTelegramMessage, CARESPACE_URL } from '../telegram';
 
 const router = Router();
 
-type PeakComment = { authorId: string | null; authorName: string; text: string; createdAt: string };
+type PeakComment = {
+  id: string; authorId: string | null; authorName: string; text: string;
+  createdAt: string; editedAt?: string | null;
+};
 
 function parseComments(raw: string): PeakComment[] {
   try { return JSON.parse(raw); } catch { return []; }
@@ -360,6 +364,7 @@ router.post('/:id/comments', async (req: Request, res: Response) => {
 
     const comments = parseComments(existing.comments);
     comments.push({
+      id: randomUUID(),
       authorId: user.id,
       authorName: user.name,
       text: text.trim(),
@@ -382,6 +387,68 @@ router.post('/:id/comments', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// PATCH /api/peak-requests/:id/comments/:commentId — author-only edit
+router.patch('/:id/comments/:commentId', async (req: Request, res: Response) => {
+  try {
+    const user = req.user as Express.User;
+    const { id, commentId } = req.params;
+    const { text } = req.body as { text?: string };
+
+    if (!text?.trim()) return res.status(400).json({ error: 'Comment text is required' });
+
+    const existing = await prisma.peakRequest.findUnique({ where: { id }, select: { comments: true } });
+    if (!existing) return res.status(404).json({ error: 'Request not found' });
+
+    const comments = parseComments(existing.comments);
+    const comment = comments.find((c) => c.id === commentId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (comment.authorId !== user.id) return res.status(403).json({ error: 'Not permitted' });
+
+    comment.text = text.trim();
+    comment.editedAt = new Date().toISOString();
+
+    const request = await prisma.peakRequest.update({
+      where: { id },
+      data: { comments: JSON.stringify(comments) },
+      include: { agent: { select: { id: true, name: true } } },
+    });
+
+    return res.json(formatRequestEntry(request));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update comment' });
+  }
+});
+
+// DELETE /api/peak-requests/:id/comments/:commentId — author-only delete
+router.delete('/:id/comments/:commentId', async (req: Request, res: Response) => {
+  try {
+    const user = req.user as Express.User;
+    const { id, commentId } = req.params;
+
+    const existing = await prisma.peakRequest.findUnique({ where: { id }, select: { comments: true } });
+    if (!existing) return res.status(404).json({ error: 'Request not found' });
+
+    const comments = parseComments(existing.comments);
+    const comment = comments.find((c) => c.id === commentId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (comment.authorId !== user.id) return res.status(403).json({ error: 'Not permitted' });
+
+    const next = comments.filter((c) => c.id !== commentId);
+
+    const request = await prisma.peakRequest.update({
+      where: { id },
+      data: { comments: JSON.stringify(next) },
+      include: { agent: { select: { id: true, name: true } } },
+    });
+
+    return res.json(formatRequestEntry(request));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to delete comment' });
   }
 });
 

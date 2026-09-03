@@ -58,10 +58,12 @@ export interface AIChatQA {
 }
 
 export interface PeakRequestComment {
+  id: string;
   authorId: string | null;
   authorName: string;
   text: string;
   createdAt: string;
+  editedAt?: string | null;
 }
 
 // One entry in a ClientCard's timeline — either the active request or a

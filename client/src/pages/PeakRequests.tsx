@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
   updatePeakRequestCardStatus, togglePeakRequestCardStar, checkPeakRequestCard, archivePeakRequestCard, deletePeakRequestCard,
-  patchPeakRequestFields, addPeakRequestComment, getDutyStatus, DutyStatus,
+  patchPeakRequestFields, addPeakRequestComment, editPeakRequestComment, deletePeakRequestComment, getDutyStatus, DutyStatus,
   getTodayLogs,
 } from '../api';
 import { ClientCardView, PeakRequestComment, RequestStatus, ShiftLog } from '../types';
@@ -199,7 +199,7 @@ function EyeCheckButton({ card, canCheck, onCheck }: {
 
 function ClientCard({
   card, onEdit, onStatusChange, onToggleStar, onArchive, onDelete, onFieldsUpdated, onCheckAccount,
-  highlightNew, showEyeCheck, canCheckAccounts, showStatusBadge,
+  highlightNew, showEyeCheck, canCheckAccounts, showStatusBadge, currentUserId,
 }: {
   card: ClientCardView;
   onEdit: (card: ClientCardView) => void;
@@ -216,6 +216,9 @@ function ClientCard({
   // card isn't sitting inside its own status column, so there's nothing else
   // to convey which one it's actually in — same badge as SearchResultCard.
   showStatusBadge?: boolean;
+  // The signed-in user's id — a comment's author gets edit/delete controls on
+  // their own comments, no one else's.
+  currentUserId?: string;
 }) {
   const [confirm, setConfirm]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -236,6 +239,11 @@ function ClientCard({
   // Existing comments always show; the input for a NEW one stays collapsed
   // behind a "+ Add comment" link until clicked.
   const [addingComment, setAddingComment] = useState(false);
+  // Editing an existing comment in place — id of the comment being edited, plus its draft text.
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [savingCommentEdit, setSavingCommentEdit] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
 
   // ── Tags state (active request only) ───────────────────────────────────────
   const [activeTags, setActiveTags] = useState<TagKey[]>(() =>
@@ -293,6 +301,45 @@ function ClientCard({
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handlePostComment();
+    }
+  };
+
+  // ── Edit / delete comment (owner only) ─────────────────────────────────────
+  const startEditComment = (comment: PeakRequestComment) => {
+    setEditingCommentId(comment.id);
+    setEditingCommentText(comment.text);
+  };
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentText('');
+  };
+
+  const handleSaveCommentEdit = async () => {
+    const text = editingCommentText.trim();
+    if (!editingCommentId || !text) return;
+    setSavingCommentEdit(true);
+    try {
+      const updated = await editPeakRequestComment(active.id, editingCommentId, text);
+      setComments(updated.comments);
+      onFieldsUpdated(active.id, { comments: updated.comments });
+      cancelEditComment();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingCommentEdit(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      const updated = await deletePeakRequestComment(active.id, commentId);
+      setComments(updated.comments);
+      onFieldsUpdated(active.id, { comments: updated.comments });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDeletingCommentId(null);
     }
   };
 
@@ -532,17 +579,82 @@ function ClientCard({
       <div className="pt-2 space-y-1.5" style={{ borderTop: '1px solid rgba(14,14,14,0.07)' }}>
         {comments.length > 0 && (
           <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
-            {comments.map((c, i) => (
-              <div key={i} className="rounded-lg px-2 py-1.5" style={{ backgroundColor: 'rgba(14,14,14,0.025)' }}>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-medium text-slate-600">{c.authorName}</span>
-                  <span className="text-[10px]" style={{ color: 'rgba(14,14,14,0.35)' }}>
-                    {format(new Date(c.createdAt), "MMM d, yyyy 'at' HH:mm")}
-                  </span>
+            {comments.map((c, i) => {
+              const isOwner = !!currentUserId && c.authorId === currentUserId;
+              const isEditing = editingCommentId === c.id;
+              return (
+                <div key={c.id ?? i} className="group rounded-lg px-2 py-1.5" style={{ backgroundColor: 'rgba(14,14,14,0.025)' }}>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[10px] font-medium text-slate-600">{c.authorName}</span>
+                      <span className="text-[10px]" style={{ color: 'rgba(14,14,14,0.35)' }}>
+                        {format(new Date(c.createdAt), "MMM d, yyyy 'at' HH:mm")}
+                      </span>
+                      {c.editedAt && (
+                        <span className="text-[9px] italic" style={{ color: 'rgba(14,14,14,0.30)' }}>(edited)</span>
+                      )}
+                    </div>
+                    {isOwner && !isEditing && (
+                      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => startEditComment(c)}
+                          className="p-0.5 rounded hover:bg-black/5 text-slate-400 hover:text-slate-600 transition-colors"
+                          aria-label="Edit comment"
+                          title="Edit comment"
+                        >
+                          <Pencil size={11} strokeWidth={1.8} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeletingCommentId(c.id)}
+                          className="p-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
+                          aria-label="Delete comment"
+                          title="Delete comment"
+                        >
+                          <Trash2 size={11} strokeWidth={1.8} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {isEditing ? (
+                    <div className="space-y-1.5 mt-1">
+                      <textarea
+                        autoFocus
+                        value={editingCommentText}
+                        rows={2}
+                        className="w-full resize-none rounded-lg px-2 py-1.5 text-xs outline-none transition-colors"
+                        style={{ border: '1px solid rgba(14,14,14,0.10)', color: 'rgba(14,14,14,0.60)', backgroundColor: '#fff' }}
+                        onChange={e => setEditingCommentText(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleSaveCommentEdit(); }
+                          if (e.key === 'Escape') cancelEditComment();
+                        }}
+                      />
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={cancelEditComment}
+                          className="text-[10px] px-2 py-1 rounded-lg text-slate-400 hover:text-slate-600 font-medium transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveCommentEdit}
+                          disabled={savingCommentEdit || !editingCommentText.trim()}
+                          className="text-[10px] px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-medium transition-colors disabled:opacity-50"
+                        >
+                          {savingCommentEdit ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-600 leading-snug">{c.text}</p>
+                  )}
                 </div>
-                <p className="text-xs text-slate-600 leading-snug">{c.text}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {addingComment && (
@@ -629,6 +741,9 @@ function ClientCard({
       <ConfirmDialog open={confirmDelete} message="Delete this client card and its full request history permanently?"
         onConfirm={() => { onDelete(card.id); setConfirmDelete(false); }}
         onCancel={() => setConfirmDelete(false)} />
+      <ConfirmDialog open={!!deletingCommentId} message="Delete this comment?"
+        onConfirm={() => deletingCommentId && handleDeleteComment(deletingCommentId)}
+        onCancel={() => setDeletingCommentId(null)} />
     </div>
   );
 }
@@ -1205,6 +1320,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                   onCheckAccount={handleCheckAccount}
                   showEyeCheck={card.status === 'IN_PROGRESS'}
                   canCheckAccounts={canCheckAccounts}
+                  currentUserId={user?.id}
                 />
               ))}
             </div>
@@ -1259,6 +1375,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                       onCheckAccount={handleCheckAccount}
                       showEyeCheck={col.status === 'IN_PROGRESS'}
                       canCheckAccounts={canCheckAccounts}
+                      currentUserId={user?.id}
                     />
                   ))}
                 </div>

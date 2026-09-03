@@ -497,7 +497,7 @@ model PeakRequest {
   requestText      String
   status        String        @default("NEW")
   doneAt        DateTime?     // legacy; ClientCard.doneAt is authoritative for auto-archive going forward
-  comments      String        @default("[]") // JSON: [{authorId, authorName, text, createdAt}]
+  comments      String        @default("[]") // JSON: [{id, authorId, authorName, text, createdAt, editedAt?}]
   tags          String        @default("")
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt

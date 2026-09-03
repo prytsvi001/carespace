@@ -152,6 +152,12 @@ export const patchPeakRequestFields = (id: string, fields: { tags?: string }) =>
 export const addPeakRequestComment = (id: string, text: string) =>
   api.post(`/peak-requests/${id}/comments`, { text }).then(r => r.data);
 
+export const editPeakRequestComment = (id: string, commentId: string, text: string) =>
+  api.patch(`/peak-requests/${id}/comments/${commentId}`, { text }).then(r => r.data);
+
+export const deletePeakRequestComment = (id: string, commentId: string) =>
+  api.delete(`/peak-requests/${id}/comments/${commentId}`).then(r => r.data);
+
 export const getNewRequestsCount = () =>
   api.get('/peak-requests/new-count').then(r => r.data as { count: number });
 
