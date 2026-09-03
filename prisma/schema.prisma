@@ -67,6 +67,7 @@ model Update {
   title      String
   content    String
   tag        String?   // "Important" | "Policy change" | "Reminder" | null
+  attachments String   @default("[]") // JSON: [{url, pathname, name, contentType, size}] — Vercel Blob (private store)
   editedAt   DateTime? // set on edit; null until then — drives the "Edited" indicator
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt

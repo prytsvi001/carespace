@@ -3,10 +3,12 @@
 // announcements with read-tracking. Driven entirely by props from Inbox.tsx
 // (which already polls /api/updates in its existing 20s loop), so this
 // component does no fetching of its own.
-import React, { useState } from 'react';
-import { Megaphone, Pencil, Trash2, ChevronDown, ChevronUp, Mail } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Megaphone, Pencil, Trash2, ChevronDown, ChevronUp, Mail, Paperclip, X, FileText, Image as ImageIcon, Download } from 'lucide-react';
+import { uploadPresigned } from '@vercel/blob/client';
 import { format } from 'date-fns';
-import { TeamUpdate, UpdateTag } from '../types';
+import { TeamUpdate, UpdateTag, UpdateAttachment } from '../types';
+import { deleteUpdateAttachment, getUpdateAttachmentUrl } from '../api';
 import { Modal, ConfirmDialog } from './ui';
 
 const TAG_META: Record<UpdateTag, { cls: string }> = {
@@ -15,10 +17,20 @@ const TAG_META: Record<UpdateTag, { cls: string }> = {
   'Reminder': { cls: 'bg-blue-50 text-blue-600' },
 };
 
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
+}
+
 interface UpdateFormData {
   title: string;
   content: string;
   tag: string | null;
+  attachments: UpdateAttachment[];
 }
 
 interface UpdatesTabProps {
@@ -33,12 +45,15 @@ interface UpdatesTabProps {
 export function UpdatesTab({ updates, isAdmin, onPublish, onEdit, onDelete, onMarkRead }: UpdatesTabProps) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<UpdateFormData>({ title: '', content: '', tag: '' });
+  const [form, setForm] = useState<UpdateFormData>({ title: '', content: '', tag: '', attachments: [] });
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [adminDetailIds, setAdminDetailIds] = useState<Set<string>>(new Set());
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleSet = (set: Set<string>, setFn: (s: Set<string>) => void, id: string) => {
     const next = new Set(set);
@@ -48,15 +63,17 @@ export function UpdatesTab({ updates, isAdmin, onPublish, onEdit, onDelete, onMa
 
   const openCreate = () => {
     setEditingId(null);
-    setForm({ title: '', content: '', tag: '' });
+    setForm({ title: '', content: '', tag: '', attachments: [] });
     setFormError('');
+    setUploadError('');
     setShowForm(true);
   };
 
   const openEdit = (u: TeamUpdate) => {
     setEditingId(u.id);
-    setForm({ title: u.title, content: u.content, tag: u.tag ?? '' });
+    setForm({ title: u.title, content: u.content, tag: u.tag ?? '', attachments: u.attachments });
     setFormError('');
+    setUploadError('');
     setShowForm(true);
   };
 
@@ -68,7 +85,10 @@ export function UpdatesTab({ updates, isAdmin, onPublish, onEdit, onDelete, onMa
     setSubmitting(true);
     setFormError('');
     try {
-      const data: UpdateFormData = { title: form.title.trim(), content: form.content.trim(), tag: form.tag || null };
+      const data: UpdateFormData = {
+        title: form.title.trim(), content: form.content.trim(), tag: form.tag || null,
+        attachments: form.attachments,
+      };
       if (editingId) {
         await onEdit(editingId, data);
       } else {
@@ -80,6 +100,39 @@ export function UpdatesTab({ updates, isAdmin, onPublish, onEdit, onDelete, onMa
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    setUploadError('');
+    for (const file of files) {
+      setUploadingCount((c) => c + 1);
+      try {
+        const result = await uploadPresigned(`updates/${file.name}`, file, {
+          access: 'private',
+          handleUploadUrl: '/api/updates/attachments/upload-url',
+        });
+        setForm((f) => ({
+          ...f,
+          attachments: [...f.attachments, {
+            url: result.url, pathname: result.pathname, name: file.name,
+            contentType: result.contentType, size: file.size,
+          }],
+        }));
+      } catch (err) {
+        console.error(err);
+        setUploadError(`Failed to upload "${file.name}".`);
+      } finally {
+        setUploadingCount((c) => c - 1);
+      }
+    }
+  };
+
+  const handleRemoveAttachment = (url: string) => {
+    setForm((f) => ({ ...f, attachments: f.attachments.filter((a) => a.url !== url) }));
+    deleteUpdateAttachment(url).catch((err) => console.error(err));
   };
 
   return (
@@ -151,6 +204,27 @@ export function UpdatesTab({ updates, isAdmin, onPublish, onEdit, onDelete, onMa
                   <p className="text-xs text-slate-400 mt-1">
                     Edited {format(new Date(u.editedAt), "dd MMM yyyy 'at' HH:mm")}
                   </p>
+                )}
+
+                {u.attachments.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {u.attachments.map((a) => (
+                      <a
+                        key={a.url}
+                        href={getUpdateAttachmentUrl(a.url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 transition-colors"
+                        title={a.name}
+                      >
+                        {a.contentType.startsWith('image/')
+                          ? <ImageIcon size={13} strokeWidth={1.8} className="shrink-0 text-slate-400" />
+                          : <FileText size={13} strokeWidth={1.8} className="shrink-0 text-slate-400" />}
+                        <span className="truncate max-w-[140px]">{a.name}</span>
+                        <Download size={11} strokeWidth={1.8} className="shrink-0 text-slate-400" />
+                      </a>
+                    ))}
+                  </div>
                 )}
 
                 <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
@@ -249,16 +323,59 @@ export function UpdatesTab({ updates, isAdmin, onPublish, onEdit, onDelete, onMa
             />
           </div>
 
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Attachments (optional)</label>
+
+            {form.attachments.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {form.attachments.map((a) => (
+                  <div key={a.url} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {a.contentType.startsWith('image/')
+                        ? <img src={getUpdateAttachmentUrl(a.url)} alt="" className="w-7 h-7 rounded object-cover shrink-0" />
+                        : <FileText size={16} strokeWidth={1.8} className="shrink-0 text-slate-400" />}
+                      <span className="text-xs text-slate-600 truncate">{a.name}</span>
+                      <span className="text-[10px] text-slate-400 shrink-0">{formatFileSize(a.size)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttachment(a.url)}
+                      className="p-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 shrink-0 transition-colors"
+                      aria-label={`Remove ${a.name}`}
+                    >
+                      <X size={13} strokeWidth={2} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesSelected} />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
+                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.6)' }}
+              >
+                <Paperclip size={13} strokeWidth={1.8} />
+                Attach files
+              </button>
+              {uploadingCount > 0 && <span className="text-xs text-slate-400">Uploading {uploadingCount}…</span>}
+            </div>
+            {uploadError && <p className="text-xs text-red-500 mt-1">{uploadError}</p>}
+          </div>
+
           {formError && <p className="text-xs text-red-500">{formError}</p>}
 
           <div className="flex justify-end">
             <button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || uploadingCount > 0}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
               style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
             >
-              {submitting ? 'Saving…' : editingId ? 'Save' : 'Publish'}
+              {submitting ? 'Saving…' : uploadingCount > 0 ? 'Uploading…' : editingId ? 'Save' : 'Publish'}
             </button>
           </div>
         </div>

@@ -383,6 +383,14 @@ export interface PersonalShortcut {
 
 export type UpdateTag = 'Important' | 'Policy change' | 'Reminder';
 
+export interface UpdateAttachment {
+  url: string;
+  pathname: string;
+  name: string;
+  contentType: string;
+  size: number;
+}
+
 export interface TeamUpdate {
   id: string;
   authorId: string | null;
@@ -390,6 +398,7 @@ export interface TeamUpdate {
   title: string;
   content: string;
   tag: UpdateTag | null;
+  attachments: UpdateAttachment[];
   editedAt: string | null;
   createdAt: string;
   updatedAt: string;

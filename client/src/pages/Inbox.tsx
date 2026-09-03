@@ -7,7 +7,7 @@ import {
   addQAAgentReportComment, addQAIssueComment,
   getUpdates, createUpdate, updateUpdate, deleteUpdate, markUpdateRead,
 } from '../api';
-import { InboxMessage, TeamUpdate } from '../types';
+import { InboxMessage, TeamUpdate, UpdateAttachment } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { QAReportPreview } from '../components/qaReport';
 import { UpdatesTab } from '../components/UpdatesTab';
@@ -180,13 +180,13 @@ export default function Inbox({ onRead }: InboxProps) {
   };
 
   // ── Updates (announcements) ────────────────────────────────────────────────
-  const handlePublishUpdate = async (data: { title: string; content: string; tag: string | null }) => {
+  const handlePublishUpdate = async (data: { title: string; content: string; tag: string | null; attachments: UpdateAttachment[] }) => {
     const created: TeamUpdate = await createUpdate(data);
     setUpdates((prev) => [created, ...prev]);
     onRead?.();
   };
 
-  const handleEditUpdate = async (id: string, data: { title: string; content: string; tag: string | null }) => {
+  const handleEditUpdate = async (id: string, data: { title: string; content: string; tag: string | null; attachments: UpdateAttachment[] }) => {
     const updated: TeamUpdate = await updateUpdate(id, data);
     setUpdates((prev) => prev.map((u) => (u.id === id ? updated : u)));
   };

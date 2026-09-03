@@ -1,6 +1,7 @@
 // client/src/api/index.ts
 import axios from 'axios';
 import { cached, invalidateCache } from './cache';
+import type { UpdateAttachment } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -240,10 +241,10 @@ export const deleteMessage = (id: string) =>
 // ─── Updates (Inbox tab: lead/head announcements) ──────────────────────────
 export const getUpdates = () => api.get('/updates').then((r) => r.data);
 
-export const createUpdate = (data: { title: string; content: string; tag?: string | null }) =>
+export const createUpdate = (data: { title: string; content: string; tag?: string | null; attachments?: UpdateAttachment[] }) =>
   api.post('/updates', data).then((r) => r.data);
 
-export const updateUpdate = (id: string, data: { title: string; content: string; tag?: string | null }) =>
+export const updateUpdate = (id: string, data: { title: string; content: string; tag?: string | null; attachments?: UpdateAttachment[] }) =>
   api.put(`/updates/${id}`, data).then((r) => r.data);
 
 export const deleteUpdate = (id: string) =>
@@ -251,6 +252,16 @@ export const deleteUpdate = (id: string) =>
 
 export const markUpdateRead = (id: string) =>
   api.patch(`/updates/${id}/read`).then((r) => r.data);
+
+export const deleteUpdateAttachment = (url: string) =>
+  api.delete('/updates/attachments', { data: { url } }).then((r) => r.data);
+
+// The store is private, so attachments aren't fetched via a plain <a href>/<img src> —
+// this builds an authenticated proxy URL through /attachments/view instead. Axios's
+// cookie-jar auth doesn't apply to a bare browser navigation/img-load, but the session
+// cookie is still sent automatically since it's same-origin.
+export const getUpdateAttachmentUrl = (url: string) =>
+  `/api/updates/attachments/view?url=${encodeURIComponent(url)}`;
 
 // ─── Reviews ───────────────────────────────────────────────────────────────
 export const getReviews = (params?: {
