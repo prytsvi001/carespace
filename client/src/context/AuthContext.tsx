@@ -12,6 +12,7 @@ export interface AuthUser {
   agentId: string | null;
   telegramChatId: string | null;
   avatarUrl: string | null;
+  salaryAccess: boolean;
 }
 
 interface AuthContextValue {
