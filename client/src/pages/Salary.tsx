@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Wallet, Send, LayoutList } from 'lucide-react';
 import { getSalary, patchSalary, patchSalaryTeamMeta, sendSalaryNotification } from '../api';
 import { BonusEntry, SalaryRow } from '../types';
-import { CardListSkeleton, EmptyState, ConfirmDialog } from '../components/ui';
+import { CardListSkeleton, EmptyState, Modal } from '../components/ui';
 import { SalaryCard } from '../components/SalaryCard';
 import { SalarySummaryModal } from '../components/SalarySummaryModal';
 import { TeamBonusPanel, tierForTotalParsedProfiles } from '../components/TeamBonusPanel';
@@ -11,13 +11,22 @@ import { TeamBonusPanel, tierForTotalParsedProfiles } from '../components/TeamBo
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_NAMES_UA = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
 
-// Support Team: База (hours × rate) + Бонус за ревʼю + additional bonuses
-// + Загалом. Peekviewer Team: База (flat) + additional bonuses + Загалом.
-// No Peek Requests / toggle-bonus lines for either, per spec — Julia's Peek
-// Requests bonus, Nicky's Trustpilot bonus, and Peekviewer toggle bonuses
-// (Update bonus, uMobix/Struktura boosts) still count toward Загалом, they
-// just don't get their own line in the message.
-function defaultSalaryMessage(monthUA: string, year: number, row: SalaryRow): string {
+// Ukrainian message label for each toggle key — falls back to the toggle's
+// own (English) config label for any key not explicitly named here, so a
+// future toggle still gets a line instead of silently vanishing from the
+// message.
+const TOGGLE_MESSAGE_LABELS: Record<string, string> = {
+  trustpilotOn: 'Бонус Trustpilot',
+  updateOn: 'Бонус за оновлення',
+  strukturaOn: 'Структура буст',
+  smmDutyOn: 'Бонус SMM duty',
+  uMobixOn: 'uMobix буст',
+};
+
+// Fully dynamic — every line mirrors exactly what SalaryCard shows and what
+// feeds row.total server-side, so the Telegram message and the on-screen
+// total never drift apart. Only active/non-zero items get a line.
+function defaultSalaryMessage(monthUA: string, year: number, row: SalaryRow, totalParsedProfiles: number | null): string {
   const lines: string[] = [`💰 Твоя зарплата за ${monthUA} ${year}:`, ''];
 
   if (row.hasSupportDuties) {
@@ -31,10 +40,30 @@ function defaultSalaryMessage(monthUA: string, year: number, row: SalaryRow): st
     lines.push(`База: $${row.base.toFixed(2)}`);
   }
 
-  if (row.hasReviews) lines.push(`Бонус за ревʼю: $${row.reviewsBonus.toFixed(2)}`);
+  if (row.team === 'support') {
+    if (row.hasReviews && row.reviewsBonus > 0) {
+      lines.push(`Бонус за ревʼю (${row.reviewsCount} ревʼю): +$${row.reviewsBonus.toFixed(2)}`);
+    }
+    for (const t of row.toggles) {
+      if (t.on) lines.push(`${TOGGLE_MESSAGE_LABELS[t.key] ?? t.label}: +$${t.amount.toFixed(2)}`);
+    }
+    if (row.hasPeekBonus && row.peekBonus > 0) {
+      lines.push(`Бонус Peek Requests (${row.peekCount ?? 0} запитів): +$${row.peekBonus.toFixed(2)}`);
+    }
+  } else {
+    for (const t of row.toggles) {
+      if (t.on) lines.push(`${TOGGLE_MESSAGE_LABELS[t.key] ?? t.label}: +$${t.amount.toFixed(2)}`);
+    }
+    if (row.teamBonus > 0) {
+      lines.push(`Командний бонус (парси команди: ${totalParsedProfiles ?? 0}): +$${row.teamBonus.toFixed(2)}`);
+    }
+    if (row.individualParseBonus > 0) {
+      lines.push(`Індивідуальний бонус за парси (${row.parsedProfiles ?? 0} парсів): +$${row.individualParseBonus.toFixed(2)}`);
+    }
+  }
 
   for (const b of row.bonuses) {
-    lines.push(`• ${b.description}: $${b.amount.toFixed(2)}`);
+    lines.push(`${b.description}: +$${b.amount.toFixed(2)}`);
   }
 
   lines.push('', `Загалом: $${row.total.toFixed(2)}`, '', 'Якщо є питання — звертайся 🙌');
@@ -52,7 +81,7 @@ export default function Salary() {
   const [rows, setRows] = useState<SalaryRow[]>([]);
   const [totalParsedProfiles, setTotalParsedProfiles] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [confirmSendAll, setConfirmSendAll] = useState(false);
+  const [showSendAllPreview, setShowSendAllPreview] = useState(false);
   const [sendingAll, setSendingAll] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
 
@@ -116,7 +145,7 @@ export default function Salary() {
   const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
   const monthLabelUA = MONTH_NAMES_UA[month - 1];
 
-  const messageFor = (row: SalaryRow) => defaultSalaryMessage(monthLabelUA, year, row);
+  const messageFor = (row: SalaryRow) => defaultSalaryMessage(monthLabelUA, year, row, totalParsedProfiles);
 
   const handleSend = async (row: SalaryRow, message: string) => {
     await sendSalaryNotification(row.personKey, { year, month, team, message });
@@ -126,7 +155,6 @@ export default function Salary() {
   const notifiableCount = rows.filter((r) => r.canNotify).length;
 
   const handleSendAll = async () => {
-    setConfirmSendAll(false);
     setSendingAll(true);
     try {
       for (const row of rows) {
@@ -139,6 +167,7 @@ export default function Salary() {
       }
     } finally {
       setSendingAll(false);
+      setShowSendAllPreview(false);
       await loadData(true);
     }
   };
@@ -188,7 +217,7 @@ export default function Salary() {
           {!loading && notifiableCount > 0 && (
             <button
               type="button"
-              onClick={() => setConfirmSendAll(true)}
+              onClick={() => setShowSendAllPreview(true)}
               disabled={sendingAll}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95 disabled:opacity-50"
               style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
@@ -227,12 +256,36 @@ export default function Salary() {
         </div>
       )}
 
-      <ConfirmDialog
-        open={confirmSendAll}
-        message={`Send salary notifications to ${notifiableCount} ${notifiableCount === 1 ? 'person' : 'people'}?`}
-        onConfirm={handleSendAll}
-        onCancel={() => setConfirmSendAll(false)}
-      />
+      <Modal
+        open={showSendAllPreview}
+        onClose={() => setShowSendAllPreview(false)}
+        title={`Send salary notifications — ${notifiableCount} ${notifiableCount === 1 ? 'person' : 'people'}`}
+        maxWidth="max-w-2xl"
+      >
+        <div className="space-y-4">
+          <p className="text-xs" style={{ color: 'rgba(14,14,14,0.50)' }}>
+            Review each message below before sending — this is exactly what will go out.
+          </p>
+          <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+            {rows.filter((r) => r.canNotify).map((row) => (
+              <div key={row.personKey} className="rounded-lg p-3" style={{ border: '1px solid rgba(14,14,14,0.08)' }}>
+                <p className="text-xs font-semibold mb-1.5" style={{ color: 'rgba(14,14,14,0.75)' }}>{row.displayName}</p>
+                <pre className="text-xs whitespace-pre-wrap font-sans leading-relaxed" style={{ color: 'rgba(14,14,14,0.60)' }}>
+                  {messageFor(row)}
+                </pre>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button className="btn-secondary flex-1" onClick={() => setShowSendAllPreview(false)} disabled={sendingAll}>
+              Cancel
+            </button>
+            <button className="btn-accent flex-1" onClick={handleSendAll} disabled={sendingAll}>
+              {sendingAll ? 'Sending…' : `Send to ${notifiableCount} ${notifiableCount === 1 ? 'person' : 'people'}`}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <SalarySummaryModal
         open={showSummary}
