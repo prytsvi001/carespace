@@ -37,7 +37,6 @@ model User {
   peekOnDuty       Boolean @default(false) // manually toggled "I'm online" status for Peek Requests duty
   peekDutyEligible Boolean @default(false) // extra non-peek_handler users allowed to toggle peekOnDuty (e.g. an agent who sometimes covers Peek)
   peekCalendarAccess Boolean @default(false) // extra non-peek_handler user allowed to view/edit + be scheduled on the Peek Requests Calendar (e.g. Julia Manson)
-  salaryAccess     Boolean @default(false) // extra non-head user allowed to view/edit the Salary tab (e.g. Victoria Davis)
   telegramChatId     String?   @unique // set once the user completes the Telegram link flow
   telegramLinkCode   String?   @unique // short-lived pending code shown in the Connect Telegram modal
   telegramLinkExpiry DateTime? // telegramLinkCode becomes invalid after this

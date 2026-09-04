@@ -15,7 +15,6 @@ declare global {
       agentId: string | null;
       telegramChatId: string | null;
       avatarUrl: string | null;
-      salaryAccess: boolean;
     }
   }
 }
@@ -50,7 +49,6 @@ passport.use(
           agentId: user.agentId,
           telegramChatId: user.telegramChatId,
           avatarUrl: user.avatarUrl,
-          salaryAccess: user.salaryAccess,
         });
       } catch (err) {
         return done(err as Error);
@@ -73,7 +71,6 @@ passport.deserializeUser(async (id: string, done) => {
       agentId: user.agentId,
       telegramChatId: user.telegramChatId,
       avatarUrl: user.avatarUrl,
-      salaryAccess: user.salaryAccess,
     });
   } catch (err) {
     done(err);
@@ -126,7 +123,6 @@ router.put('/avatar', async (req: Request, res: Response) => {
       agentId: updated.agentId,
       telegramChatId: updated.telegramChatId,
       avatarUrl: updated.avatarUrl,
-      salaryAccess: updated.salaryAccess,
     });
   } catch (error) {
     console.error(error);

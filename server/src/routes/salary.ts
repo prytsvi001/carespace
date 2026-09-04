@@ -14,10 +14,9 @@ import {
 const router = Router();
 
 // Salary is head-only (not lead) — deliberately narrower than other
-// head/lead-gated features in this app — plus any user individually granted
-// salaryAccess (e.g. Victoria Davis), same pattern as peekDutyEligible.
-function isAdmin(user: { role: string; salaryAccess: boolean }): boolean {
-  return user.role === 'head' || user.salaryAccess;
+// head/lead-gated features in this app.
+function isAdmin(role: string): boolean {
+  return role === 'head';
 }
 
 function safeParseJSON<T>(raw: string | null | undefined, fallback: T): T {
@@ -129,7 +128,7 @@ function computeSalary(
 router.get('/', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
+    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
 
     const year = Number(req.query.year);
     const month = Number(req.query.month);
@@ -232,7 +231,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.patch('/:personKey', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
+    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
 
     const { personKey } = req.params;
     const { year, month, team, overrides, bonuses } = req.body as {
@@ -284,7 +283,7 @@ function monthLabelFor(year: number, month: number): string {
 router.post('/:personKey/notify', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
+    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
 
     const { personKey } = req.params;
     const { year, month, team, message } = req.body as {

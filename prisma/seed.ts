@@ -13,8 +13,8 @@ const AGENTS = [
   'Sandra Moore',
 ];
 
-const USERS: { name: string; email: string; role: string; peekDutyEligible?: boolean; salaryAccess?: boolean }[] = [
-  { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead', salaryAccess: true },
+const USERS: { name: string; email: string; role: string; peekDutyEligible?: boolean }[] = [
+  { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead' },
   { name: 'Sandra Moore',      email: 'oleksandra_kraichynska@struktura.io', role: 'head' },
   { name: 'Jonathan Lewis',    email: 'yan_horlatyi@struktura.io',           role: 'agent' },
   { name: 'Julia Manson',      email: 'tetiana_blazhievska@struktura.io',    role: 'agent', peekDutyEligible: true },
@@ -46,7 +46,6 @@ async function main() {
       update: {
         name: u.name, role: u.role, agentId: agentByName[u.name]?.id ?? null,
         peekDutyEligible: u.peekDutyEligible ?? false,
-        salaryAccess: u.salaryAccess ?? false,
       },
       create: {
         name: u.name,
@@ -54,7 +53,6 @@ async function main() {
         role: u.role,
         agentId: agentByName[u.name]?.id ?? null,
         peekDutyEligible: u.peekDutyEligible ?? false,
-        salaryAccess: u.salaryAccess ?? false,
       },
     });
   }

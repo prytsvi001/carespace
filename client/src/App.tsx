@@ -99,19 +99,11 @@ const ALL_SPACE_TABS: { id: SpaceTab; label: string; shortLabel: string; Icon: R
 // Tabs accessible to peek_handler role
 const PEEK_HANDLER_TABS = new Set<SharedTab>(['requests', 'calendar']);
 
-// A space tab is visible if the user's role is in tab.roles, OR (for salary
-// only) they've been individually granted salaryAccess — same per-user
-// override pattern as peekDutyEligible/peekCalendarAccess on User.
-function canAccessSpaceTab(tab: { id: SpaceTab; roles: string[] }, userRole: string, salaryAccess: boolean): boolean {
-  if (tab.id === 'salary' && salaryAccess) return true;
-  return tab.roles.includes(userRole);
-}
-
 const ACTIVE_TAB_STORAGE_KEY = 'carespace_active_tab';
 
 // Restores the last tab from localStorage on refresh, falling back to the
 // default if there's nothing stored or the stored tab isn't valid for this role
-function getInitialTab(userRole: string, salaryAccess: boolean): Tab {
+function getInitialTab(userRole: string): Tab {
   const isPeekHandler = userRole === 'peek_handler';
   const fallback: Tab = isPeekHandler ? 'requests' : 'daily';
   const stored = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY) as Tab | null;
@@ -121,9 +113,7 @@ function getInitialTab(userRole: string, salaryAccess: boolean): Tab {
     return PEEK_HANDLER_TABS.has(stored as SharedTab) ? stored : fallback;
   }
 
-  const validSpaceTabIds = new Set(
-    ALL_SPACE_TABS.filter((t) => canAccessSpaceTab(t, userRole, salaryAccess)).map((t) => t.id)
-  );
+  const validSpaceTabIds = new Set(ALL_SPACE_TABS.filter((t) => t.roles.includes(userRole)).map((t) => t.id));
   if (SHARED_TAB_IDS.has(stored) || validSpaceTabIds.has(stored as SpaceTab)) return stored;
   return fallback;
 }
@@ -136,7 +126,7 @@ function MainApp() {
   const userRole = user?.role ?? 'agent';
   const isPeekHandler = userRole === 'peek_handler';
 
-  const [activeTab, setActiveTab] = useState<Tab>(() => getInitialTab(userRole, !!user?.salaryAccess));
+  const [activeTab, setActiveTab] = useState<Tab>(() => getInitialTab(userRole));
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
@@ -208,7 +198,7 @@ function MainApp() {
   const newRequestsBadge = Math.max(0, newRequestsCount - dismissedRequestsCount);
 
   const inSpace = !SHARED_TAB_IDS.has(activeTab);
-  const spaceTabsForRole = ALL_SPACE_TABS.filter((t) => canAccessSpaceTab(t, userRole, !!user?.salaryAccess));
+  const spaceTabsForRole = ALL_SPACE_TABS.filter((t) => t.roles.includes(userRole));
   const visibleSharedTabs = (isPeekHandler
     ? SHARED_TABS.filter((t) => PEEK_HANDLER_TABS.has(t.id))
     : SHARED_TABS
