@@ -9,6 +9,7 @@ import { computeMonthlyAgentStats, HoursBreakdown } from '../statsHelpers';
 import { sendTelegramMessage } from '../telegram';
 import {
   SalaryPerson, ToggleKey, rosterForTeam, reviewsBonusForCount, notifyUserNameFor,
+  TEAM_META_PERSON_KEY, teamBonusPerAgentFor, individualParseBonusFor,
 } from '../salaryConfig';
 
 const router = Router();
@@ -17,6 +18,12 @@ const router = Router();
 // head/lead-gated features in this app.
 function isAdmin(role: string): boolean {
   return role === 'head';
+}
+
+// TEAM_META_PERSON_KEY's SalaryRecord.overrides shape — separate from
+// SalaryOverrides below since it's a team-wide figure, not a per-person one.
+interface TeamMetaOverrides {
+  totalParsedProfiles?: number;
 }
 
 function safeParseJSON<T>(raw: string | null | undefined, fallback: T): T {
@@ -50,6 +57,7 @@ interface SalaryOverrides {
   strukturaOn?: boolean;
   smmDutyOn?: boolean;
   total?: number;
+  parsedProfiles?: number; // Peekviewer Team only — this agent's monthly "Parsed Profiles" count
 }
 
 function computeSalary(
@@ -61,6 +69,7 @@ function computeSalary(
   autoResolvedCount: number,
   overrides: SalaryOverrides,
   bonuses: BonusEntry[],
+  teamBonus: number,
 ) {
   const hours = overrides.hours ?? autoHours;
   const hasSupportDuties = person.formula.type === 'fixed_base_with_support_duties';
@@ -103,7 +112,15 @@ function computeSalary(
 
   const bonusesTotal = round2(bonuses.reduce((s, b) => s + (Number(b.amount) || 0), 0));
 
-  const total = overrides.total ?? round2(base + reviewsBonus + peekBonus + supportDutiesBonus + toggleAmount + bonusesTotal);
+  // Peekviewer Team only. parsedProfiles has no auto-calculated default (it's
+  // a raw monthly figure someone types in, not an override of a computed
+  // value) — null/undefined means "not entered yet", so no bonus is added.
+  const isPeekviewer = person.team === 'peekviewer';
+  const parsedProfiles = isPeekviewer && typeof overrides.parsedProfiles === 'number' ? overrides.parsedProfiles : null;
+  const individualParseBonus = parsedProfiles != null ? individualParseBonusFor(parsedProfiles) : 0;
+  const effectiveTeamBonus = isPeekviewer ? teamBonus : 0;
+
+  const total = overrides.total ?? round2(base + reviewsBonus + peekBonus + supportDutiesBonus + toggleAmount + bonusesTotal + effectiveTeamBonus + individualParseBonus);
 
   const editedFields = Object.keys(overrides);
 
@@ -119,6 +136,8 @@ function computeSalary(
     shifts: autoShifts,
     toggles: (person.toggles ?? []).map(t => ({ key: t.key, label: t.label, amount: t.amount, on: toggleStates[t.key] })),
     bonuses, bonusesTotal,
+    teamBonus: effectiveTeamBonus,
+    parsedProfiles, individualParseBonus,
     total,
     editedFields,
   };
@@ -171,6 +190,18 @@ router.get('/', async (req: Request, res: Response) => {
     });
     const storedByKey = new Map(stored.map(r => [r.personKey, r]));
 
+    // Team-wide "total profiles parsed" figure (Peekviewer Team only) — same
+    // bonus applies to every agent on the team once entered.
+    let totalParsedProfiles: number | null = null;
+    if (team === 'peekviewer') {
+      const teamMeta = await prisma.salaryRecord.findUnique({
+        where: { personKey_year_month: { personKey: TEAM_META_PERSON_KEY, year, month } },
+      });
+      const teamOverrides = safeParseJSON<TeamMetaOverrides>(teamMeta?.overrides, {});
+      totalParsedProfiles = typeof teamOverrides.totalParsedProfiles === 'number' ? teamOverrides.totalParsedProfiles : null;
+    }
+    const teamBonusPerAgent = totalParsedProfiles != null ? teamBonusPerAgentFor(totalParsedProfiles) : 0;
+
     // Who can actually receive a notification — any roster person (either
     // team) whose notifyUserNameFor() name resolves to a real User row.
     const notifyNames = roster.map(p => notifyUserNameFor(p)).filter(Boolean) as string[];
@@ -211,17 +242,48 @@ router.get('/', async (req: Request, res: Response) => {
       const hoursBreakdown = person.agentName ? hoursByAgentName[person.agentName]?.breakdown : undefined;
 
       return {
-        ...computeSalary(person, autoHours, autoShifts, autoReviewsCount, autoPeekCount, autoResolvedCount, overrides, bonuses),
+        ...computeSalary(person, autoHours, autoShifts, autoReviewsCount, autoPeekCount, autoResolvedCount, overrides, bonuses, teamBonusPerAgent),
         canNotify: !!notifyName && notifyableNames.has(notifyName),
         notifiedAt: record?.notifiedAt ? record.notifiedAt.toISOString() : null,
         hoursBreakdown,
       };
     });
 
-    res.json({ year, month, team, rows });
+    res.json({ year, month, team, rows, totalParsedProfiles });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to fetch salary data' });
+  }
+});
+
+// PUT /api/salary/team-meta  { year, month, team, totalParsedProfiles }
+// Peekviewer Team only — the team-wide monthly "total profiles parsed"
+// figure that the per-agent Team bonus is derived from. Stored under the
+// reserved TEAM_META_PERSON_KEY in the same SalaryRecord table as everyone
+// else, since it's scoped to year+month exactly like a person's record.
+router.put('/team-meta', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
+
+    const { year, month, team, totalParsedProfiles } = req.body as {
+      year: number; month: number; team: 'support' | 'peekviewer'; totalParsedProfiles: number | null;
+    };
+    if (!year || !month || !team) return res.status(400).json({ error: 'year, month and team are required' });
+    if (team !== 'peekviewer') return res.status(400).json({ error: 'Team total only applies to the Peekviewer Team' });
+
+    const overrides: TeamMetaOverrides = totalParsedProfiles == null ? {} : { totalParsedProfiles };
+
+    await prisma.salaryRecord.upsert({
+      where: { personKey_year_month: { personKey: TEAM_META_PERSON_KEY, year, month } },
+      update: { team, overrides: JSON.stringify(overrides) },
+      create: { personKey: TEAM_META_PERSON_KEY, team, year, month, overrides: JSON.stringify(overrides) },
+    });
+
+    res.json({ totalParsedProfiles: totalParsedProfiles ?? null });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to save team parsed profiles total' });
   }
 });
 

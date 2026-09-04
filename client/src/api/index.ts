@@ -549,4 +549,8 @@ export const sendSalaryNotification = (personKey: string, body: {
   year: number; month: number; team: 'support' | 'peekviewer'; message: string;
 }) => api.post(`/salary/${personKey}/notify`, body).then((r) => r.data);
 
+export const patchSalaryTeamMeta = (body: {
+  year: number; month: number; team: 'peekviewer'; totalParsedProfiles: number | null;
+}) => api.put('/salary/team-meta', body).then((r) => r.data);
+
 export default api;

@@ -456,6 +456,9 @@ export interface SalaryRow {
   toggles: SalaryToggle[];
   bonuses: BonusEntry[];
   bonusesTotal: number;
+  teamBonus: number; // Peekviewer Team only — 0 until Sandra enters the team's total parsed profiles
+  parsedProfiles: number | null; // Peekviewer Team only — this agent's monthly parsed-profiles count
+  individualParseBonus: number;
   total: number;
   editedFields: string[];
   canNotify: boolean;
@@ -479,6 +482,7 @@ export interface SalaryOverrides {
   strukturaOn?: boolean | null;
   smmDutyOn?: boolean | null;
   total?: number | null;
+  parsedProfiles?: number | null;
 }
 
 export interface MonthlyStats {

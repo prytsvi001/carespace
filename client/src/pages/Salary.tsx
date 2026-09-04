@@ -1,11 +1,12 @@
 // client/src/pages/Salary.tsx
 import React, { useEffect, useState } from 'react';
 import { Wallet, Send, LayoutList } from 'lucide-react';
-import { getSalary, patchSalary, sendSalaryNotification } from '../api';
+import { getSalary, patchSalary, patchSalaryTeamMeta, sendSalaryNotification } from '../api';
 import { BonusEntry, SalaryRow } from '../types';
 import { CardListSkeleton, EmptyState, ConfirmDialog } from '../components/ui';
 import { SalaryCard } from '../components/SalaryCard';
 import { SalarySummaryModal } from '../components/SalarySummaryModal';
+import { TeamBonusPanel, tierForTotalParsedProfiles } from '../components/TeamBonusPanel';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_NAMES_UA = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
@@ -49,6 +50,7 @@ export default function Salary() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [rows, setRows] = useState<SalaryRow[]>([]);
+  const [totalParsedProfiles, setTotalParsedProfiles] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmSendAll, setConfirmSendAll] = useState(false);
   const [sendingAll, setSendingAll] = useState(false);
@@ -63,6 +65,7 @@ export default function Salary() {
     try {
       const data = await getSalary({ year, month, team });
       setRows(data.rows);
+      setTotalParsedProfiles(data.totalParsedProfiles ?? null);
     } catch (e) {
       console.error(e);
     } finally {
@@ -88,6 +91,20 @@ export default function Salary() {
     setRows((prev) => prev.map((r) => (r.personKey === row.personKey ? recomputeBonuses(r, bonuses) : r)));
     try {
       await patchSalary(row.personKey, { year, month, team, bonuses });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      loadData(true);
+    }
+  };
+
+  // Team-wide figure (Peekviewer only) — same bonus tier applies to every
+  // agent's total the moment it's entered/changed.
+  const handleSaveTeamMeta = async (value: number | null) => {
+    setTotalParsedProfiles(value);
+    setRows((prev) => prev.map((r) => recomputeTeamBonus(r, value)));
+    try {
+      await patchSalaryTeamMeta({ year, month, team: 'peekviewer', totalParsedProfiles: value });
     } catch (e) {
       console.error(e);
     } finally {
@@ -183,6 +200,10 @@ export default function Salary() {
         </div>
       </div>
 
+      {!loading && team === 'peekviewer' && (
+        <TeamBonusPanel value={totalParsedProfiles} onSave={handleSaveTeamMeta} />
+      )}
+
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           <CardListSkeleton count={3} />
@@ -197,6 +218,7 @@ export default function Salary() {
               row={row}
               monthLabel={monthLabel}
               defaultMessage={messageFor(row)}
+              teamTotalSet={totalParsedProfiles != null}
               onSaveOverride={(key, value) => handleSaveOverride(row, key, value)}
               onSaveBonuses={(bonuses) => handleSaveBonuses(row, bonuses)}
               onSend={(message) => handleSend(row, message)}
@@ -235,6 +257,13 @@ function reviewsBonusForCount(count: number): number {
   return tier ? count * tier.perReview : 0;
 }
 
+// Mirrors server/src/salaryConfig.ts's individualParseBonusFor().
+function individualParseBonusForClient(parsedProfiles: number): number {
+  if (parsedProfiles <= 160) return 0;
+  if (parsedProfiles <= 185) return round2((parsedProfiles - 160) * 1.0);
+  return round2(25 * 1.0 + (parsedProfiles - 185) * 1.5);
+}
+
 // Local optimistic recompute so a single field edit reflects immediately —
 // the silent background reload in loadData(true) still corrects it shortly
 // after using the server's authoritative numbers (this matters most for
@@ -257,7 +286,13 @@ function recompute(row: SalaryRow, key: string, value: number | boolean | null):
   if (key === 'supportDutiesBonus') next.supportDutiesBonus = value === null ? row.supportDutiesBonus : Number(value);
   if (key === 'base') next.base = value === null ? row.base : Number(value);
   if (key === 'total') next.total = value === null ? row.total : Number(value);
+  if (key === 'parsedProfiles') next.parsedProfiles = value === null ? null : Number(value);
   next.toggles = row.toggles.map((t) => (t.key === key ? { ...t, on: !!value } : t));
+
+  // individualParseBonus (Peekviewer only) recomputes from parsedProfiles on
+  // every edit — it has no server-side override of its own, so it always
+  // derives fresh from the current parsedProfiles value.
+  next.individualParseBonus = next.parsedProfiles == null ? 0 : individualParseBonusForClient(next.parsedProfiles);
 
   // reviewsBonus auto-recomputes from the tier table when reviewsCount
   // changes, unless reviewsBonus itself has separately been overridden.
@@ -284,7 +319,7 @@ function recompute(row: SalaryRow, key: string, value: number | boolean | null):
 
   if (!next.editedFields.includes('total')) {
     const toggleAmount = next.toggles.reduce((s, t) => s + (t.on ? t.amount : 0), 0);
-    next.total = round2(next.base + next.reviewsBonus + next.peekBonus + next.supportDutiesBonus + toggleAmount + next.bonusesTotal);
+    next.total = round2(next.base + next.reviewsBonus + next.peekBonus + next.supportDutiesBonus + toggleAmount + next.bonusesTotal + next.teamBonus + next.individualParseBonus);
   }
 
   return next;
@@ -295,7 +330,19 @@ function recomputeBonuses(row: SalaryRow, bonuses: BonusEntry[]): SalaryRow {
   const next: SalaryRow = { ...row, bonuses, bonusesTotal };
   if (!row.editedFields.includes('total')) {
     const toggleAmount = next.toggles.reduce((s, t) => s + (t.on ? t.amount : 0), 0);
-    next.total = round2(next.base + next.reviewsBonus + next.peekBonus + next.supportDutiesBonus + toggleAmount + bonusesTotal);
+    next.total = round2(next.base + next.reviewsBonus + next.peekBonus + next.supportDutiesBonus + toggleAmount + bonusesTotal + next.teamBonus + next.individualParseBonus);
+  }
+  return next;
+}
+
+// Recomputes one row's teamBonus (and total) after Sandra edits the team's
+// total parsed profiles — same bonus applies to every Peekviewer agent.
+function recomputeTeamBonus(row: SalaryRow, totalParsedProfiles: number | null): SalaryRow {
+  const teamBonus = totalParsedProfiles == null ? 0 : tierForTotalParsedProfiles(totalParsedProfiles).bonus;
+  const next: SalaryRow = { ...row, teamBonus };
+  if (!row.editedFields.includes('total')) {
+    const toggleAmount = next.toggles.reduce((s, t) => s + (t.on ? t.amount : 0), 0);
+    next.total = round2(next.base + next.reviewsBonus + next.peekBonus + next.supportDutiesBonus + toggleAmount + next.bonusesTotal + teamBonus + next.individualParseBonus);
   }
   return next;
 }

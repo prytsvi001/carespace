@@ -7,6 +7,7 @@ import { Plus, Trash2, Send, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { EditableField } from './EditableField';
 import { HoursBreakdownTooltip } from './HoursBreakdownTooltip';
+import { InfoTooltip } from './InfoTooltip';
 import { Modal } from './ui';
 import { BonusEntry, SalaryRow } from '../types';
 
@@ -14,12 +15,56 @@ function newBonusId(): string {
   return `b_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Parsed Profiles has no auto-calculated default (unlike EditableField's
+// override-of-a-computed-value fields), so it's a plain always-visible
+// required input rather than a click-to-edit one.
+function ParsedProfilesInput({ value, onSave }: { value: number | null; onSave: (value: number | null) => void }) {
+  const [draft, setDraft] = useState(value == null ? '' : String(value));
+
+  useEffect(() => { setDraft(value == null ? '' : String(value)); }, [value]);
+
+  const commit = () => {
+    if (draft.trim() === '') { onSave(null); return; }
+    const n = Number(draft);
+    if (!Number.isNaN(n)) onSave(n);
+  };
+
+  return (
+    <div className="py-1">
+      <div className="flex items-center gap-1 mb-1">
+        <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>Parsed Profiles by Agent per month</span>
+        <InfoTooltip>
+          <div className="space-y-0.5">
+            <p className="font-semibold mb-1" style={{ color: 'rgba(14,14,14,0.80)' }}>Examples</p>
+            <p>170 parses → 10 × $1.00 = $10</p>
+            <p>180 parses → 20 × $1.00 = $20</p>
+            <p>185 parses → 25 × $1.00 = $25</p>
+            <p>200 parses → 25 × $1.00 + 15 × $1.50 = $47.50</p>
+            <p>220 parses → 25 × $1.00 + 35 × $1.50 = $77.50</p>
+          </div>
+        </InfoTooltip>
+      </div>
+      <input
+        type="number"
+        required
+        className="input w-full text-sm py-1"
+        placeholder="e.g. 200"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      />
+    </div>
+  );
+}
+
 export function SalaryCard({
-  row, monthLabel, defaultMessage, onSaveOverride, onSaveBonuses, onSend,
+  row, monthLabel, defaultMessage, teamTotalSet, onSaveOverride, onSaveBonuses, onSend,
 }: {
   row: SalaryRow;
   monthLabel: string;
   defaultMessage: string;
+  teamTotalSet: boolean;
   onSaveOverride: (key: string, value: number | boolean | null) => void;
   onSaveBonuses: (bonuses: BonusEntry[]) => void;
   onSend: (message: string) => Promise<void>;
@@ -134,6 +179,31 @@ export function SalaryCard({
         <div className="pb-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
           <EditableField label="Base salary" value={row.base} edited={isEdited('base')}
             onSave={(v) => onSaveOverride('base', v)} onClear={() => onSaveOverride('base', null)} />
+        </div>
+      )}
+
+      {row.team === 'peekviewer' && (
+        <div className="py-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
+          {teamTotalSet && (
+            <div className="flex items-center justify-between gap-2 py-1">
+              <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>Team bonus</span>
+              <span className="text-sm font-medium" style={{ color: 'rgba(14,14,14,0.80)' }}>+${row.teamBonus.toFixed(2)}</span>
+            </div>
+          )}
+
+          <ParsedProfilesInput value={row.parsedProfiles} onSave={(v) => onSaveOverride('parsedProfiles', v)} />
+
+          {row.parsedProfiles == null ? (
+            <p className="text-xs mt-1.5 flex items-start gap-1 text-amber-600">
+              <span className="shrink-0">⚠️</span>
+              <span>Введи кількість парсів</span>
+            </p>
+          ) : (
+            <div className="flex items-center justify-between gap-2 mt-1.5">
+              <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>Індивідуальний бонус за парси</span>
+              <span className="text-sm font-medium" style={{ color: 'rgba(14,14,14,0.80)' }}>+${row.individualParseBonus.toFixed(2)}</span>
+            </div>
+          )}
         </div>
       )}
 

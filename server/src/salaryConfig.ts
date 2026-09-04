@@ -66,3 +66,36 @@ export function rosterForTeam(team: 'support' | 'peekviewer'): SalaryPerson[] {
 export function notifyUserNameFor(person: SalaryPerson): string | undefined {
   return person.userName ?? person.agentName;
 }
+
+// Reserved SalaryRecord.personKey for the Peekviewer Team's team-wide "total
+// profiles parsed" figure — it applies to the whole team for the month, not
+// one person, but reuses the same SalaryRecord table/overrides JSON (keyed
+// like everyone else on personKey+year+month) rather than a new table.
+export const TEAM_META_PERSON_KEY = '_peekviewer_team_meta';
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+// Team bonus (Peekviewer Team only) — added per agent, based on the team's
+// total monthly parsed-profile count entered by Sandra Moore.
+export const TEAM_BONUS_TIERS = [
+  { min: 950, max: Infinity, bonus: 30, label: '950+' },
+  { min: 850, max: 949, bonus: 10, label: '850–949' },
+  { min: 0, max: 849, bonus: 0, label: '< 850' },
+] as const;
+
+export function teamBonusPerAgentFor(totalParsedProfiles: number): number {
+  const tier = TEAM_BONUS_TIERS.find(t => totalParsedProfiles >= t.min && totalParsedProfiles <= t.max);
+  return tier ? tier.bonus : 0;
+}
+
+// Individual "parsed profiles" bonus (Peekviewer Team only) — 0–160: no
+// bonus; 161–185: $1.00 per parse above 160; 186+: the first 25 parses above
+// 160 stay at $1.00 each (i.e. the 161–185 band), every parse above 185 is
+// $1.50. E.g. 200 parses = 25×$1.00 + 15×$1.50 = $47.50.
+export function individualParseBonusFor(parsedProfiles: number): number {
+  if (parsedProfiles <= 160) return 0;
+  if (parsedProfiles <= 185) return round2((parsedProfiles - 160) * 1.0);
+  return round2(25 * 1.0 + (parsedProfiles - 185) * 1.5);
+}
