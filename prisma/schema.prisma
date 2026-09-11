@@ -645,3 +645,20 @@ model RowAccount {
   @@index([takenById])
   @@index([header])
 }
+
+// Peekviewer Team — "Request Schedule" tab. The base day-to-agent assignment
+// is a pure rotation formula computed in code (server/src/routes/requestSchedule.ts),
+// not stored anywhere — no external spreadsheet dependency. This table only
+// holds per-day swaps agents make on top of that formula (drag-and-drop to
+// trade days); a date with no row here just uses the formula's answer.
+model RequestScheduleOverride {
+  id        String   @id @default(cuid())
+  date      String   @unique // "YYYY-MM-DD"
+  userId    String
+  userName  String
+  setByName String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}

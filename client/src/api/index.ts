@@ -647,4 +647,29 @@ export const patchSalaryTeamMeta = (body: {
   year: number; month: number; team: 'peekviewer'; totalParsedProfiles: number | null;
 }) => api.put('/salary/team-meta', body).then((r) => r.data);
 
+// ─── Request Schedule (Peekviewer Team) ────────────────────────────────────
+export interface RequestScheduleDay {
+  date: string; // "YYYY-MM-DD"
+  userId: string;
+  userName: string;
+  isOverride: boolean;
+}
+
+export interface RequestScheduleRedistributionRow {
+  userId: string;
+  userName: string;
+  days: number[];
+}
+
+export interface RequestScheduleData {
+  days: RequestScheduleDay[];
+  redistribution: RequestScheduleRedistributionRow[];
+}
+
+export const getRequestSchedule = (year: number, month: number) =>
+  api.get<RequestScheduleData>('/request-schedule', { params: { year, month } }).then((r) => r.data);
+
+export const swapRequestScheduleDay = (date: string, targetDate: string) =>
+  api.post('/request-schedule/swap', { date, targetDate }).then((r) => r.data);
+
 export default api;

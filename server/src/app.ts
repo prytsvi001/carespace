@@ -35,6 +35,7 @@ import salaryRouter from './routes/salary';
 import boostRequestsRouter from './routes/boostRequests';
 import proxiesRouter from './routes/proxies';
 import rowAccountsRouter from './routes/rowAccounts';
+import requestScheduleRouter from './routes/requestSchedule';
 import { requireAuth } from './middleware/auth';
 
 const app = express();
@@ -143,5 +144,6 @@ app.use('/api/salary',      requireAuth, salaryRouter); // requireAuth + head/le
 app.use('/api/boost-requests', boostRequestsRouter); // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/proxies',        proxiesRouter);       // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/row-accounts',   rowAccountsRouter);    // requireAuth + requirePeekviewerTeam applied inside router
+app.use('/api/request-schedule', requestScheduleRouter); // requireAuth + requirePeekviewerTeam applied inside router
 
 export default app;
