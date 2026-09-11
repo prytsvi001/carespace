@@ -6,7 +6,7 @@
 // Vercel Blob private-store + presigned-upload pattern Updates uses, just
 // streamed through an <img>/<video> tag instead of a download link.
 import React, { useEffect, useRef, useState } from 'react';
-import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List } from 'lucide-react';
+import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List, Bold } from 'lucide-react';
 import { uploadPresigned } from '@vercel/blob/client';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -14,7 +14,7 @@ import {
   deleteOnboardingAttachment, getOnboardingAttachmentUrl,
   OnboardingBlockData, OnboardingAttachment,
 } from '../api';
-import { Modal, ConfirmDialog, EmptyState, CardListSkeleton, Linkify } from '../components/ui';
+import { Modal, ConfirmDialog, EmptyState, CardListSkeleton, RichText } from '../components/ui';
 
 function formatFileSize(bytes: number): string {
   if (!bytes) return '';
@@ -69,6 +69,7 @@ export default function Onboarding() {
   const [uploadError, setUploadError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
 
   const openCreate = () => {
     setEditingId(null);
@@ -110,6 +111,25 @@ export default function Onboarding() {
         setUploadingCount((c) => c - 1);
       }
     }
+  };
+
+  // Wraps the current textarea selection in "**...**" (or inserts a
+  // placeholder if nothing's selected) — the content is stored as flat text,
+  // RichText renders "**...**" runs bold, no rich-text editor involved.
+  const applyBold = () => {
+    const el = contentRef.current;
+    if (!el) return;
+    const { selectionStart, selectionEnd, value } = el;
+    const before = value.slice(0, selectionStart);
+    const selected = value.slice(selectionStart, selectionEnd);
+    const after = value.slice(selectionEnd);
+    const inner = selected || 'bold text';
+    setForm((f) => ({ ...f, content: `${before}**${inner}**${after}` }));
+    requestAnimationFrame(() => {
+      el.focus();
+      const start = before.length + 2;
+      el.setSelectionRange(start, start + inner.length);
+    });
   };
 
   const handleRemoveAttachment = (url: string) => {
@@ -222,7 +242,7 @@ export default function Onboarding() {
               </div>
 
               <div>
-                <Linkify text={b.content} className="text-sm text-slate-600 leading-relaxed" />
+                <RichText text={b.content} className="text-sm text-slate-600 leading-relaxed" />
               </div>
 
               {b.attachments.length > 0 && (
@@ -248,8 +268,21 @@ export default function Onboarding() {
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Content</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-slate-400">Content</label>
+              <button
+                type="button"
+                onClick={applyBold}
+                title="Bold (wraps the selection in **...**)"
+                className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg transition-colors"
+                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.65)' }}
+              >
+                <Bold size={12} strokeWidth={2.2} />
+                Bold
+              </button>
+            </div>
             <textarea
+              ref={contentRef}
               value={form.content}
               onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
               rows={6}

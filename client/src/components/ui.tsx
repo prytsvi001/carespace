@@ -110,11 +110,12 @@ export function AutoTextarea({
   );
 }
 
-// ─── Linkify (auto-detect URLs in plain text) ───────────────────────────────
-// Splits on http(s):// URLs and renders them as clickable links, leaving
-// everything else as plain text — for content that's stored as a flat string
-// (no rich-text/markdown) but may contain pasted links, e.g. Onboarding blocks.
-const URL_PATTERN = /(https?:\/\/[^\s<>"')\]]+)/g;
+// ─── RichText (auto-detect URLs + **bold** in plain text) ──────────────────
+// For content stored as a flat string (no rich-text editor/markdown parser):
+// auto-links http(s):// URLs, and renders **wrapped** runs as bold. Both are
+// resolved in a single left-to-right pass so a bold run and a link never
+// fight over the same characters.
+const TOKEN_PATTERN = /\*\*([\s\S]+?)\*\*|(https?:\/\/[^\s<>"')\]]+)/g;
 
 // A matched URL run swallows trailing sentence punctuation it doesn't own
 // (the period at the end of "see https://x.com." or the comma in "https://x.com,
@@ -137,34 +138,45 @@ function splitTrailingPunctuation(url: string): { url: string; trailing: string 
   return { url: url.slice(0, end), trailing: url.slice(end) };
 }
 
-export function Linkify({ text, className }: { text: string; className?: string }) {
-  // split() with a single capturing group interleaves [text, url, text, url, ...] —
-  // odd indices are always the captured URLs, so no need to re-test each part
-  // (which would be broken anyway: URL_PATTERN is a stateful global regex).
-  const parts = text.split(URL_PATTERN);
-  return (
-    <span className={className} style={{ whiteSpace: 'pre-wrap' }}>
-      {parts.map((part, i) => {
-        if (i % 2 !== 1) return <React.Fragment key={i}>{part}</React.Fragment>;
-        const { url, trailing } = splitTrailingPunctuation(part);
-        return (
-          <React.Fragment key={i}>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline break-all"
-              style={{ color: '#2563eb' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {url}
-            </a>
-            {trailing}
-          </React.Fragment>
-        );
-      })}
-    </span>
-  );
+export function RichText({ text, className }: { text: string; className?: string }) {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  // Fresh regex instance per render — TOKEN_PATTERN is a module-level global
+  // regex, and re-using it directly across renders would carry stale
+  // lastIndex state between calls (classic /g-regex-as-shared-state bug).
+  const re = new RegExp(TOKEN_PATTERN.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(<React.Fragment key={key++}>{text.slice(lastIndex, match.index)}</React.Fragment>);
+    }
+    if (match[1] !== undefined) {
+      nodes.push(<strong key={key++}>{match[1]}</strong>);
+    } else if (match[2] !== undefined) {
+      const { url, trailing } = splitTrailingPunctuation(match[2]);
+      nodes.push(
+        <React.Fragment key={key++}>
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline break-all"
+            style={{ color: '#2563eb' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {url}
+          </a>
+          {trailing}
+        </React.Fragment>
+      );
+    }
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    nodes.push(<React.Fragment key={key++}>{text.slice(lastIndex)}</React.Fragment>);
+  }
+  return <span className={className} style={{ whiteSpace: 'pre-wrap' }}>{nodes}</span>;
 }
 
 // ─── Collapsible text (long pasted content) ─────────────────────────────────
