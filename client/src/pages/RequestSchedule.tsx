@@ -21,17 +21,23 @@ import { Spinner, Modal } from '../components/ui';
 interface AssigneeStyle { bg: string; text: string; border: string; dot: string }
 
 // Iryna/Victoria Horopeka reuse the exact colors PeekRequestsCalendar.tsx
-// already uses for them, for visual consistency across the app.
+// already uses for them, for visual consistency across the app. Zlata
+// Alekseenko worked the rotation briefly at the start of Sept 2026 before
+// leaving — kept here purely so her historical days render with a color
+// instead of falling back to the generic gray "inactive" look.
 const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
   'Iryna Kolodienko':     { bg: 'bg-indigo-100',  text: 'text-indigo-700',  border: 'border-indigo-200',  dot: 'bg-indigo-400' },
   'Victoria Horopeka':    { bg: 'bg-red-100',     text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-400' },
   'Tetyana Veremeyenko':  { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
   'Yana Fedorova':        { bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400' },
+  'Zlata Alekseenko':     { bg: 'bg-violet-100',  text: 'text-violet-700',  border: 'border-violet-200',  dot: 'bg-violet-400' },
 };
 const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
 const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
 
-function AssigneeChip({ day, canEdit, onClick }: { day: RequestScheduleDay; canEdit: boolean; onClick: () => void }) {
+function AssigneeChip({ day, canEdit, isActive, onClick }: {
+  day: RequestScheduleDay; canEdit: boolean; isActive: boolean; onClick: () => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: day.date, disabled: !canEdit });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
   const s = styleForAssignee(day.userName);
@@ -43,17 +49,18 @@ function AssigneeChip({ day, canEdit, onClick }: { day: RequestScheduleDay; canE
       {...listeners}
       {...attributes}
       onClick={(e) => { e.stopPropagation(); if (canEdit) onClick(); }}
-      title={day.userName}
+      title={isActive ? day.userName : `${day.userName} (inactive)`}
       className={`px-1.5 py-1 rounded text-[11px] font-medium select-none border truncate ${s.bg} ${s.text} ${s.border}
+        ${!isActive ? 'opacity-60' : ''}
         ${canEdit ? 'cursor-pointer active:cursor-grabbing' : ''} ${isDragging ? 'opacity-50' : ''}`}
     >
-      {day.userName.split(' ')[0]}
+      {day.userName.split(' ')[0]}{!isActive && <span className="opacity-70"> · inactive</span>}
     </div>
   );
 }
 
-function DayCell({ date, day, isCurrentMonth, canEdit, onChipClick }: {
-  date: Date; day: RequestScheduleDay | undefined; isCurrentMonth: boolean; canEdit: boolean; onChipClick: () => void;
+function DayCell({ date, day, isCurrentMonth, canEdit, isActiveAgent, onChipClick }: {
+  date: Date; day: RequestScheduleDay | undefined; isCurrentMonth: boolean; canEdit: boolean; isActiveAgent: boolean; onChipClick: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: format(date, 'yyyy-MM-dd'), disabled: !day });
 
@@ -76,7 +83,7 @@ function DayCell({ date, day, isCurrentMonth, canEdit, onChipClick }: {
           {format(date, 'd')}
         </span>
       </div>
-      {day && <AssigneeChip day={day} canEdit={canEdit} onClick={onChipClick} />}
+      {day && <AssigneeChip day={day} canEdit={canEdit} isActive={isActiveAgent} onClick={onChipClick} />}
     </div>
   );
 }
@@ -216,6 +223,10 @@ export default function RequestSchedule() {
                 day={dayByDate.get(format(date, 'yyyy-MM-dd'))}
                 isCurrentMonth={isSameMonth(date, currentMonth)}
                 canEdit={canEditDay()}
+                isActiveAgent={(() => {
+                  const d = dayByDate.get(format(date, 'yyyy-MM-dd'));
+                  return !!d && data.calendarAgents.some((a) => a.userId === d.userId);
+                })()}
                 onChipClick={() => setEditingDate(format(date, 'yyyy-MM-dd'))}
               />
             ) : (
