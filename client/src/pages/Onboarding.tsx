@@ -8,7 +8,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List } from 'lucide-react';
 import { uploadPresigned } from '@vercel/blob/client';
-import { format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
 import {
   getOnboardingBlocks, createOnboardingBlock, updateOnboardingBlock, deleteOnboardingBlock,
@@ -199,13 +198,7 @@ export default function Onboarding() {
           {blocks.map((b) => (
             <div key={b.id} id={blockAnchorId(b.id)} className="card space-y-3" style={{ scrollMarginTop: '80px' }}>
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-800">{b.title}</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {b.authorName} · {format(new Date(b.createdAt), 'dd MMM yyyy')}
-                    {b.editedAt && ' · edited'}
-                  </p>
-                </div>
+                <h3 className="text-sm font-semibold text-slate-800">{b.title}</h3>
                 {b.isAuthor && (
                   <div className="flex items-center gap-2 shrink-0">
                     <button
