@@ -17,15 +17,35 @@ function isAdmin(user: Express.User): boolean {
 const MODES = ['with2fa', 'without2fa'] as const;
 type Mode = (typeof MODES)[number];
 
+// Splits a pasted line into columns. A 2FA value itself can contain single
+// spaces (e.g. a backup-code block like "RYPR ZYF4 JIZ2 ..."), so a generic
+// "split on any whitespace" would shred it into extra tokens and misalign
+// everything after it. Column separators are resolved in priority order:
+//   1. Tab — what an actual spreadsheet paste (Excel/Sheets) uses between
+//      columns; splitting only on "\t" keeps any spaces inside a cell intact.
+//   2. Colon — the legacy typed format.
+//   3. A run of 2+ spaces — someone manually lined up columns with padding
+//      instead of a real tab; a single space stays part of the value.
+//   4. A single space — only reached when none of the above apply, i.e. a
+//      simple line with no field containing a space at all.
+function splitColumns(line: string): string[] {
+  if (line.includes('\t')) return line.split('\t').map((s) => s.trim());
+  if (line.includes(':')) return line.split(':').map((s) => s.trim());
+  if (/ {2,}/.test(line)) return line.split(/ {2,}/).map((s) => s.trim());
+  return line.split(/\s+/).map((s) => s.trim());
+}
+
 // Splits one pasted line into a credential row by a fixed column order that
-// depends on the chosen mode — separated by ":" or plain whitespace:
+// depends on the chosen mode:
 //   with2fa:    nickname password 2FA email emailPassword
 //   without2fa: nickname password email emailPassword
 function parseAccountLine(line: string, mode: Mode): {
   login: string; password: string; twoFaCode: string | null; email: string | null; emailPassword: string | null;
 } | null {
-  const tokens = line.split(/[\s:]+/).map((t) => t.trim()).filter(Boolean);
-  if (tokens.length === 0) return null;
+  // Not filtered for blanks — a middle column left empty (e.g. no 2FA between
+  // two tabs) must keep its position so later columns don't shift left.
+  const tokens = splitColumns(line);
+  if (tokens.length === 0 || !tokens.some(Boolean)) return null;
 
   const [login, password, third, fourth, fifth] = tokens;
   if (!login || !password) return null;
