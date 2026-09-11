@@ -4,7 +4,7 @@
 // of copyable fields (nickname → password → [2FA] → email → email password),
 // and batches are grouped into named blocks by an optional Header.
 import React, { useEffect, useState } from 'react';
-import { KeyRound, Plus, Copy, Check, Trash2 } from 'lucide-react';
+import { KeyRound, Plus, Copy, Check, Trash2, List } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getRowAccounts, addRowAccountsBulk, takeRowAccount, deleteRowAccount, RowAccountItem, RowAccountMode } from '../api';
 import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
@@ -70,6 +70,11 @@ export default function RowAccountsPool() {
     () => Array.from(new Set(accounts.map((a) => a.header).filter(Boolean))).sort(),
     [accounts],
   );
+
+  const groupAnchorId = (header: string) => `row-account-group-${header || '__ungrouped__'}`;
+  const scrollToGroup = (header: string) => {
+    document.getElementById(groupAnchorId(header))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // ── Bulk add ──────────────────────────────────────────────────────────────
   const [showAdd, setShowAdd] = useState(false);
@@ -158,6 +163,28 @@ export default function RowAccountsPool() {
         ))}
       </div>
 
+      {!loading && groups.length > 1 && (
+        <div className="card p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
+            <List size={12} strokeWidth={2} />
+            Quick navigation
+          </p>
+          <div className="flex flex-col">
+            {groups.map(({ header, items }) => (
+              <button
+                key={header || '__ungrouped__'}
+                onClick={() => scrollToGroup(header)}
+                className="flex items-center justify-between gap-2 text-left text-sm px-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
+                style={{ color: 'rgba(14,14,14,0.7)' }}
+              >
+                <span className="truncate">{header || 'Ungrouped'}</span>
+                <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{items.length}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <CardListSkeleton />
       ) : displayed.length === 0 ? (
@@ -165,7 +192,7 @@ export default function RowAccountsPool() {
       ) : (
         <div className="space-y-5">
           {groups.map(({ header, items }) => (
-            <div key={header || '__ungrouped__'} className="space-y-2">
+            <div key={header || '__ungrouped__'} id={groupAnchorId(header)} className="space-y-2" style={{ scrollMarginTop: '80px' }}>
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'rgba(14,14,14,0.45)' }}>
                 {header || 'Ungrouped'} <span className="font-normal normal-case">({items.length})</span>
               </p>
