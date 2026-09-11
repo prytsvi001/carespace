@@ -14,37 +14,25 @@ function isAdmin(user: Express.User): boolean {
   return user.peekviewerAdmin === true;
 }
 
-const EMAIL_RE = /^[^\s@:]+@[^\s@:]+\.[^\s@:]+$/;
-const CODE_RE = /^\d{4,8}$/; // typical 2FA code length — never matches an email (needs "@")
+const MODES = ['with2fa', 'without2fa'] as const;
+type Mode = (typeof MODES)[number];
 
-// Splits one pasted line into a credential row without requiring a fixed
-// column order: any token that looks like an email becomes `email`, any
-// token that's purely 4-8 digits becomes `twoFaCode` (first match of each
-// wins), and whatever tokens are left are assigned, in their original
-// left-to-right order, to login -> password -> emailPassword. Accepts
-// either ":" or whitespace/tabs as the separator so a plain paste like
-// "login password email@x.com 123456 emailpass" works the same as the
-// legacy "login:password:2FA:email:emailPassword" format.
-function parseAccountLine(line: string): {
+// Splits one pasted line into a credential row by a fixed column order that
+// depends on the chosen mode — separated by ":" or plain whitespace:
+//   with2fa:    nickname password 2FA email emailPassword
+//   without2fa: nickname password email emailPassword
+function parseAccountLine(line: string, mode: Mode): {
   login: string; password: string; twoFaCode: string | null; email: string | null; emailPassword: string | null;
 } | null {
   const tokens = line.split(/[\s:]+/).map((t) => t.trim()).filter(Boolean);
   if (tokens.length === 0) return null;
 
-  let email: string | null = null;
-  let twoFaCode: string | null = null;
-  const rest: string[] = [];
-
-  for (const t of tokens) {
-    if (!email && EMAIL_RE.test(t)) { email = t; continue; }
-    if (!twoFaCode && CODE_RE.test(t)) { twoFaCode = t; continue; }
-    rest.push(t);
-  }
-
-  const [login, password, emailPassword] = rest;
+  const [login, password, third, fourth, fifth] = tokens;
   if (!login || !password) return null;
 
-  return { login, password, twoFaCode, email, emailPassword: emailPassword || null };
+  return mode === 'with2fa'
+    ? { login, password, twoFaCode: third || null, email: fourth || null, emailPassword: fifth || null }
+    : { login, password, twoFaCode: null, email: third || null, emailPassword: fourth || null };
 }
 
 // GET /api/row-accounts — everyone; split into available/archive client-side by takenById
@@ -58,24 +46,27 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/row-accounts/bulk — admin only. Body: { text: string }, one
-// account per non-blank line. Fields can be separated by ":" or plain
-// whitespace, in any order — see parseAccountLine for the auto-detection
-// rules (email/2FA are pattern-matched, login/password/emailPassword fill
-// in by position among whatever's left).
+// POST /api/row-accounts/bulk — admin only. Body: { text: string, mode:
+// 'with2fa' | 'without2fa', header?: string }, one account per non-blank
+// line, columns in a fixed order per mode (see parseAccountLine); header
+// classifies the whole batch into a named block, same as Proxy.header.
 router.post('/bulk', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not permitted' });
 
-    const { text } = req.body as { text?: string };
+    const { text, mode, header } = req.body as { text?: string; mode?: string; header?: string };
+    if (!MODES.includes(mode as Mode)) {
+      return res.status(400).json({ error: 'mode must be "with2fa" or "without2fa"' });
+    }
+
     const lines = (text || '').split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) return res.status(400).json({ error: 'No accounts found in the pasted text' });
 
     const rows = lines
-      .map(parseAccountLine)
+      .map((line) => parseAccountLine(line, mode as Mode))
       .filter((r): r is NonNullable<typeof r> => !!r)
-      .map((r) => ({ ...r, addedById: me.id, addedByName: me.name }));
+      .map((r) => ({ ...r, header: header?.trim() || '', addedById: me.id, addedByName: me.name }));
 
     if (rows.length === 0) {
       return res.status(400).json({ error: 'Each line needs at least a login and a password' });
@@ -115,8 +106,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not permitted' });
 
-    const { login, password, twoFaCode, email, emailPassword } = req.body as {
-      login?: string; password?: string; twoFaCode?: string | null; email?: string | null; emailPassword?: string | null;
+    const { login, password, twoFaCode, email, emailPassword, header } = req.body as {
+      login?: string; password?: string; twoFaCode?: string | null; email?: string | null; emailPassword?: string | null; header?: string;
     };
 
     const result = await prisma.rowAccount.updateMany({
@@ -127,6 +118,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
         ...(twoFaCode !== undefined ? { twoFaCode: twoFaCode?.trim() || null } : {}),
         ...(email !== undefined ? { email: email?.trim() || null } : {}),
         ...(emailPassword !== undefined ? { emailPassword: emailPassword?.trim() || null } : {}),
+        ...(header !== undefined ? { header: header.trim() } : {}),
       },
     });
     if (result.count === 0) return res.status(404).json({ error: 'Not found' });

@@ -625,6 +625,7 @@ model Proxy {
 // Peekviewer Team — "Row Accounts" tab. Same shared-pool/claim shape as Proxy,
 // but holds a full credential set. Stored as plain text — internal-only app,
 // confirmed acceptable trust model (same as everywhere else in this app).
+// `header` groups a bulk-add batch into a named block, same as Proxy.header.
 model RowAccount {
   id            String    @id @default(cuid())
   login         String
@@ -632,6 +633,7 @@ model RowAccount {
   twoFaCode     String?
   email         String?
   emailPassword String?
+  header        String    @default("")
   addedById     String
   addedByName   String
   takenById     String?
@@ -640,4 +642,5 @@ model RowAccount {
   createdAt     DateTime  @default(now())
 
   @@index([takenById])
+  @@index([header])
 }

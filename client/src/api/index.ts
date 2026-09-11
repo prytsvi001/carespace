@@ -475,6 +475,8 @@ export const deleteProxy = (id: string) =>
   api.delete(`/proxies/${id}`).then((r) => r.data);
 
 // ─── Row Accounts pool (Peekviewer Team) ───────────────────────────────────
+export type RowAccountMode = 'with2fa' | 'without2fa';
+
 export interface RowAccountItem {
   id: string;
   login: string;
@@ -482,6 +484,7 @@ export interface RowAccountItem {
   twoFaCode: string | null;
   email: string | null;
   emailPassword: string | null;
+  header: string;
   addedById: string;
   addedByName: string;
   takenById: string | null;
@@ -492,13 +495,13 @@ export interface RowAccountItem {
 
 export const getRowAccounts = () => api.get<RowAccountItem[]>('/row-accounts').then((r) => r.data);
 
-export const addRowAccountsBulk = (text: string) =>
-  api.post<RowAccountItem[]>('/row-accounts/bulk', { text }).then((r) => r.data);
+export const addRowAccountsBulk = (text: string, mode: RowAccountMode, header?: string) =>
+  api.post<RowAccountItem[]>('/row-accounts/bulk', { text, mode, header }).then((r) => r.data);
 
 export const takeRowAccount = (id: string) =>
   api.patch<RowAccountItem>(`/row-accounts/${id}/take`).then((r) => r.data);
 
-export const updateRowAccount = (id: string, data: Partial<Pick<RowAccountItem, 'login' | 'password' | 'twoFaCode' | 'email' | 'emailPassword'>>) =>
+export const updateRowAccount = (id: string, data: Partial<Pick<RowAccountItem, 'login' | 'password' | 'twoFaCode' | 'email' | 'emailPassword' | 'header'>>) =>
   api.patch<RowAccountItem>(`/row-accounts/${id}`, data).then((r) => r.data);
 
 export const deleteRowAccount = (id: string) =>
