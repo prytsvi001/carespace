@@ -664,6 +664,7 @@ export interface RequestScheduleRedistributionRow {
 export interface RequestScheduleData {
   days: RequestScheduleDay[];
   redistribution: RequestScheduleRedistributionRow[];
+  calendarAgents: { userId: string; userName: string }[];
 }
 
 export const getRequestSchedule = (year: number, month: number) =>
@@ -671,5 +672,8 @@ export const getRequestSchedule = (year: number, month: number) =>
 
 export const swapRequestScheduleDay = (date: string, targetDate: string) =>
   api.post('/request-schedule/swap', { date, targetDate }).then((r) => r.data);
+
+export const assignRequestScheduleDay = (date: string, userId: string) =>
+  api.patch('/request-schedule/assign', { date, userId }).then((r) => r.data);
 
 export default api;
