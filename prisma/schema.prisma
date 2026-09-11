@@ -61,6 +61,7 @@ model User {
   updateReads          UpdateRead[]
   boostRequests        BoostRequest[]
   authoredOnboardingBlocks OnboardingBlock[]
+  accountRequests      AccountRequest[]
 
   @@index([peekOnDuty])
   @@index([team])
@@ -683,4 +684,29 @@ model OnboardingBlock {
   updatedAt   DateTime  @updatedAt
 
   @@index([authorId])
+}
+
+// Peekviewer Team — "New account request" (sent via Inbox's New Message
+// form, only offered when the recipient picked is Anna Bilous). Anna is the
+// sole recipient/processor — this isn't a generic assignee field — so there's
+// no receiverId; the request always resolves to her account server-side.
+// Shows up in her References tab as a queue (status + comments), and the
+// sender tracks it back in Inbox's "Requests sent to Anna" view. A companion
+// InboxMessage (inboxMessageId) is what actually lands in Anna's regular
+// Inbox — same "structured record + plain notification message" split as
+// QAAgentReport/SalaryRecord already use in this app.
+model AccountRequest {
+  id             String   @id @default(cuid())
+  requesterId    String
+  requester      User     @relation(fields: [requesterId], references: [id])
+  requesterName  String
+  content        String
+  status         String   @default("open") // "open" | "in_progress" | "done"
+  comments       String   @default("[]")   // JSON: [{id, authorName, text, createdAt}]
+  inboxMessageId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([requesterId])
+  @@index([status])
 }

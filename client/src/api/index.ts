@@ -710,4 +710,32 @@ export const deleteOnboardingAttachment = (url: string) =>
 export const getOnboardingAttachmentUrl = (url: string) =>
   `/api/onboarding/attachments/view?url=${encodeURIComponent(url)}`;
 
+// ─── Account Requests (Peekviewer Team — "New account request" to Anna) ───
+export type AccountRequestStatus = 'open' | 'in_progress' | 'done';
+
+export interface AccountRequestComment { id: string; authorName: string; text: string; createdAt: string }
+
+export interface AccountRequestData {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  content: string;
+  status: AccountRequestStatus;
+  comments: AccountRequestComment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Anna's full queue — Anna or peekviewerAdmin only (server-enforced)
+export const getAccountRequestsQueue = () => api.get<AccountRequestData[]>('/account-requests').then((r) => r.data);
+
+// The caller's own requests sent to Anna (Inbox's "Requests sent to Anna" view)
+export const getMySentAccountRequests = () => api.get<AccountRequestData[]>('/account-requests/sent').then((r) => r.data);
+
+export const createAccountRequest = (content: string) =>
+  api.post<AccountRequestData>('/account-requests', { content }).then((r) => r.data);
+
+export const updateAccountRequest = (id: string, data: { status?: AccountRequestStatus; comment?: string }) =>
+  api.patch<AccountRequestData>(`/account-requests/${id}`, data).then((r) => r.data);
+
 export default api;

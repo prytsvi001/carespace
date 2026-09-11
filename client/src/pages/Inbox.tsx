@@ -1,17 +1,18 @@
 // client/src/pages/Inbox.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mail, MailOpen, Send, X, Trash2, Reply, ChevronDown, ChevronUp, Megaphone } from 'lucide-react';
+import { Mail, MailOpen, Send, X, Trash2, Reply, ChevronDown, ChevronUp, Megaphone, UserPlus } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage, deleteMessage,
   addQAAgentReportComment, addQAIssueComment,
   getUpdates, createUpdate, updateUpdate, deleteUpdate, markUpdateRead,
+  getMySentAccountRequests, createAccountRequest, AccountRequestData, AccountRequestStatus,
 } from '../api';
 import { InboxMessage, TeamUpdate, UpdateAttachment } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { QAReportPreview } from '../components/qaReport';
 import { UpdatesTab } from '../components/UpdatesTab';
-import { ConfirmDialog, CardListSkeleton } from '../components/ui';
+import { ConfirmDialog, CardListSkeleton, RichText } from '../components/ui';
 
 type InboxUser = { id: string; name: string; role: string };
 
@@ -19,7 +20,14 @@ const TYPE_META: Record<string, { label: string; cls: string }> = {
   task_assignment: { label: 'Task',       cls: 'bg-blue-50 text-blue-600' },
   qa_report:       { label: 'QA Report',  cls: 'bg-amber-50 text-amber-700' },
   salary_message:  { label: 'Salary',     cls: 'bg-emerald-50 text-emerald-700' },
+  account_request: { label: 'Account Request', cls: 'bg-violet-50 text-violet-700' },
   general:         { label: 'Message',    cls: 'bg-slate-100 text-slate-600' },
+};
+
+const ACCOUNT_REQUEST_STATUS_META: Record<AccountRequestStatus, { label: string; bg: string; text: string }> = {
+  open:        { label: 'Open',        bg: 'rgba(14,14,14,0.07)',    text: 'rgba(14,14,14,0.55)' },
+  in_progress: { label: 'In Progress', bg: 'rgba(245,158,11,0.14)',  text: '#b45309' },
+  done:        { label: 'Done',        bg: 'rgba(161,249,110,0.28)', text: '#166534' },
 };
 
 const ROLE_TYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
@@ -46,24 +54,33 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
   const { user } = useAuth();
   const role = user?.role ?? 'agent';
   const isAdmin = role === 'head' || role === 'lead' || (activeTeam === 'peekviewer' && !!user?.peekviewerAdmin);
-  const typeOptions = ROLE_TYPE_OPTIONS[role] ?? ROLE_TYPE_OPTIONS.agent;
+  const baseTypeOptions = ROLE_TYPE_OPTIONS[role] ?? ROLE_TYPE_OPTIONS.agent;
 
-  const [view, setView] = useState<'received' | 'sent' | 'updates'>('received');
+  const [view, setView] = useState<'received' | 'sent' | 'updates' | 'requests-to-anna'>('received');
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [sentMessages, setSentMessages] = useState<InboxMessage[]>([]);
   const [updates, setUpdates] = useState<TeamUpdate[]>([]);
+  const [sentAccountRequests, setSentAccountRequests] = useState<AccountRequestData[]>([]);
   const [users, setUsers] = useState<InboxUser[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Compose state
   const [composing, setComposing] = useState(false);
   const [recipientId, setRecipientId] = useState('');
-  const [msgType, setMsgType] = useState(typeOptions[0]?.value ?? 'general');
+  const [msgType, setMsgType] = useState(baseTypeOptions[0]?.value ?? 'general');
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
   const [replyingTo, setReplyingTo] = useState<InboxMessage | null>(null);
   const composeRef = useRef<HTMLDivElement>(null);
+
+  // "New account request" is only offered when the recipient picked is Anna
+  // Bilous, and only inside the Peekviewer space — everywhere else the type
+  // list is exactly the role-based one.
+  const annaId = users.find((u) => u.name === 'Anna Bilous')?.id;
+  const typeOptions = activeTeam === 'peekviewer' && recipientId && recipientId === annaId
+    ? [...baseTypeOptions, { value: 'account_request', label: 'New account request' }]
+    : baseTypeOptions;
 
   const loadInbox = useCallback(async () => {
     try {
@@ -85,6 +102,14 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
     } catch (e) {
       console.error(e);
     }
+
+    if (activeTeam === 'peekviewer') {
+      try {
+        setSentAccountRequests(await getMySentAccountRequests());
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }, [activeTeam]);
 
   useEffect(() => {
@@ -101,7 +126,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
     setSendError('');
     setContent('');
     setReplyingTo(null);
-    setMsgType(typeOptions[0]?.value ?? 'general');
+    setMsgType(baseTypeOptions[0]?.value ?? 'general');
     if (users.length > 0) setRecipientId(users[0].id);
   };
 
@@ -128,11 +153,19 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
     setSending(true);
     setSendError('');
     try {
-      const msg: InboxMessage = await sendMessage({
-        recipientId, type: msgType, content: content.trim(),
-        replyToId: replyingTo?.id,
-      });
-      setSentMessages((prev) => [msg, ...prev]);
+      if (msgType === 'account_request') {
+        await createAccountRequest(content.trim());
+        // The server also creates a companion InboxMessage — simplest to just
+        // reload everything (Sent list + the Requests-sent-to-Anna list) rather
+        // than hand-construct both shapes locally.
+        await loadInbox();
+      } else {
+        const msg: InboxMessage = await sendMessage({
+          recipientId, type: msgType, content: content.trim(),
+          replyToId: replyingTo?.id,
+        });
+        setSentMessages((prev) => [msg, ...prev]);
+      }
       setComposing(false);
       setContent('');
       setReplyingTo(null);
@@ -246,11 +279,14 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
             )}
           </h2>
           <p className="text-sm text-slate-400">
-            {view === 'received' ? 'Messages sent to you' : view === 'sent' ? 'Messages you sent' : 'Team announcements'}
+            {view === 'received' ? 'Messages sent to you'
+              : view === 'sent' ? 'Messages you sent'
+              : view === 'requests-to-anna' ? 'Account requests you sent to Anna'
+              : 'Team announcements'}
           </p>
         </div>
 
-        {view !== 'updates' && (
+        {view !== 'updates' && view !== 'requests-to-anna' && (
           <button
             onClick={composing ? closeCompose : openCompose}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all shrink-0"
@@ -269,7 +305,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
       </div>
 
       {/* Compose panel */}
-      {composing && view !== 'updates' && (
+      {composing && view !== 'updates' && view !== 'requests-to-anna' && (
         <div ref={composeRef} className="card space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-700">
@@ -290,7 +326,15 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
               <label className="block text-xs text-slate-400 mb-1">To</label>
               <select
                 value={recipientId}
-                onChange={(e) => setRecipientId(e.target.value)}
+                onChange={(e) => {
+                  const nextRecipientId = e.target.value;
+                  setRecipientId(nextRecipientId);
+                  // "New account request" only makes sense while Anna is picked —
+                  // drop back to a role-based type the moment she isn't.
+                  if (msgType === 'account_request' && nextRecipientId !== annaId) {
+                    setMsgType(baseTypeOptions[0]?.value ?? 'general');
+                  }
+                }}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
               >
                 {users.map((u) => (
@@ -342,21 +386,27 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
         </div>
       )}
 
-      {/* Received / Sent / Updates filter */}
-      <div className="flex gap-1">
-        {(['received', 'sent', 'updates'] as const).map((v) => (
+      {/* Received / Sent / Updates / Requests-sent-to-Anna filter */}
+      <div className="flex gap-1 flex-wrap">
+        {([
+          ...(['received', 'sent', 'updates'] as const),
+          ...(activeTeam === 'peekviewer' ? (['requests-to-anna'] as const) : []),
+        ]).map((v) => (
           <button
             key={v}
-            onClick={() => { setView(v); if (v === 'updates') closeCompose(); }}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium transition-all capitalize"
+            onClick={() => { setView(v); if (v === 'updates' || v === 'requests-to-anna') closeCompose(); }}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium transition-all"
             style={
               view === v
                 ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
                 : { color: 'rgba(14,14,14,0.45)' }
             }
           >
-            {v === 'received' ? <Mail size={12} strokeWidth={1.8} /> : v === 'updates' ? <Megaphone size={12} strokeWidth={1.8} /> : null}
-            {v === 'received' ? 'Received' : v === 'sent' ? 'Sent' : 'Updates'}
+            {v === 'received' ? <Mail size={12} strokeWidth={1.8} />
+              : v === 'updates' ? <Megaphone size={12} strokeWidth={1.8} />
+              : v === 'requests-to-anna' ? <UserPlus size={12} strokeWidth={1.8} />
+              : null}
+            {v === 'received' ? 'Received' : v === 'sent' ? 'Sent' : v === 'updates' ? 'Updates' : 'Requests sent to Anna'}
             {((v === 'received' && unreadCount > 0) || (v === 'updates' && updatesUnreadCount > 0)) && (
               <span
                 className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
@@ -382,6 +432,44 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
             onDelete={handleDeleteUpdate}
             onMarkRead={handleMarkUpdateRead}
           />
+        )
+      ) : view === 'requests-to-anna' ? (
+        loading ? (
+          <CardListSkeleton />
+        ) : sentAccountRequests.length === 0 ? (
+          <div className="py-14 text-center">
+            <UserPlus size={40} strokeWidth={1} className="mx-auto mb-3 text-slate-300" />
+            <p className="text-sm text-slate-400">No account requests sent yet</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {sentAccountRequests.map((r) => {
+              const statusMeta = ACCOUNT_REQUEST_STATUS_META[r.status];
+              return (
+                <div key={r.id} className="card space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-xs text-slate-400">
+                      {format(new Date(r.createdAt), 'dd MMM yyyy')}
+                    </span>
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0" style={{ backgroundColor: statusMeta.bg, color: statusMeta.text }}>
+                      {statusMeta.label}
+                    </span>
+                  </div>
+                  <RichText text={r.content} className="text-sm text-slate-600 leading-relaxed" />
+                  {r.comments.length > 0 && (
+                    <div className="space-y-1 pl-3" style={{ borderLeft: '2px solid rgba(14,14,14,0.08)' }}>
+                      {r.comments.map((c) => (
+                        <div key={c.id} className="text-xs">
+                          <span className="font-semibold text-slate-600">{c.authorName}: </span>
+                          <span className="text-slate-500">{c.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )
       ) : (
       <>

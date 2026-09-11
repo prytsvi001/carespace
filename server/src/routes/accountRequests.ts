@@ -1,0 +1,156 @@
+// server/src/routes/accountRequests.ts
+// Peekviewer Team — "New account request" (sent from Inbox's New Message
+// form, only offered there when the recipient picked is Anna Bilous). Anna
+// is the sole recipient/processor — there's no receiverId param, this always
+// resolves to her account. Creates a structured AccountRequest (status +
+// comment thread, shown in her References tab) plus a companion InboxMessage
+// so it also lands in her regular Inbox — same split QAAgentReport/
+// SalaryRecord use elsewhere in this app.
+import { Router, Request, Response } from 'express';
+import prisma from '../prisma';
+import { requireAuth, requirePeekviewerTeam } from '../middleware/auth';
+import { sendTelegramMessage, CARESPACE_URL } from '../telegram';
+
+const router = Router();
+router.use(requireAuth);
+router.use(requirePeekviewerTeam);
+
+const STATUSES = ['open', 'in_progress', 'done'] as const;
+const ANNA_EMAIL = 'anna_bilous@struktura.io';
+
+type Comment = { id: string; authorName: string; text: string; createdAt: string };
+
+function parseComments(raw: string): Comment[] {
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+async function getAnna() {
+  return prisma.user.findUnique({ where: { email: ANNA_EMAIL } });
+}
+
+function isAnnaOrAdmin(me: Express.User, annaId: string): boolean {
+  return me.id === annaId || me.peekviewerAdmin === true;
+}
+
+function formatRequest(r: {
+  id: string; requesterId: string; requesterName: string; content: string; status: string;
+  comments: string; createdAt: Date; updatedAt: Date;
+}) {
+  return {
+    id: r.id,
+    requesterId: r.requesterId,
+    requesterName: r.requesterName,
+    content: r.content,
+    status: r.status,
+    comments: parseComments(r.comments),
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
+// GET /api/account-requests — Anna's full queue. Anna or peekviewerAdmin only.
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    const anna = await getAnna();
+    if (!anna) return res.status(500).json({ error: 'Anna Bilous account not found' });
+    if (!isAnnaOrAdmin(me, anna.id)) return res.status(403).json({ error: 'Not permitted' });
+
+    const requests = await prisma.accountRequest.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(requests.map(formatRequest));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch account requests' });
+  }
+});
+
+// GET /api/account-requests/sent — requests the caller themselves sent to Anna
+router.get('/sent', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    const requests = await prisma.accountRequest.findMany({
+      where: { requesterId: me.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(requests.map(formatRequest));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch sent account requests' });
+  }
+});
+
+// POST /api/account-requests — any Peekviewer team member, always targets Anna
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    const { content } = req.body as { content?: string };
+    if (!content?.trim()) return res.status(400).json({ error: 'content is required' });
+
+    const anna = await getAnna();
+    if (!anna) return res.status(500).json({ error: 'Anna Bilous account not found' });
+
+    const request = await prisma.accountRequest.create({
+      data: { requesterId: me.id, requesterName: me.name, content: content.trim() },
+    });
+
+    let messageId: string | undefined;
+    if (anna.id !== me.id) {
+      const message = await prisma.inboxMessage.create({
+        data: {
+          senderId: me.id, receiverId: anna.id, type: 'account_request',
+          subject: 'New account request', content: content.trim(),
+        },
+      });
+      messageId = message.id;
+      if (anna.telegramChatId) {
+        await sendTelegramMessage(anna.telegramChatId, `New account request from ${me.name}: ${content.trim().slice(0, 120)} ${CARESPACE_URL}`);
+      }
+    }
+
+    if (messageId) {
+      await prisma.accountRequest.update({ where: { id: request.id }, data: { inboxMessageId: messageId } });
+    }
+
+    return res.status(201).json(formatRequest(request));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to create account request' });
+  }
+});
+
+// PATCH /api/account-requests/:id — Anna only. Body: { status?, comment? }
+router.patch('/:id', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    const anna = await getAnna();
+    if (!anna || me.id !== anna.id) return res.status(403).json({ error: 'Not permitted' });
+
+    const { status, comment } = req.body as { status?: string; comment?: string };
+    if (status !== undefined && !STATUSES.includes(status as (typeof STATUSES)[number])) {
+      return res.status(400).json({ error: 'status must be open, in_progress, or done' });
+    }
+
+    const existing = await prisma.accountRequest.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    const comments = parseComments(existing.comments);
+    if (comment?.trim()) {
+      comments.push({ id: `${Date.now()}`, authorName: me.name, text: comment.trim(), createdAt: new Date().toISOString() });
+    }
+
+    const updated = await prisma.accountRequest.update({
+      where: { id: req.params.id },
+      data: {
+        ...(status !== undefined ? { status } : {}),
+        comments: JSON.stringify(comments),
+      },
+    });
+
+    res.json(formatRequest(updated));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update account request' });
+  }
+});
+
+export default router;

@@ -37,6 +37,7 @@ import proxiesRouter from './routes/proxies';
 import rowAccountsRouter from './routes/rowAccounts';
 import requestScheduleRouter from './routes/requestSchedule';
 import onboardingRouter from './routes/onboarding';
+import accountRequestsRouter from './routes/accountRequests';
 import { requireAuth } from './middleware/auth';
 
 const app = express();
@@ -147,5 +148,6 @@ app.use('/api/proxies',        proxiesRouter);       // requireAuth + requirePee
 app.use('/api/row-accounts',   rowAccountsRouter);    // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/request-schedule', requestScheduleRouter); // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/onboarding', onboardingRouter); // requireAuth + requirePeekviewerTeam applied inside router
+app.use('/api/account-requests', accountRequestsRouter); // requireAuth + requirePeekviewerTeam applied inside router
 
 export default app;
