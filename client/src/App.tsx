@@ -49,6 +49,24 @@ function TabLoadingFallback() {
   );
 }
 
+// Catches a lazy-chunk load failure in a floating/global widget (e.g. a
+// transient CDN cache miss right after a deploy) by rendering nothing rather
+// than letting it crash the whole app — unlike a tab's content area, there's
+// no reasonable place to show a retry prompt for something that floats over
+// every page, so failing silently (with a console.error) is the right call.
+class SilentErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error(error);
+  }
+  render() {
+    return this.state.hasError ? null : this.props.children;
+  }
+}
+
 // Catches lazy-chunk load failures (e.g. a transient CDN cache miss right after
 // a deploy) so one tab failing to load shows a retry prompt instead of an
 // uncaught error unmounting the whole app to a blank page.
@@ -684,9 +702,11 @@ function MainApp() {
         </div>
       </nav>
 
-      <Suspense fallback={null}>
-        <ShortcutsDrawer />
-      </Suspense>
+      <SilentErrorBoundary>
+        <Suspense fallback={null}>
+          <ShortcutsDrawer />
+        </Suspense>
+      </SilentErrorBoundary>
 
       <TelegramModal
         open={showTelegramModal}
