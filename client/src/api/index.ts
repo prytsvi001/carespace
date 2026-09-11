@@ -451,6 +451,7 @@ export const deleteBoostRequest = (id: string) =>
 export interface ProxyItem {
   id: string;
   value: string;
+  header: string;
   addedById: string;
   addedByName: string;
   takenById: string | null;
@@ -461,14 +462,14 @@ export interface ProxyItem {
 
 export const getProxies = () => api.get<ProxyItem[]>('/proxies').then((r) => r.data);
 
-export const addProxiesBulk = (text: string) =>
-  api.post<ProxyItem[]>('/proxies/bulk', { text }).then((r) => r.data);
+export const addProxiesBulk = (text: string, header?: string) =>
+  api.post<ProxyItem[]>('/proxies/bulk', { text, header }).then((r) => r.data);
 
 export const takeProxy = (id: string) =>
   api.patch<ProxyItem>(`/proxies/${id}/take`).then((r) => r.data);
 
-export const updateProxy = (id: string, value: string) =>
-  api.patch<ProxyItem>(`/proxies/${id}`, { value }).then((r) => r.data);
+export const updateProxy = (id: string, data: { value?: string; header?: string }) =>
+  api.patch<ProxyItem>(`/proxies/${id}`, data).then((r) => r.data);
 
 export const deleteProxy = (id: string) =>
   api.delete(`/proxies/${id}`).then((r) => r.data);

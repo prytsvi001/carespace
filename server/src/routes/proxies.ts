@@ -27,19 +27,20 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/proxies/bulk — admin only. Body: { text: string }, one proxy per
-// non-blank line.
+// POST /api/proxies/bulk — admin only. Body: { text: string, header?: string },
+// one proxy per non-blank line; header classifies the whole batch (e.g.
+// "Mobile", "USA", "Ukraine") into a named block in the list.
 router.post('/bulk', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not permitted' });
 
-    const { text } = req.body as { text?: string };
+    const { text, header } = req.body as { text?: string; header?: string };
     const lines = (text || '').split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) return res.status(400).json({ error: 'No proxies found in the pasted text' });
 
     await prisma.proxy.createMany({
-      data: lines.map((value) => ({ value, addedById: me.id, addedByName: me.name })),
+      data: lines.map((value) => ({ value, header: header?.trim() || '', addedById: me.id, addedByName: me.name })),
     });
 
     const created = await prisma.proxy.findMany({ orderBy: { createdAt: 'desc' }, take: lines.length });
@@ -68,18 +69,21 @@ router.patch('/:id/take', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/proxies/:id — admin only (edit the value)
+// PATCH /api/proxies/:id — admin only (edit the value and/or header)
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not permitted' });
 
-    const { value } = req.body as { value?: string };
-    if (!value?.trim()) return res.status(400).json({ error: 'value is required' });
+    const { value, header } = req.body as { value?: string; header?: string };
+    if (value !== undefined && !value.trim()) return res.status(400).json({ error: 'value is required' });
 
     const result = await prisma.proxy.updateMany({
       where: { id: req.params.id },
-      data: { value: value.trim() },
+      data: {
+        ...(value !== undefined ? { value: value.trim() } : {}),
+        ...(header !== undefined ? { header: header.trim() } : {}),
+      },
     });
     if (result.count === 0) return res.status(404).json({ error: 'Not found' });
 

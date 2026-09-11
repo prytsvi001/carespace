@@ -27,8 +27,26 @@ export default function ProxyPool() {
   const archived = proxies.filter((p) => p.takenById);
   const displayed = view === 'available' ? available : archived;
 
+  // Groups the (already newest-first sorted) displayed list into named blocks
+  // by header, e.g. "Mobile", "USA", "Ukraine" — "" becomes "Ungrouped".
+  const groups = React.useMemo(() => {
+    const map = new Map<string, ProxyItem[]>();
+    for (const p of displayed) {
+      const key = p.header || '';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(p);
+    }
+    return Array.from(map.entries()).map(([header, items]) => ({ header, items }));
+  }, [displayed]);
+
+  const existingHeaders = React.useMemo(
+    () => Array.from(new Set(proxies.map((p) => p.header).filter(Boolean))).sort(),
+    [proxies],
+  );
+
   // ── Bulk add ──────────────────────────────────────────────────────────────
   const [showAdd, setShowAdd] = useState(false);
+  const [bulkHeader, setBulkHeader] = useState('');
   const [bulkText, setBulkText] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
@@ -38,9 +56,10 @@ export default function ProxyPool() {
     setAdding(true);
     setAddError('');
     try {
-      const created = await addProxiesBulk(bulkText);
+      const created = await addProxiesBulk(bulkText, bulkHeader);
       setProxies((prev) => [...created, ...prev]);
       setBulkText('');
+      setBulkHeader('');
       setShowAdd(false);
     } catch (e: any) {
       setAddError(e?.response?.data?.error ?? 'Failed to add proxies.');
@@ -116,46 +135,53 @@ export default function ProxyPool() {
       ) : displayed.length === 0 ? (
         <EmptyState icon={<Wifi size={32} strokeWidth={1.2} />} message={view === 'available' ? 'No proxies available.' : 'Nothing archived yet.'} />
       ) : (
-        <div className="space-y-2">
-          {displayed.map((p) => (
-            <div key={p.id} className="card flex items-center justify-between gap-3" style={p.takenById ? { opacity: 0.55 } : undefined}>
-              <div className="min-w-0">
-                <p className="text-sm font-mono text-slate-700 truncate">{p.value}</p>
-                {p.takenById ? (
-                  <p className="text-xs text-slate-400 mt-0.5">Taken by {p.takenByName}</p>
-                ) : (
-                  <p className="text-xs text-slate-400 mt-0.5">Added by {p.addedByName}</p>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => handleCopy(p.id, p.value)}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                  style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
-                >
-                  {copiedId === p.id ? <Check size={13} strokeWidth={2} /> : <Copy size={13} strokeWidth={1.8} />}
-                  {copiedId === p.id ? 'Copied' : 'Copy'}
-                </button>
-                {!p.takenById && (
-                  <button
-                    onClick={() => setConfirmTakeId(p.id)}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
-                    style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
-                  >
-                    Taken by me
-                  </button>
-                )}
-                {isAdmin && (
-                  <button
-                    onClick={() => setConfirmDeleteId(p.id)}
-                    className="p-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
-                    style={{ color: 'rgba(14,14,14,0.35)' }}
-                    title="Delete"
-                  >
-                    <Trash2 size={14} strokeWidth={1.8} />
-                  </button>
-                )}
-              </div>
+        <div className="space-y-5">
+          {groups.map(({ header, items }) => (
+            <div key={header || '__ungrouped__'} className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'rgba(14,14,14,0.45)' }}>
+                {header || 'Ungrouped'} <span className="font-normal normal-case">({items.length})</span>
+              </p>
+              {items.map((p) => (
+                <div key={p.id} className="card flex items-center justify-between gap-3" style={p.takenById ? { opacity: 0.55 } : undefined}>
+                  <div className="min-w-0">
+                    <p className="text-sm font-mono text-slate-700 truncate">{p.value}</p>
+                    {p.takenById ? (
+                      <p className="text-xs text-slate-400 mt-0.5">Taken by {p.takenByName}</p>
+                    ) : (
+                      <p className="text-xs text-slate-400 mt-0.5">Added by {p.addedByName}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handleCopy(p.id, p.value)}
+                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                    >
+                      {copiedId === p.id ? <Check size={13} strokeWidth={2} /> : <Copy size={13} strokeWidth={1.8} />}
+                      {copiedId === p.id ? 'Copied' : 'Copy'}
+                    </button>
+                    {!p.takenById && (
+                      <button
+                        onClick={() => setConfirmTakeId(p.id)}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
+                        style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+                      >
+                        Taken by me
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => setConfirmDeleteId(p.id)}
+                        className="p-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                        style={{ color: 'rgba(14,14,14,0.35)' }}
+                        title="Delete"
+                      >
+                        <Trash2 size={14} strokeWidth={1.8} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -163,13 +189,29 @@ export default function ProxyPool() {
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add new proxy">
         <div className="space-y-3">
-          <textarea
-            className="input text-sm w-full font-mono"
-            rows={8}
-            value={bulkText}
-            onChange={(e) => setBulkText(e.target.value)}
-            placeholder={'Paste one proxy per line, e.g.\nip:port:user:pass\nip:port:user:pass'}
-          />
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Header (e.g. Mobile, USA, Ukraine)</label>
+            <input
+              className="input text-sm w-full"
+              list="proxy-headers"
+              value={bulkHeader}
+              onChange={(e) => setBulkHeader(e.target.value)}
+              placeholder="Optional — groups this batch under a named block"
+            />
+            <datalist id="proxy-headers">
+              {existingHeaders.map((h) => <option key={h} value={h} />)}
+            </datalist>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Proxies</label>
+            <textarea
+              className="input text-sm w-full font-mono"
+              rows={8}
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              placeholder={'Paste one proxy per line, e.g.\nip:port:user:pass\nip:port:user:pass'}
+            />
+          </div>
           {addError && <p className="text-xs text-red-500">{addError}</p>}
           <div className="flex justify-end">
             <button className="btn-accent text-sm" onClick={handleAdd} disabled={!bulkText.trim() || adding}>

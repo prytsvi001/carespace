@@ -604,10 +604,13 @@ model BoostRequest {
 // (one row per pasted line), any team member can claim ("Taken by me") and
 // copy the value. A taken proxy isn't deleted — it just moves from the
 // "Available" list to the "Archive" list (takenById != null), both visible to
-// everyone.
+// everyone. `header` classifies a whole bulk-add batch (e.g. "Mobile", "USA",
+// "Ukraine") — the list groups proxies by this value into named blocks; "" is
+// the ungrouped/legacy bucket.
 model Proxy {
   id          String    @id @default(cuid())
   value       String
+  header      String    @default("")
   addedById   String
   addedByName String
   takenById   String?
@@ -616,6 +619,7 @@ model Proxy {
   createdAt   DateTime  @default(now())
 
   @@index([takenById])
+  @@index([header])
 }
 
 // Peekviewer Team — "Row Accounts" tab. Same shared-pool/claim shape as Proxy,
