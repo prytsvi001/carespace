@@ -3,14 +3,20 @@
 // rotations (no spreadsheet, confirmed with the user) that happen to share
 // the same 4 agents but are NOT the same schedule:
 //   - The calendar: who's on duty to submit ("throw") new-profile requests
-//     each day. Order: Tetyana - Iryna - Victoria Horopeka - Yana.
+//     each day. Order: Tetyana - Iryna - Victoria Horopeka - Yana, cycling
+//     continuously day-to-day (NOT reset at the start of each month) — e.g.
+//     30 Sept is Tetyana, so 1 Oct is Iryna, 2 Oct is Victoria Horopeka, etc.
+//     September 2026 itself is pinned via explicit historical overrides (it
+//     doesn't follow this formula — see prisma seed history), which take
+//     precedence; the continuous formula is what every month from October
+//     2026 onward falls back to.
 //   - "Перерозподіл активних профілів": a separate reference list of which
-//     day-numbers each agent owns. Order: Tetyana - Yana - Victoria Horopeka
-//     - Iryna (matches the original tool's static lists).
-// Both use the same day%4 remainder formula, just with a different agent
-// order plugged in. Only the calendar has persisted overrides — swaps
-// (drag-and-drop) or direct reassignment (click a day's chip) layer on top
-// of the calendar formula for that one date.
+//     day-numbers each agent owns, still keyed by day-of-month (resets each
+//     month). Order: Tetyana - Yana - Victoria Horopeka - Iryna (matches the
+//     original tool's static lists). Not derived from the calendar above.
+// Only the calendar has persisted overrides — swaps (drag-and-drop) or
+// direct reassignment (click a day's chip) layer on top of the calendar
+// formula for that one date.
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth, requirePeekviewerTeam } from '../middleware/auth';
@@ -33,9 +39,24 @@ const REDISTRIBUTION_ROTATION_EMAILS = [
   'iryna_kolodienko@struktura.io',
 ];
 
+// Month-relative remainder formula — used only by the redistribution list.
 function rotationIndexForDay(dayOfMonth: number): number {
   const r = dayOfMonth % 4;
   return r === 1 ? 0 : r === 2 ? 1 : r === 3 ? 2 : 3;
+}
+
+// Continuous day-to-day formula — used by the calendar. Anchored so 30 Sept
+// 2026 (UTC-midnight) is index 0 (Tetyana); every date's index is its signed
+// day-distance from that anchor, mod 4, so the rotation never resets at a
+// month boundary.
+const CALENDAR_ANCHOR_UTC_MS = Date.UTC(2026, 8, 30); // 30 Sept 2026, index 0
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function calendarRotationIndexForDate(dateStr: string): number {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const dateUtcMs = Date.UTC(year, month - 1, day);
+  const diffDays = Math.round((dateUtcMs - CALENDAR_ANCHOR_UTC_MS) / MS_PER_DAY);
+  return ((diffDays % 4) + 4) % 4;
 }
 
 function pad2(n: number): string {
@@ -95,7 +116,7 @@ router.get('/', async (req: Request, res: Response) => {
     for (let day = 1; day <= total; day++) {
       const date = dateKey(year, month, day);
       const override = overrideByDate.get(date);
-      const base = calendarRotation[rotationIndexForDay(day)];
+      const base = calendarRotation[calendarRotationIndexForDate(date)];
       days.push({
         date,
         userId: override ? override.userId : base.id,
@@ -126,8 +147,7 @@ router.get('/', async (req: Request, res: Response) => {
 async function resolveCurrentAssignee(d: string, calendarRotation: { id: string; name: string }[]) {
   const existing = await prisma.requestScheduleOverride.findUnique({ where: { date: d } });
   if (existing) return { userId: existing.userId, userName: existing.userName };
-  const [, , day] = d.split('-').map(Number);
-  const base = calendarRotation[rotationIndexForDay(day)];
+  const base = calendarRotation[calendarRotationIndexForDate(d)];
   return { userId: base.id, userName: base.name };
 }
 
