@@ -98,8 +98,10 @@ export default function RowAccountsPool() {
       console.error(e);
       load();
     }
+    setConfirmTakeId(null);
   };
 
+  const [confirmTakeId, setConfirmTakeId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const handleDelete = async (id: string) => {
     setAccounts((prev) => prev.filter((a) => a.id !== id));
@@ -150,7 +152,7 @@ export default function RowAccountsPool() {
                 <div className="flex items-center gap-2 shrink-0">
                   {!a.takenById && (
                     <button
-                      onClick={() => handleTake(a.id)}
+                      onClick={() => setConfirmTakeId(a.id)}
                       className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
                       style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
                     >
@@ -211,6 +213,13 @@ export default function RowAccountsPool() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmTakeId}
+        message="Take this account? It will move to Archive and no longer be available to the team."
+        onConfirm={() => { if (confirmTakeId) handleTake(confirmTakeId); }}
+        onCancel={() => setConfirmTakeId(null)}
+      />
 
       <ConfirmDialog
         open={!!confirmDeleteId}

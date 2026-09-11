@@ -70,8 +70,10 @@ export default function ProxyPool() {
       console.error(e);
       load();
     }
+    setConfirmTakeId(null);
   };
 
+  const [confirmTakeId, setConfirmTakeId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const handleDelete = async (id: string) => {
     setProxies((prev) => prev.filter((p) => p.id !== id));
@@ -136,7 +138,7 @@ export default function ProxyPool() {
                 </button>
                 {!p.takenById && (
                   <button
-                    onClick={() => handleTake(p.id)}
+                    onClick={() => setConfirmTakeId(p.id)}
                     className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
                     style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
                   >
@@ -176,6 +178,13 @@ export default function ProxyPool() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmTakeId}
+        message="Take this proxy? It will move to Archive and no longer be available to the team."
+        onConfirm={() => { if (confirmTakeId) handleTake(confirmTakeId); }}
+        onCancel={() => setConfirmTakeId(null)}
+      />
 
       <ConfirmDialog
         open={!!confirmDeleteId}
