@@ -7,7 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getKpiSettings, updateKpiSettings } from '../api';
-import { AutoTextarea, EmptyState, ConfirmDialog } from '../components/ui';
+import { AutoTextarea, EmptyState, ConfirmDialog, RichText } from '../components/ui';
 import { BarChart3 } from 'lucide-react';
 
 interface KpiBlock {
@@ -182,7 +182,7 @@ export default function PeekviewerKPI() {
             {isEditing ? (
               <AutoTextarea className="input text-sm w-full" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} />
             ) : (
-              <div className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{block.content}</div>
+              <RichText text={block.content} className="text-sm text-slate-700 leading-relaxed" />
             )}
           </div>
         );
