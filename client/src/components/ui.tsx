@@ -110,6 +110,63 @@ export function AutoTextarea({
   );
 }
 
+// ─── Linkify (auto-detect URLs in plain text) ───────────────────────────────
+// Splits on http(s):// URLs and renders them as clickable links, leaving
+// everything else as plain text — for content that's stored as a flat string
+// (no rich-text/markdown) but may contain pasted links, e.g. Onboarding blocks.
+const URL_PATTERN = /(https?:\/\/[^\s<>"')\]]+)/g;
+
+// A matched URL run swallows trailing sentence punctuation it doesn't own
+// (the period at the end of "see https://x.com." or the comma in "https://x.com,
+// and ..."). Strips trailing .,;:!?'" unconditionally, and a trailing ")" only
+// when it isn't balanced by an opening "(" earlier in the same match (so a
+// legitimate paren in the URL, e.g. a Wikipedia link, is left alone).
+function splitTrailingPunctuation(url: string): { url: string; trailing: string } {
+  let end = url.length;
+  while (end > 0) {
+    const ch = url[end - 1];
+    if ('.,;:!?\'"'.includes(ch)) { end--; continue; }
+    if (ch === ')') {
+      const prefix = url.slice(0, end - 1);
+      const opens = (prefix.match(/\(/g) || []).length;
+      const closes = (prefix.match(/\)/g) || []).length;
+      if (closes >= opens) { end--; continue; }
+    }
+    break;
+  }
+  return { url: url.slice(0, end), trailing: url.slice(end) };
+}
+
+export function Linkify({ text, className }: { text: string; className?: string }) {
+  // split() with a single capturing group interleaves [text, url, text, url, ...] —
+  // odd indices are always the captured URLs, so no need to re-test each part
+  // (which would be broken anyway: URL_PATTERN is a stateful global regex).
+  const parts = text.split(URL_PATTERN);
+  return (
+    <span className={className} style={{ whiteSpace: 'pre-wrap' }}>
+      {parts.map((part, i) => {
+        if (i % 2 !== 1) return <React.Fragment key={i}>{part}</React.Fragment>;
+        const { url, trailing } = splitTrailingPunctuation(part);
+        return (
+          <React.Fragment key={i}>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline break-all"
+              style={{ color: '#2563eb' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {url}
+            </a>
+            {trailing}
+          </React.Fragment>
+        );
+      })}
+    </span>
+  );
+}
+
 // ─── Collapsible text (long pasted content) ─────────────────────────────────
 export function CollapsibleText({
   text,

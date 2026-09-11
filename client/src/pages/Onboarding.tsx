@@ -15,7 +15,7 @@ import {
   deleteOnboardingAttachment, getOnboardingAttachmentUrl,
   OnboardingBlockData, OnboardingAttachment,
 } from '../api';
-import { Modal, ConfirmDialog, EmptyState, CardListSkeleton } from '../components/ui';
+import { Modal, ConfirmDialog, EmptyState, CardListSkeleton, Linkify } from '../components/ui';
 
 function formatFileSize(bytes: number): string {
   if (!bytes) return '';
@@ -201,9 +201,9 @@ export default function Onboarding() {
                 )}
               </div>
 
-              <p className="text-sm text-slate-600 leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
-                {b.content}
-              </p>
+              <div>
+                <Linkify text={b.content} className="text-sm text-slate-600 leading-relaxed" />
+              </div>
 
               {b.attachments.length > 0 && (
                 <div className="space-y-2">
