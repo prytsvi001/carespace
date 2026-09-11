@@ -36,6 +36,7 @@ import boostRequestsRouter from './routes/boostRequests';
 import proxiesRouter from './routes/proxies';
 import rowAccountsRouter from './routes/rowAccounts';
 import requestScheduleRouter from './routes/requestSchedule';
+import onboardingRouter from './routes/onboarding';
 import { requireAuth } from './middleware/auth';
 
 const app = express();
@@ -145,5 +146,6 @@ app.use('/api/boost-requests', boostRequestsRouter); // requireAuth + requirePee
 app.use('/api/proxies',        proxiesRouter);       // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/row-accounts',   rowAccountsRouter);    // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/request-schedule', requestScheduleRouter); // requireAuth + requirePeekviewerTeam applied inside router
+app.use('/api/onboarding', onboardingRouter); // requireAuth + requirePeekviewerTeam applied inside router
 
 export default app;

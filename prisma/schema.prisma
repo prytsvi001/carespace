@@ -60,6 +60,7 @@ model User {
   authoredUpdates      Update[]     @relation("AuthoredUpdates")
   updateReads          UpdateRead[]
   boostRequests        BoostRequest[]
+  authoredOnboardingBlocks OnboardingBlock[]
 
   @@index([peekOnDuty])
   @@index([team])
@@ -661,4 +662,25 @@ model RequestScheduleOverride {
   updatedAt DateTime @updatedAt
 
   @@index([date])
+}
+
+// Peekviewer Team — "Onboarding" tab (inside My Space). Product info + how-to
+// material, authored only by Sandra Moore / Victoria Davis (role head/lead —
+// within the Peekviewer team that's exactly those two, no separate flag
+// needed), readable by every team member. Attachments reuse the same Vercel
+// Blob private-store + presigned-URL pattern as Update.attachments, but are
+// rendered inline (img/video) rather than as a download link.
+model OnboardingBlock {
+  id          String    @id @default(cuid())
+  authorId    String?
+  author      User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorName  String
+  title       String
+  content     String
+  attachments String    @default("[]") // JSON: [{url, pathname, name, contentType, size}]
+  editedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([authorId])
 }

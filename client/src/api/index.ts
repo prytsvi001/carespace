@@ -676,4 +676,38 @@ export const swapRequestScheduleDay = (date: string, targetDate: string) =>
 export const assignRequestScheduleDay = (date: string, userId: string) =>
   api.patch('/request-schedule/assign', { date, userId }).then((r) => r.data);
 
+// ─── Onboarding (Peekviewer Team, inside My Space) ─────────────────────────
+export interface OnboardingAttachment { url: string; pathname: string; name: string; contentType: string; size: number }
+
+export interface OnboardingBlockData {
+  id: string;
+  authorId: string | null;
+  authorName: string;
+  title: string;
+  content: string;
+  attachments: OnboardingAttachment[];
+  editedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  isAuthor: boolean;
+}
+
+export const getOnboardingBlocks = () => api.get<OnboardingBlockData[]>('/onboarding').then((r) => r.data);
+
+export const createOnboardingBlock = (data: { title: string; content: string; attachments?: OnboardingAttachment[] }) =>
+  api.post<OnboardingBlockData>('/onboarding', data).then((r) => r.data);
+
+export const updateOnboardingBlock = (id: string, data: { title: string; content: string; attachments?: OnboardingAttachment[] }) =>
+  api.put<OnboardingBlockData>(`/onboarding/${id}`, data).then((r) => r.data);
+
+export const deleteOnboardingBlock = (id: string) =>
+  api.delete(`/onboarding/${id}`).then((r) => r.data);
+
+export const deleteOnboardingAttachment = (url: string) =>
+  api.delete('/onboarding/attachments', { data: { url } }).then((r) => r.data);
+
+// Private store — stream through this authenticated proxy so <img>/<video> can point at it directly.
+export const getOnboardingAttachmentUrl = (url: string) =>
+  `/api/onboarding/attachments/view?url=${encodeURIComponent(url)}`;
+
 export default api;
