@@ -196,14 +196,16 @@ export default function RowAccountsPool() {
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add new row accounts">
         <div className="space-y-3">
           <p className="text-xs" style={{ color: 'rgba(14,14,14,0.45)' }}>
-            One account per line: <code>login:password:2FA:email:emailPassword</code> (leave a field blank between colons if it doesn't apply)
+            One account per line, separated by spaces or colons — order doesn't matter, the system
+            recognizes the email (has "@") and the 2FA code (4–8 digits) automatically. Whatever's left
+            is read left-to-right as login, password, then email password.
           </p>
           <textarea
             className="input text-sm w-full font-mono"
             rows={8}
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
-            placeholder={'login1:password1:123456:email1@x.com:emailpass1\nlogin2:password2:::'}
+            placeholder={'login1 password1 email1@x.com 123456 emailpass1\nlogin2 password2'}
           />
           {addError && <p className="text-xs text-red-500">{addError}</p>}
           <div className="flex justify-end">

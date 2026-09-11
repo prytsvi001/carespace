@@ -14,6 +14,39 @@ function isAdmin(user: Express.User): boolean {
   return user.peekviewerAdmin === true;
 }
 
+const EMAIL_RE = /^[^\s@:]+@[^\s@:]+\.[^\s@:]+$/;
+const CODE_RE = /^\d{4,8}$/; // typical 2FA code length — never matches an email (needs "@")
+
+// Splits one pasted line into a credential row without requiring a fixed
+// column order: any token that looks like an email becomes `email`, any
+// token that's purely 4-8 digits becomes `twoFaCode` (first match of each
+// wins), and whatever tokens are left are assigned, in their original
+// left-to-right order, to login -> password -> emailPassword. Accepts
+// either ":" or whitespace/tabs as the separator so a plain paste like
+// "login password email@x.com 123456 emailpass" works the same as the
+// legacy "login:password:2FA:email:emailPassword" format.
+function parseAccountLine(line: string): {
+  login: string; password: string; twoFaCode: string | null; email: string | null; emailPassword: string | null;
+} | null {
+  const tokens = line.split(/[\s:]+/).map((t) => t.trim()).filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  let email: string | null = null;
+  let twoFaCode: string | null = null;
+  const rest: string[] = [];
+
+  for (const t of tokens) {
+    if (!email && EMAIL_RE.test(t)) { email = t; continue; }
+    if (!twoFaCode && CODE_RE.test(t)) { twoFaCode = t; continue; }
+    rest.push(t);
+  }
+
+  const [login, password, emailPassword] = rest;
+  if (!login || !password) return null;
+
+  return { login, password, twoFaCode, email, emailPassword: emailPassword || null };
+}
+
 // GET /api/row-accounts — everyone; split into available/archive client-side by takenById
 router.get('/', async (_req: Request, res: Response) => {
   try {
@@ -26,9 +59,10 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // POST /api/row-accounts/bulk — admin only. Body: { text: string }, one
-// account per non-blank line, fields separated by ":" —
-// login:password:twoFaCode:email:emailPassword (2FA/email/email password may
-// be left blank between colons, e.g. "login:password::: ").
+// account per non-blank line. Fields can be separated by ":" or plain
+// whitespace, in any order — see parseAccountLine for the auto-detection
+// rules (email/2FA are pattern-matched, login/password/emailPassword fill
+// in by position among whatever's left).
 router.post('/bulk', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
@@ -38,21 +72,13 @@ router.post('/bulk', async (req: Request, res: Response) => {
     const lines = (text || '').split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) return res.status(400).json({ error: 'No accounts found in the pasted text' });
 
-    const rows = lines.map((line) => {
-      const [login, password, twoFaCode, email, emailPassword] = line.split(':').map((p) => p?.trim() ?? '');
-      return {
-        login: login || '',
-        password: password || '',
-        twoFaCode: twoFaCode || null,
-        email: email || null,
-        emailPassword: emailPassword || null,
-        addedById: me.id,
-        addedByName: me.name,
-      };
-    }).filter((r) => r.login && r.password);
+    const rows = lines
+      .map(parseAccountLine)
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map((r) => ({ ...r, addedById: me.id, addedByName: me.name }));
 
     if (rows.length === 0) {
-      return res.status(400).json({ error: 'Each line needs at least login:password' });
+      return res.status(400).json({ error: 'Each line needs at least a login and a password' });
     }
 
     await prisma.rowAccount.createMany({ data: rows });
