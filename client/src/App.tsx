@@ -4,6 +4,7 @@ import {
   ClipboardList, CalendarDays, Lightbulb, Bot, ChartBar,
   ListTodo, Star, TrendingUp, FileText, LogOut, User,
   ChevronDown, Bell, BarChart3, Send, CheckCircle2, Camera, Download, Wallet,
+  CalendarClock, Rocket, Wifi, KeyRound, BookOpen,
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -33,6 +34,12 @@ const PDP = React.lazy(() => import('./pages/PDP'));
 const QAReports = React.lazy(() => import('./pages/QAReports'));
 const MyKPI = React.lazy(() => import('./pages/MyKPI'));
 const Salary = React.lazy(() => import('./pages/Salary'));
+const RequestSchedule = React.lazy(() => import('./pages/RequestSchedule'));
+const BoostRequests = React.lazy(() => import('./pages/BoostRequests'));
+const ProxyPool = React.lazy(() => import('./pages/ProxyPool'));
+const RowAccountsPool = React.lazy(() => import('./pages/RowAccountsPool'));
+const References = React.lazy(() => import('./pages/References'));
+const PeekviewerKPI = React.lazy(() => import('./pages/PeekviewerKPI'));
 
 function TabLoadingFallback() {
   return (
@@ -74,9 +81,12 @@ class TabErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
 
 type SharedTab = 'daily' | 'calendar' | 'requests' | 'qa' | 'stats';
 type SpaceTab  = 'plans' | 'inbox' | 'reviews' | 'pdp' | 'qa-reports' | 'kpi' | 'salary';
-type Tab = SharedTab | SpaceTab;
+type PeekviewerSharedTab = 'schedule' | 'boost' | 'proxy' | 'row-accounts' | 'references' | 'requests' | 'calendar';
+type PeekviewerSpaceTab = 'peek-kpi' | 'peek-plans';
+type Tab = SharedTab | SpaceTab | PeekviewerSharedTab | PeekviewerSpaceTab;
 
 const SHARED_TAB_IDS = new Set<Tab>(['daily', 'calendar', 'requests', 'qa', 'stats', 'inbox']);
+const PEEKVIEWER_SHARED_TAB_IDS = new Set<Tab>(['schedule', 'boost', 'proxy', 'row-accounts', 'references', 'requests', 'calendar', 'inbox']);
 
 const SHARED_TABS: { id: SharedTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
   { id: 'daily',    label: 'Daily Log',      shortLabel: 'Log',      Icon: ClipboardList },
@@ -96,21 +106,55 @@ const ALL_SPACE_TABS: { id: SpaceTab; label: string; shortLabel: string; Icon: R
   { id: 'salary',     label: 'Salary',     shortLabel: 'Salary',  Icon: Wallet,     roles: ['head'] },
 ];
 
-// Tabs accessible to peek_handler role
-const PEEK_HANDLER_TABS = new Set<SharedTab>(['requests', 'calendar']);
+// Peekviewer Team's main nav row — same for every team member (order matters:
+// Request Schedule lands first). Iryna Kolodienko/Victoria Horopeka additionally
+// keep their legacy peek_handler tabs ('requests'/'calendar', appended below).
+const PEEKVIEWER_CORE_TABS: { id: PeekviewerSharedTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
+  { id: 'schedule',      label: 'Request Schedule', shortLabel: 'Schedule', Icon: CalendarClock },
+  { id: 'boost',         label: 'Boost',            shortLabel: 'Boost',    Icon: Rocket },
+  { id: 'proxy',         label: 'Proxy',             shortLabel: 'Proxy',    Icon: Wifi },
+  { id: 'row-accounts',  label: 'Row Accounts',      shortLabel: 'Accounts', Icon: KeyRound },
+  { id: 'references',    label: 'References',        shortLabel: 'Refs',     Icon: BookOpen },
+];
+const PEEKVIEWER_LEGACY_TABS: { id: PeekviewerSharedTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
+  { id: 'requests', label: 'Peek Requests', shortLabel: 'Peek',     Icon: Lightbulb },
+  { id: 'calendar', label: 'Peek Calendar', shortLabel: 'Peek Cal', Icon: CalendarDays },
+];
 
-const ACTIVE_TAB_STORAGE_KEY = 'carespace_active_tab';
+// Peekviewer Team's My Space — same two entries for every member, no role filtering
+const PEEKVIEWER_SPACE_TABS: { id: PeekviewerSpaceTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
+  { id: 'peek-kpi',   label: 'KPI',      shortLabel: 'KPI',   Icon: BarChart3 },
+  { id: 'peek-plans', label: 'My Plans', shortLabel: 'Plans', Icon: ListTodo },
+];
+
+const ACTIVE_TEAM_STORAGE_PREFIX = 'carespace_active_team_';
+const ACTIVE_TAB_STORAGE_KEY_SUPPORT = 'carespace_active_tab_support';
+const ACTIVE_TAB_STORAGE_KEY_PEEKVIEWER = 'carespace_active_tab_peekviewer';
+
+function getActiveTabStorageKey(isPeekviewerSpace: boolean): string {
+  return isPeekviewerSpace ? ACTIVE_TAB_STORAGE_KEY_PEEKVIEWER : ACTIVE_TAB_STORAGE_KEY_SUPPORT;
+}
+
+// Restores the last team space from localStorage (only meaningful for Victoria
+// Davis/Sandra Moore, who have a secondaryTeam) — falls back to the user's home team.
+function getInitialTeam(user: { id: string; team: 'support' | 'peekviewer'; secondaryTeam: 'support' | 'peekviewer' | null } | null | undefined): 'support' | 'peekviewer' {
+  if (!user) return 'support';
+  if (!user.secondaryTeam) return user.team;
+  const stored = localStorage.getItem(ACTIVE_TEAM_STORAGE_PREFIX + user.id);
+  if (stored === 'support' || stored === 'peekviewer') return stored;
+  return user.team;
+}
 
 // Restores the last tab from localStorage on refresh, falling back to the
-// default if there's nothing stored or the stored tab isn't valid for this role
-function getInitialTab(userRole: string): Tab {
-  const isPeekHandler = userRole === 'peek_handler';
-  const fallback: Tab = isPeekHandler ? 'requests' : 'daily';
-  const stored = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY) as Tab | null;
+// default if there's nothing stored or the stored tab isn't valid for this space
+function getInitialTab(userRole: string, isPeekviewerSpace: boolean): Tab {
+  const fallback: Tab = isPeekviewerSpace ? 'schedule' : 'daily';
+  const stored = localStorage.getItem(getActiveTabStorageKey(isPeekviewerSpace)) as Tab | null;
   if (!stored) return fallback;
 
-  if (isPeekHandler) {
-    return PEEK_HANDLER_TABS.has(stored as SharedTab) ? stored : fallback;
+  if (isPeekviewerSpace) {
+    const validPeekviewerTabIds = new Set<Tab>([...PEEKVIEWER_SHARED_TAB_IDS, 'peek-kpi', 'peek-plans']);
+    return validPeekviewerTabIds.has(stored) ? stored : fallback;
   }
 
   const validSpaceTabIds = new Set(ALL_SPACE_TABS.filter((t) => t.roles.includes(userRole)).map((t) => t.id));
@@ -125,8 +169,12 @@ function MainApp() {
 
   const userRole = user?.role ?? 'agent';
   const isPeekHandler = userRole === 'peek_handler';
+  const canSwitchTeam = !!user?.secondaryTeam;
 
-  const [activeTab, setActiveTab] = useState<Tab>(() => getInitialTab(userRole));
+  const [activeTeam, setActiveTeam] = useState<'support' | 'peekviewer'>(() => getInitialTeam(user));
+  const isPeekviewerSpace = activeTeam === 'peekviewer';
+
+  const [activeTab, setActiveTab] = useState<Tab>(() => getInitialTab(userRole, isPeekviewerSpace));
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
@@ -176,13 +224,20 @@ function MainApp() {
   };
 
   useEffect(() => {
-    localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
-  }, [activeTab]);
+    localStorage.setItem(getActiveTabStorageKey(isPeekviewerSpace), activeTab);
+  }, [activeTab, isPeekviewerSpace]);
+
+  const switchTeam = useCallback((team: 'support' | 'peekviewer') => {
+    setActiveTeam(team);
+    if (user?.id) localStorage.setItem(ACTIVE_TEAM_STORAGE_PREFIX + user.id, team);
+    setActiveTab(getInitialTab(userRole, team === 'peekviewer'));
+  }, [user?.id, userRole]);
   const [statsYear, setStatsYear] = useState(new Date().getFullYear());
   const [statsMonth, setStatsMonth] = useState(new Date().getMonth() + 1);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSpaceMenu, setShowSpaceMenu] = useState(false);
+  const [showTeamMenu, setShowTeamMenu] = useState(false);
   const [showTelegramModal, setShowTelegramModal] = useState(false);
   const [telegramConnected, setTelegramConnected] = useState(!!user?.telegramChatId);
 
@@ -197,12 +252,15 @@ function MainApp() {
 
   const newRequestsBadge = Math.max(0, newRequestsCount - dismissedRequestsCount);
 
-  const inSpace = !SHARED_TAB_IDS.has(activeTab);
-  const spaceTabsForRole = ALL_SPACE_TABS.filter((t) => t.roles.includes(userRole));
-  const visibleSharedTabs = (isPeekHandler
-    ? SHARED_TABS.filter((t) => PEEK_HANDLER_TABS.has(t.id))
-    : SHARED_TABS
-  ).map((t) => (isPeekHandler && t.id === 'calendar' ? { ...t, label: 'Peek Calendar', shortLabel: 'Peek Cal' } : t));
+  const inSpace = isPeekviewerSpace
+    ? !PEEKVIEWER_SHARED_TAB_IDS.has(activeTab)
+    : !SHARED_TAB_IDS.has(activeTab);
+  const spaceTabsForRole = isPeekviewerSpace
+    ? PEEKVIEWER_SPACE_TABS
+    : ALL_SPACE_TABS.filter((t) => t.roles.includes(userRole));
+  const visibleSharedTabs = isPeekviewerSpace
+    ? [...PEEKVIEWER_CORE_TABS, ...(isPeekHandler ? PEEKVIEWER_LEGACY_TABS : [])]
+    : SHARED_TABS;
 
   // Keep dismissedCount in sync when newRequestsCount drops below it
   // (e.g. a request was processed), so the next new request shows a badge
@@ -267,17 +325,44 @@ function MainApp() {
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-14 gap-2">
 
-            {/* Logo */}
-            <button
-              onClick={() => setActiveTab('daily')}
-              className="flex items-center gap-2 shrink-0 hover:opacity-75 transition-opacity"
-            >
-              <img src="/logo.png" alt="CareSpace" className="h-7 w-7 object-contain" />
-              <span className="font-bold text-ink text-lg hidden sm:block">CareSpace</span>
-              <span className="text-xs hidden sm:block" style={{ color: 'rgba(14,14,14,0.40)' }}>
-                struktura
-              </span>
-            </button>
+            {/* Logo — clickable dropdown only for users with a secondary team */}
+            <div className="relative shrink-0">
+              <button
+                onClick={() => {
+                  if (canSwitchTeam) { setShowTeamMenu((v) => !v); setShowUserMenu(false); setShowSpaceMenu(false); }
+                  else setActiveTab(isPeekviewerSpace ? 'schedule' : 'daily');
+                }}
+                className="flex items-center gap-2 hover:opacity-75 transition-opacity"
+              >
+                <img src="/logo.png" alt="CareSpace" className="h-7 w-7 object-contain" />
+                <span className="font-bold text-ink text-lg hidden sm:block">CareSpace</span>
+                <span className="text-xs hidden sm:block" style={{ color: 'rgba(14,14,14,0.40)' }}>
+                  struktura
+                </span>
+                {canSwitchTeam && <ChevronDown size={12} strokeWidth={1.8} />}
+              </button>
+
+              {canSwitchTeam && showTeamMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowTeamMenu(false)} />
+                  <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 w-48 z-50">
+                    {(['support', 'peekviewer'] as const).map((team) => (
+                      <button
+                        key={team}
+                        onClick={() => { switchTeam(team); setShowTeamMenu(false); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
+                        style={{
+                          color: activeTeam === team ? '#0E0E0E' : 'rgba(14,14,14,0.60)',
+                          fontWeight: activeTeam === team ? 600 : 400,
+                        }}
+                      >
+                        {team === 'support' ? 'Support Team' : 'Peekviewer Team'}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Desktop nav */}
             <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
@@ -305,67 +390,63 @@ function MainApp() {
                 </button>
               ))}
 
-              {/* My Space dropdown — hidden for peek_handler */}
-              {!isPeekHandler && (
-                <div className="relative ml-1">
-                  <button
-                    onClick={() => { setShowSpaceMenu((v) => !v); setShowUserMenu(false); }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all"
-                    style={
-                      inSpace || showSpaceMenu
-                        ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
-                        : { color: 'rgba(14,14,14,0.40)' }
-                    }
-                  >
-                    <User size={14} strokeWidth={1.6} />
-                    <span>My Space</span>
-                    <ChevronDown size={12} strokeWidth={1.8} />
-                  </button>
+              {/* My Space dropdown */}
+              <div className="relative ml-1">
+                <button
+                  onClick={() => { setShowSpaceMenu((v) => !v); setShowUserMenu(false); }}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all"
+                  style={
+                    inSpace || showSpaceMenu
+                      ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+                      : { color: 'rgba(14,14,14,0.40)' }
+                  }
+                >
+                  <User size={14} strokeWidth={1.6} />
+                  <span>My Space</span>
+                  <ChevronDown size={12} strokeWidth={1.8} />
+                </button>
 
-                  {showSpaceMenu && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setShowSpaceMenu(false)} />
-                      <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 w-44 z-50">
-                        {spaceTabsForRole.map((tab) => (
-                          <button
-                            key={tab.id}
-                            onClick={() => { setActiveTab(tab.id); setShowSpaceMenu(false); }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
-                            style={{
-                              color: activeTab === tab.id ? '#0E0E0E' : 'rgba(14,14,14,0.60)',
-                              fontWeight: activeTab === tab.id ? 600 : 400,
-                            }}
-                          >
-                            <tab.Icon size={14} strokeWidth={1.6} />
-                            <span>{tab.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
+                {showSpaceMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowSpaceMenu(false)} />
+                    <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 w-44 z-50">
+                      {spaceTabsForRole.map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => { setActiveTab(tab.id); setShowSpaceMenu(false); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
+                          style={{
+                            color: activeTab === tab.id ? '#0E0E0E' : 'rgba(14,14,14,0.60)',
+                            fontWeight: activeTab === tab.id ? 600 : 400,
+                          }}
+                        >
+                          <tab.Icon size={14} strokeWidth={1.6} />
+                          <span>{tab.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </nav>
 
-            {/* Bell / Inbox — hidden for peek_handler */}
-            {!isPeekHandler && (
-              <button
-                onClick={() => { setActiveTab('inbox'); setShowSpaceMenu(false); setShowUserMenu(false); }}
-                className="relative shrink-0 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
-                style={{ color: activeTab === 'inbox' ? '#0E0E0E' : 'rgba(14,14,14,0.40)' }}
-                aria-label="Inbox"
-              >
-                <Bell size={18} strokeWidth={1.6} />
-                {unreadCount > 0 && (
-                  <span
-                    className="absolute top-0 right-0 flex items-center justify-center min-w-[16px] h-4 px-1 text-[9px] font-bold rounded-full"
-                    style={{ backgroundColor: '#ef4444', color: '#fff', transform: 'translate(30%,-30%)' }}
-                  >
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </button>
-            )}
+            {/* Bell / Inbox */}
+            <button
+              onClick={() => { setActiveTab('inbox'); setShowSpaceMenu(false); setShowUserMenu(false); }}
+              className="relative shrink-0 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+              style={{ color: activeTab === 'inbox' ? '#0E0E0E' : 'rgba(14,14,14,0.40)' }}
+              aria-label="Inbox"
+            >
+              <Bell size={18} strokeWidth={1.6} />
+              {unreadCount > 0 && (
+                <span
+                  className="absolute top-0 right-0 flex items-center justify-center min-w-[16px] h-4 px-1 text-[9px] font-bold rounded-full"
+                  style={{ backgroundColor: '#ef4444', color: '#fff', transform: 'translate(30%,-30%)' }}
+                >
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
 
             {/* User menu */}
             <div className="relative shrink-0">
@@ -530,12 +611,19 @@ function MainApp() {
             {activeTab === 'qa'         && <AIChatQA />}
             {activeTab === 'requests'   && <PeakRequests onDataChanged={fetchNewRequestsCount} />}
             {activeTab === 'plans'      && <MyPlans />}
-            {activeTab === 'inbox'      && <Inbox onRead={fetchUnreadCount} />}
+            {activeTab === 'inbox'      && <Inbox onRead={fetchUnreadCount} activeTeam={activeTeam} />}
             {activeTab === 'reviews'    && <Reviews />}
             {activeTab === 'pdp'        && <PDP />}
             {activeTab === 'qa-reports' && <QAReports />}
             {activeTab === 'kpi'        && <MyKPI />}
             {activeTab === 'salary'     && <Salary />}
+            {activeTab === 'schedule'     && <RequestSchedule />}
+            {activeTab === 'boost'        && <BoostRequests />}
+            {activeTab === 'proxy'        && <ProxyPool />}
+            {activeTab === 'row-accounts' && <RowAccountsPool />}
+            {activeTab === 'references'   && <References />}
+            {activeTab === 'peek-kpi'     && <PeekviewerKPI />}
+            {activeTab === 'peek-plans'   && <MyPlans />}
           </Suspense>
         </TabErrorBoundary>
       </main>
@@ -567,27 +655,25 @@ function MainApp() {
               <span>{tab.shortLabel}</span>
             </button>
           ))}
-          {/* My Space entry on mobile — hidden for peek_handler */}
-          {!isPeekHandler && (
-            <button
-              onClick={() => setActiveTab(inSpace ? activeTab : (spaceTabsForRole[0]?.id ?? 'plans'))}
-              className="flex-1 flex flex-col items-center py-2 gap-0.5 text-[10px] font-medium transition-colors"
-              style={{ color: inSpace ? '#0E0E0E' : 'rgba(14,14,14,0.35)' }}
-            >
-              <div className="relative">
-                <User size={18} strokeWidth={1.6} />
-                {unreadCount > 0 && (
-                  <span
-                    className="absolute -top-1 -right-1.5 flex items-center justify-center min-w-[14px] h-3.5 px-0.5 text-[8px] font-bold rounded-full"
-                    style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
-                  >
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-              </div>
-              <span>Space</span>
-            </button>
-          )}
+          {/* My Space entry on mobile */}
+          <button
+            onClick={() => setActiveTab(inSpace ? activeTab : (spaceTabsForRole[0]?.id ?? 'plans'))}
+            className="flex-1 flex flex-col items-center py-2 gap-0.5 text-[10px] font-medium transition-colors"
+            style={{ color: inSpace ? '#0E0E0E' : 'rgba(14,14,14,0.35)' }}
+          >
+            <div className="relative">
+              <User size={18} strokeWidth={1.6} />
+              {unreadCount > 0 && (
+                <span
+                  className="absolute -top-1 -right-1.5 flex items-center justify-center min-w-[14px] h-3.5 px-0.5 text-[8px] font-bold rounded-full"
+                  style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </div>
+            <span>Space</span>
+          </button>
         </div>
       </nav>
 

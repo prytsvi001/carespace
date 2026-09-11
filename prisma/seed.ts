@@ -13,14 +13,20 @@ const AGENTS = [
   'Sandra Moore',
 ];
 
-const USERS: { name: string; email: string; role: string; peekDutyEligible?: boolean }[] = [
-  { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead' },
-  { name: 'Sandra Moore',      email: 'oleksandra_kraichynska@struktura.io', role: 'head' },
+const USERS: {
+  name: string; email: string; role: string; peekDutyEligible?: boolean;
+  team?: string; secondaryTeam?: string; peekviewerAdmin?: boolean;
+}[] = [
+  { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead', secondaryTeam: 'peekviewer', peekviewerAdmin: true },
+  { name: 'Sandra Moore',      email: 'oleksandra_kraichynska@struktura.io', role: 'head', secondaryTeam: 'peekviewer', peekviewerAdmin: true },
   { name: 'Jonathan Lewis',    email: 'yan_horlatyi@struktura.io',           role: 'agent' },
   { name: 'Julia Manson',      email: 'tetiana_blazhievska@struktura.io',    role: 'agent', peekDutyEligible: true },
   { name: 'Nicky Brown',       email: 'myroslava_horshchar@struktura.io',    role: 'agent' },
-  { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler' },
-  { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler' },
+  { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler', team: 'peekviewer' },
+  { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler', team: 'peekviewer' },
+  { name: 'Tetyana Veremeyenko', email: 'tetiana_veremeenko@struktura.io',   role: 'agent', team: 'peekviewer' },
+  { name: 'Anna Bilous',       email: 'anna_bilous@struktura.io',            role: 'agent', team: 'peekviewer' },
+  { name: 'Yana Fedorova',     email: 'yana_fedorova@struktura.io',          role: 'agent', team: 'peekviewer', peekviewerAdmin: true },
 ];
 
 async function main() {
@@ -46,6 +52,9 @@ async function main() {
       update: {
         name: u.name, role: u.role, agentId: agentByName[u.name]?.id ?? null,
         peekDutyEligible: u.peekDutyEligible ?? false,
+        team: u.team ?? 'support',
+        secondaryTeam: u.secondaryTeam ?? null,
+        peekviewerAdmin: u.peekviewerAdmin ?? false,
       },
       create: {
         name: u.name,
@@ -53,6 +62,9 @@ async function main() {
         role: u.role,
         agentId: agentByName[u.name]?.id ?? null,
         peekDutyEligible: u.peekDutyEligible ?? false,
+        team: u.team ?? 'support',
+        secondaryTeam: u.secondaryTeam ?? null,
+        peekviewerAdmin: u.peekviewerAdmin ?? false,
       },
     });
   }

@@ -12,6 +12,9 @@ declare global {
       email: string;
       name: string;
       role: string;
+      team: string;
+      secondaryTeam: string | null;
+      peekviewerAdmin: boolean;
       agentId: string | null;
       telegramChatId: string | null;
       avatarUrl: string | null;
@@ -46,6 +49,9 @@ passport.use(
           email: user.email,
           name: user.name,
           role: user.role,
+          team: user.team,
+          secondaryTeam: user.secondaryTeam,
+          peekviewerAdmin: user.peekviewerAdmin,
           agentId: user.agentId,
           telegramChatId: user.telegramChatId,
           avatarUrl: user.avatarUrl,
@@ -68,6 +74,9 @@ passport.deserializeUser(async (id: string, done) => {
       email: user.email,
       name: user.name,
       role: user.role,
+      team: user.team,
+      secondaryTeam: user.secondaryTeam,
+      peekviewerAdmin: user.peekviewerAdmin,
       agentId: user.agentId,
       telegramChatId: user.telegramChatId,
       avatarUrl: user.avatarUrl,
@@ -120,6 +129,9 @@ router.put('/avatar', async (req: Request, res: Response) => {
       email: updated.email,
       name: updated.name,
       role: updated.role,
+      team: updated.team,
+      secondaryTeam: updated.secondaryTeam,
+      peekviewerAdmin: updated.peekviewerAdmin,
       agentId: updated.agentId,
       telegramChatId: updated.telegramChatId,
       avatarUrl: updated.avatarUrl,

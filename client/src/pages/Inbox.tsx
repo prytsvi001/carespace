@@ -39,12 +39,13 @@ const ROLE_TYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
 
 interface InboxProps {
   onRead?: () => void;
+  activeTeam?: 'support' | 'peekviewer';
 }
 
-export default function Inbox({ onRead }: InboxProps) {
+export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
   const { user } = useAuth();
   const role = user?.role ?? 'agent';
-  const isAdmin = role === 'head' || role === 'lead';
+  const isAdmin = role === 'head' || role === 'lead' || (activeTeam === 'peekviewer' && !!user?.peekviewerAdmin);
   const typeOptions = ROLE_TYPE_OPTIONS[role] ?? ROLE_TYPE_OPTIONS.agent;
 
   const [view, setView] = useState<'received' | 'sent' | 'updates'>('received');
@@ -76,18 +77,15 @@ export default function Inbox({ onRead }: InboxProps) {
       console.error(e);
     }
 
-    // Fetched separately from the block above: /api/updates 403s for
-    // peek_handler, and axios rejects on non-2xx — bundled into the same
-    // Promise.all, that single rejection would have wiped out messages/sent/
-    // users too. peek_handler never sees the Updates tab, so just skip it.
-    if (role !== 'peek_handler') {
-      try {
-        setUpdates(await getUpdates());
-      } catch (e) {
-        console.error(e);
-      }
+    // Fetched separately from the block above: axios rejects on non-2xx —
+    // bundled into the same Promise.all, that single rejection would have
+    // wiped out messages/sent/users too.
+    try {
+      setUpdates(await getUpdates(activeTeam));
+    } catch (e) {
+      console.error(e);
     }
-  }, [role]);
+  }, [activeTeam]);
 
   useEffect(() => {
     setLoading(true);
@@ -181,7 +179,7 @@ export default function Inbox({ onRead }: InboxProps) {
 
   // ── Updates (announcements) ────────────────────────────────────────────────
   const handlePublishUpdate = async (data: { title: string; content: string; tag: string | null; attachments: UpdateAttachment[] }) => {
-    const created: TeamUpdate = await createUpdate(data);
+    const created: TeamUpdate = await createUpdate({ ...data, team: activeTeam });
     setUpdates((prev) => [created, ...prev]);
     onRead?.();
   };

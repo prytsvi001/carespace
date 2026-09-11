@@ -3,12 +3,16 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import api from '../api';
 
 export type UserRole = 'head' | 'lead' | 'agent' | 'peek_handler';
+export type Team = 'support' | 'peekviewer';
 
 export interface AuthUser {
   id: string;
   email: string;
   name: string;
   role: UserRole;
+  team: Team;
+  secondaryTeam: Team | null;
+  peekviewerAdmin: boolean;
   agentId: string | null;
   telegramChatId: string | null;
   avatarUrl: string | null;

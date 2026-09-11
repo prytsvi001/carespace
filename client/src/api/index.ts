@@ -238,10 +238,14 @@ export const sendMessage = (data: { recipientId: string; type: string; content: 
 export const deleteMessage = (id: string) =>
   api.delete(`/inbox/${id}`).then((r) => r.data);
 
-// ─── Updates (Inbox tab: lead/head announcements) ──────────────────────────
-export const getUpdates = () => api.get('/updates').then((r) => r.data);
+// ─── Updates (Inbox tab: lead/head/peekviewerAdmin announcements) ──────────
+// `team` is only needed for Victoria Davis/Sandra Moore (whose current space
+// determines which team's Updates they see) — everyone else's server-side
+// team is inferred from their own account, so omitting it is fine.
+export const getUpdates = (team?: 'support' | 'peekviewer') =>
+  api.get('/updates', { params: { team } }).then((r) => r.data);
 
-export const createUpdate = (data: { title: string; content: string; tag?: string | null; attachments?: UpdateAttachment[] }) =>
+export const createUpdate = (data: { title: string; content: string; tag?: string | null; attachments?: UpdateAttachment[]; team?: 'support' | 'peekviewer' }) =>
   api.post('/updates', data).then((r) => r.data);
 
 export const updateUpdate = (id: string, data: { title: string; content: string; tag?: string | null; attachments?: UpdateAttachment[] }) =>
@@ -407,11 +411,97 @@ export const submitPDPFeedback = (planId: string) =>
   api.post(`/pdp/${planId}/feedback/submit`).then((r) => r.data);
 
 // ─── KPI Settings ──────────────────────────────────────────────────────────────
-export const getKpiSettings = () =>
-  cached('kpi-settings', 60_000, () => api.get('/kpi').then((r) => r.data));
+export const getKpiSettings = (team: 'support' | 'peekviewer' = 'support') =>
+  cached(`kpi-settings-${team}`, 60_000, () => api.get('/kpi', { params: { team } }).then((r) => r.data));
 
-export const updateKpiSettings = (data: unknown) =>
-  api.put('/kpi', data).then((r) => { invalidateCache('kpi-settings'); return r.data; });
+export const updateKpiSettings = (data: unknown, team: 'support' | 'peekviewer' = 'support') =>
+  api.put('/kpi', data, { params: { team } }).then((r) => { invalidateCache(`kpi-settings-${team}`); return r.data; });
+
+// ─── Boost Requests (Peekviewer Team) ──────────────────────────────────────
+export interface BoostRequest {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  boostType: 'likes' | 'followers' | 'comments';
+  link: string;
+  quantity: number;
+  status: 'in_progress' | 'complete';
+  completedAt: string | null;
+  completedByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const getBoostRequests = (includeCompleted?: boolean) =>
+  api.get<BoostRequest[]>('/boost-requests', { params: { includeCompleted: includeCompleted ? 1 : undefined } }).then((r) => r.data);
+
+export const createBoostRequest = (data: { boostType: 'likes' | 'followers' | 'comments'; link: string; quantity: number }) =>
+  api.post<BoostRequest>('/boost-requests', data).then((r) => r.data);
+
+export const completeBoostRequest = (id: string) =>
+  api.patch<BoostRequest>(`/boost-requests/${id}/complete`).then((r) => r.data);
+
+export const updateBoostRequest = (id: string, data: { boostType?: string; link?: string; quantity?: number }) =>
+  api.patch<BoostRequest>(`/boost-requests/${id}`, data).then((r) => r.data);
+
+export const deleteBoostRequest = (id: string) =>
+  api.delete(`/boost-requests/${id}`).then((r) => r.data);
+
+// ─── Proxy pool (Peekviewer Team) ──────────────────────────────────────────
+export interface ProxyItem {
+  id: string;
+  value: string;
+  addedById: string;
+  addedByName: string;
+  takenById: string | null;
+  takenByName: string | null;
+  takenAt: string | null;
+  createdAt: string;
+}
+
+export const getProxies = () => api.get<ProxyItem[]>('/proxies').then((r) => r.data);
+
+export const addProxiesBulk = (text: string) =>
+  api.post<ProxyItem[]>('/proxies/bulk', { text }).then((r) => r.data);
+
+export const takeProxy = (id: string) =>
+  api.patch<ProxyItem>(`/proxies/${id}/take`).then((r) => r.data);
+
+export const updateProxy = (id: string, value: string) =>
+  api.patch<ProxyItem>(`/proxies/${id}`, { value }).then((r) => r.data);
+
+export const deleteProxy = (id: string) =>
+  api.delete(`/proxies/${id}`).then((r) => r.data);
+
+// ─── Row Accounts pool (Peekviewer Team) ───────────────────────────────────
+export interface RowAccountItem {
+  id: string;
+  login: string;
+  password: string;
+  twoFaCode: string | null;
+  email: string | null;
+  emailPassword: string | null;
+  addedById: string;
+  addedByName: string;
+  takenById: string | null;
+  takenByName: string | null;
+  takenAt: string | null;
+  createdAt: string;
+}
+
+export const getRowAccounts = () => api.get<RowAccountItem[]>('/row-accounts').then((r) => r.data);
+
+export const addRowAccountsBulk = (text: string) =>
+  api.post<RowAccountItem[]>('/row-accounts/bulk', { text }).then((r) => r.data);
+
+export const takeRowAccount = (id: string) =>
+  api.patch<RowAccountItem>(`/row-accounts/${id}/take`).then((r) => r.data);
+
+export const updateRowAccount = (id: string, data: Partial<Pick<RowAccountItem, 'login' | 'password' | 'twoFaCode' | 'email' | 'emailPassword'>>) =>
+  api.patch<RowAccountItem>(`/row-accounts/${id}`, data).then((r) => r.data);
+
+export const deleteRowAccount = (id: string) =>
+  api.delete(`/row-accounts/${id}`).then((r) => r.data);
 
 // ─── Quick Links ───────────────────────────────────────────────────────────────
 export const getQuickLinks = () =>

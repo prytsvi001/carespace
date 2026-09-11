@@ -1,10 +1,10 @@
 // server/src/routes/updates.ts
-// Lead/head-authored team announcements ("Updates" tab inside Inbox). Every
-// non-peek_handler user except the update's own author is the "eligible
-// audience" — that single rule drives the Telegram notification, the
-// UpdateRead rows created at publish time, and the "Read by X/Y" denominator.
-// No separate agent/lead/head distinction needed beyond that (confirmed with
-// the user: the non-author admin is treated exactly like an agent).
+// Lead/head/peekviewerAdmin-authored team announcements ("Updates" tab inside
+// Inbox), scoped per-team (`team: "support" | "peekviewer"`). Every member of
+// that team except the update's own author is the "eligible audience" — that
+// single rule drives the Telegram notification, the UpdateRead rows created
+// at publish time, and the "Read by X/Y" denominator. Victoria Davis/Sandra
+// Moore (secondaryTeam: "peekviewer") count as members of both teams.
 import { Readable } from 'stream';
 import { Router, Request, Response } from 'express';
 import { del, get, issueSignedToken } from '@vercel/blob';
@@ -59,8 +59,21 @@ function sanitizeAttachments(input: unknown): UpdateAttachment[] {
     }));
 }
 
-function isAdmin(role: string): boolean {
-  return role === 'head' || role === 'lead';
+function isAdmin(user: Express.User): boolean {
+  return user.role === 'head' || user.role === 'lead' || user.peekviewerAdmin;
+}
+
+// Which team's updates the caller is asking for. `?team=` is only honored
+// when it matches the caller's home or secondary team (Victoria Davis/Sandra
+// Moore switching spaces) — everyone else is pinned to their own home team
+// regardless of what they pass, so a single-team user can never read or post
+// into the other team's feed. Returns null when the requested team isn't one
+// of the caller's.
+function resolveTeam(me: Express.User, requested: unknown): string | null {
+  const team = me.team;
+  if (typeof requested !== 'string' || !requested) return team;
+  if (requested === team || requested === me.secondaryTeam) return requested;
+  return null;
 }
 
 function updateTelegramText(authorName: string): string {
@@ -104,18 +117,20 @@ function formatUpdate(
   };
 }
 
-// GET /api/updates
+// GET /api/updates?team=support|peekviewer
 router.get('/', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    if (me.role === 'peek_handler') return res.status(403).json({ error: 'Not allowed' });
+    const team = resolveTeam(me, req.query.team);
+    if (!team) return res.status(403).json({ error: 'Not allowed' });
 
     const updates = await prisma.update.findMany({
+      where: { team },
       orderBy: { createdAt: 'desc' },
       include: { reads: { include: { user: { select: { id: true, name: true } } } } },
     });
 
-    const admin = isAdmin(me.role);
+    const admin = isAdmin(me);
     res.json(updates.map((u) => formatUpdate(u, me.id, admin)));
   } catch (err) {
     console.error(err);
@@ -123,11 +138,14 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/updates — head/lead only
+// POST /api/updates — head/lead/peekviewerAdmin only
 router.post('/', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
+    if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
+
+    const team = resolveTeam(me, req.body?.team);
+    if (!team) return res.status(403).json({ error: 'Not allowed' });
 
     const { title, content, tag, attachments } = req.body as { title?: string; content?: string; tag?: string | null; attachments?: unknown };
     if (!title?.trim() || !content?.trim()) {
@@ -145,11 +163,12 @@ router.post('/', async (req: Request, res: Response) => {
         content: content.trim(),
         tag: tag || null,
         attachments: JSON.stringify(sanitizeAttachments(attachments)),
+        team,
       },
     });
 
     const eligible = await prisma.user.findMany({
-      where: { role: { not: 'peek_handler' }, id: { not: me.id } },
+      where: { OR: [{ team }, { secondaryTeam: team }], id: { not: me.id } },
       select: { id: true, name: true, telegramChatId: true },
     });
 
@@ -186,7 +205,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.post('/attachments/upload-url', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
+    if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
 
     const body = req.body as HandleUploadPresignedBody;
     const jsonResponse = await handleUploadPresigned({
@@ -223,9 +242,6 @@ router.post('/attachments/upload-url', async (req: Request, res: Response) => {
 // read goes through this authenticated Function rather than a direct CDN URL.
 router.get('/attachments/view', async (req: Request, res: Response) => {
   try {
-    const me = req.user as Express.User;
-    if (me.role === 'peek_handler') return res.status(403).json({ error: 'Not allowed' });
-
     const url = req.query.url as string | undefined;
     if (!url) return res.status(400).json({ error: 'url is required' });
 
@@ -249,7 +265,7 @@ router.get('/attachments/view', async (req: Request, res: Response) => {
 router.delete('/attachments', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    if (!isAdmin(me.role)) return res.status(403).json({ error: 'Not allowed' });
+    if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
 
     const url = req.body?.url as string | undefined;
     if (!url) return res.status(400).json({ error: 'url is required' });

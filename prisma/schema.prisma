@@ -30,6 +30,9 @@ model User {
   email     String   @unique
   name      String
   role      String   // "head" | "lead" | "agent" | "peek_handler"
+  team            String  @default("support") // "support" | "peekviewer" — home team, drives default landing space + which team's tabs render
+  secondaryTeam   String? // "peekviewer" for Victoria Davis & Sandra Moore only — grants the header team switcher; null for everyone else
+  peekviewerAdmin Boolean @default(false) // Sandra Moore, Victoria Davis, Yana Fedorova — elevated actions across every Peekviewer-team feature (Boost queue, Proxy/Row Accounts management, Peekviewer KPI + Updates authoring); not derived from role since Yana is role "agent"
   avatarUrl String?  // data URL of a small uploaded profile photo, e.g. "data:image/jpeg;base64,..." — shown instead of the initial-letter avatar when set
   googleId  String?  @unique
   agentId   String?  @unique
@@ -55,8 +58,10 @@ model User {
   personalShortcutTags PersonalShortcutTag[]
   authoredUpdates      Update[]     @relation("AuthoredUpdates")
   updateReads          UpdateRead[]
+  boostRequests        BoostRequest[]
 
   @@index([peekOnDuty])
+  @@index([team])
 }
 
 model Update {
@@ -68,6 +73,7 @@ model Update {
   content    String
   tag        String?   // "Important" | "Policy change" | "Reminder" | null
   attachments String   @default("[]") // JSON: [{url, pathname, name, contentType, size}] — Vercel Blob (private store)
+  team       String    @default("support") // "support" | "peekviewer" — scopes the broadcast to one team's Inbox
   editedAt   DateTime? // set on edit; null until then — drives the "Edited" indicator
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -75,6 +81,7 @@ model Update {
   reads      UpdateRead[]
 
   @@index([authorId])
+  @@index([team])
 }
 
 model UpdateRead {
@@ -568,4 +575,65 @@ model PeekCalendarEntry {
 
   @@index([userId])
   @@index([eventDate])
+}
+
+// Peekviewer Team — "Boost" tab. Any team member can request a boost; only
+// peekviewerAdmin users (Yana Fedorova, Sandra Moore, Victoria Davis) see the
+// full queue and can complete/edit/delete. "archived" isn't a separate flag —
+// status: "complete" is what drops a request off the admin worklist, while the
+// requester keeps seeing their own request (green) regardless of status.
+model BoostRequest {
+  id              String    @id @default(cuid())
+  requesterId     String
+  requester       User      @relation(fields: [requesterId], references: [id])
+  requesterName   String
+  boostType       String    // "likes" | "followers" | "comments"
+  link            String    // post link (likes/comments) or account link (followers)
+  quantity        Int
+  status          String    @default("in_progress") // "in_progress" | "complete"
+  completedAt     DateTime?
+  completedByName String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([requesterId])
+}
+
+// Peekviewer Team — "Proxy" tab. Shared pool: peekviewerAdmin users bulk-add
+// (one row per pasted line), any team member can claim ("Taken by me") and
+// copy the value. A taken proxy isn't deleted — it just moves from the
+// "Available" list to the "Archive" list (takenById != null), both visible to
+// everyone.
+model Proxy {
+  id          String    @id @default(cuid())
+  value       String
+  addedById   String
+  addedByName String
+  takenById   String?
+  takenByName String?
+  takenAt     DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([takenById])
+}
+
+// Peekviewer Team — "Row Accounts" tab. Same shared-pool/claim shape as Proxy,
+// but holds a full credential set. Stored as plain text — internal-only app,
+// confirmed acceptable trust model (same as everywhere else in this app).
+model RowAccount {
+  id            String    @id @default(cuid())
+  login         String
+  password      String
+  twoFaCode     String?
+  email         String?
+  emailPassword String?
+  addedById     String
+  addedByName   String
+  takenById     String?
+  takenByName   String?
+  takenAt       DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([takenById])
 }

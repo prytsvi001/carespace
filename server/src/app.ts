@@ -32,6 +32,9 @@ import telegramRouter from './routes/telegram';
 import cronRouter from './routes/cron';
 import backupRouter from './routes/backup';
 import salaryRouter from './routes/salary';
+import boostRequestsRouter from './routes/boostRequests';
+import proxiesRouter from './routes/proxies';
+import rowAccountsRouter from './routes/rowAccounts';
 import { requireAuth } from './middleware/auth';
 
 const app = express();
@@ -137,5 +140,8 @@ app.use('/api/telegram',    telegramRouter);   // requireAuth applied per-route 
 app.use('/api/cron',        cronRouter);       // secret-header check applied inside router, not requireAuth
 app.use('/api/backup',      requireAuth, backupRouter); // requireAuth + head/lead-only check applied inside router
 app.use('/api/salary',      requireAuth, salaryRouter); // requireAuth + head/lead-only check applied inside router
+app.use('/api/boost-requests', boostRequestsRouter); // requireAuth + requirePeekviewerTeam applied inside router
+app.use('/api/proxies',        proxiesRouter);       // requireAuth + requirePeekviewerTeam applied inside router
+app.use('/api/row-accounts',   rowAccountsRouter);    // requireAuth + requirePeekviewerTeam applied inside router
 
 export default app;
