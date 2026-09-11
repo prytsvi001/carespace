@@ -6,7 +6,7 @@
 // Vercel Blob private-store + presigned-upload pattern Updates uses, just
 // streamed through an <img>/<video> tag instead of a download link.
 import React, { useEffect, useRef, useState } from 'react';
-import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText } from 'lucide-react';
+import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List } from 'lucide-react';
 import { uploadPresigned } from '@vercel/blob/client';
 import { format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -148,6 +148,11 @@ export default function Onboarding() {
     setConfirmDeleteId(null);
   };
 
+  const blockAnchorId = (id: string) => `onboarding-block-${id}`;
+  const scrollToBlock = (id: string) => {
+    document.getElementById(blockAnchorId(id))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -163,6 +168,28 @@ export default function Onboarding() {
         )}
       </div>
 
+      {!loading && blocks.length > 1 && (
+        <div className="card p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
+            <List size={12} strokeWidth={2} />
+            Quick navigation
+          </p>
+          <div className="flex flex-col">
+            {blocks.map((b, i) => (
+              <button
+                key={b.id}
+                onClick={() => scrollToBlock(b.id)}
+                className="flex items-center gap-2 text-left text-sm px-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
+                style={{ color: 'rgba(14,14,14,0.7)' }}
+              >
+                <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{i + 1}.</span>
+                <span className="truncate">{b.title}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <CardListSkeleton />
       ) : blocks.length === 0 ? (
@@ -170,7 +197,7 @@ export default function Onboarding() {
       ) : (
         <div className="space-y-3">
           {blocks.map((b) => (
-            <div key={b.id} className="card space-y-3">
+            <div key={b.id} id={blockAnchorId(b.id)} className="card space-y-3" style={{ scrollMarginTop: '80px' }}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-800">{b.title}</h3>
