@@ -146,14 +146,20 @@ function getInitialTeam(user: { id: string; team: 'support' | 'peekviewer'; seco
 }
 
 // Restores the last tab from localStorage on refresh, falling back to the
-// default if there's nothing stored or the stored tab isn't valid for this space
-function getInitialTab(userRole: string, isPeekviewerSpace: boolean): Tab {
-  const fallback: Tab = isPeekviewerSpace ? 'schedule' : 'daily';
+// default if there's nothing stored or the stored tab isn't valid for this
+// space — hiddenTabs excludes any per-user hidden Peekviewer tabs (e.g. Anna
+// Bilous has no Request Schedule) from both the fallback and the stored value.
+function getInitialTab(userRole: string, isPeekviewerSpace: boolean, hiddenTabs: Set<string> = new Set()): Tab {
+  const fallback: Tab = isPeekviewerSpace
+    ? (PEEKVIEWER_CORE_TABS.find((t) => !hiddenTabs.has(t.id))?.id ?? 'schedule')
+    : 'daily';
   const stored = localStorage.getItem(getActiveTabStorageKey(isPeekviewerSpace)) as Tab | null;
   if (!stored) return fallback;
 
   if (isPeekviewerSpace) {
-    const validPeekviewerTabIds = new Set<Tab>([...PEEKVIEWER_SHARED_TAB_IDS, 'peek-kpi', 'peek-plans']);
+    const validPeekviewerTabIds = new Set<Tab>(
+      ([...PEEKVIEWER_SHARED_TAB_IDS, 'peek-kpi', 'peek-plans'] as Tab[]).filter((id) => !hiddenTabs.has(id))
+    );
     return validPeekviewerTabIds.has(stored) ? stored : fallback;
   }
 
@@ -170,11 +176,12 @@ function MainApp() {
   const userRole = user?.role ?? 'agent';
   const isPeekHandler = userRole === 'peek_handler';
   const canSwitchTeam = !!user?.secondaryTeam;
+  const hiddenPeekviewerTabIds = new Set((user?.hiddenPeekviewerTabs ?? '').split(',').filter(Boolean));
 
   const [activeTeam, setActiveTeam] = useState<'support' | 'peekviewer'>(() => getInitialTeam(user));
   const isPeekviewerSpace = activeTeam === 'peekviewer';
 
-  const [activeTab, setActiveTab] = useState<Tab>(() => getInitialTab(userRole, isPeekviewerSpace));
+  const [activeTab, setActiveTab] = useState<Tab>(() => getInitialTab(userRole, isPeekviewerSpace, hiddenPeekviewerTabIds));
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
@@ -230,8 +237,8 @@ function MainApp() {
   const switchTeam = useCallback((team: 'support' | 'peekviewer') => {
     setActiveTeam(team);
     if (user?.id) localStorage.setItem(ACTIVE_TEAM_STORAGE_PREFIX + user.id, team);
-    setActiveTab(getInitialTab(userRole, team === 'peekviewer'));
-  }, [user?.id, userRole]);
+    setActiveTab(getInitialTab(userRole, team === 'peekviewer', hiddenPeekviewerTabIds));
+  }, [user?.id, userRole, hiddenPeekviewerTabIds]);
   const [statsYear, setStatsYear] = useState(new Date().getFullYear());
   const [statsMonth, setStatsMonth] = useState(new Date().getMonth() + 1);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
@@ -259,7 +266,7 @@ function MainApp() {
     ? PEEKVIEWER_SPACE_TABS
     : ALL_SPACE_TABS.filter((t) => t.roles.includes(userRole));
   const visibleSharedTabs = isPeekviewerSpace
-    ? [...PEEKVIEWER_CORE_TABS, ...(isPeekHandler ? PEEKVIEWER_LEGACY_TABS : [])]
+    ? [...PEEKVIEWER_CORE_TABS, ...(isPeekHandler ? PEEKVIEWER_LEGACY_TABS : [])].filter((t) => !hiddenPeekviewerTabIds.has(t.id))
     : SHARED_TABS;
 
   // Keep dismissedCount in sync when newRequestsCount drops below it

@@ -33,6 +33,7 @@ model User {
   team            String  @default("support") // "support" | "peekviewer" — home team, drives default landing space + which team's tabs render
   secondaryTeam   String? // "peekviewer" for Victoria Davis & Sandra Moore only — grants the header team switcher; null for everyone else
   peekviewerAdmin Boolean @default(false) // Sandra Moore, Victoria Davis, Yana Fedorova — elevated actions across every Peekviewer-team feature (Boost queue, Proxy/Row Accounts management, Peekviewer KPI + Updates authoring); not derived from role since Yana is role "agent"
+  hiddenPeekviewerTabs String @default("") // comma-separated Peekviewer tab ids (e.g. "schedule") this specific user shouldn't see — per-person exception on top of the team-wide tab set, e.g. Anna Bilous has no Request Schedule
   avatarUrl String?  // data URL of a small uploaded profile photo, e.g. "data:image/jpeg;base64,..." — shown instead of the initial-letter avatar when set
   googleId  String?  @unique
   agentId   String?  @unique

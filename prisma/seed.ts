@@ -15,7 +15,7 @@ const AGENTS = [
 
 const USERS: {
   name: string; email: string; role: string; peekDutyEligible?: boolean;
-  team?: string; secondaryTeam?: string; peekviewerAdmin?: boolean;
+  team?: string; secondaryTeam?: string; peekviewerAdmin?: boolean; hiddenPeekviewerTabs?: string;
 }[] = [
   { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead', secondaryTeam: 'peekviewer', peekviewerAdmin: true },
   { name: 'Sandra Moore',      email: 'oleksandra_kraichynska@struktura.io', role: 'head', secondaryTeam: 'peekviewer', peekviewerAdmin: true },
@@ -25,7 +25,7 @@ const USERS: {
   { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler', team: 'peekviewer' },
   { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler', team: 'peekviewer' },
   { name: 'Tetyana Veremeyenko', email: 'tetiana_veremeenko@struktura.io',   role: 'agent', team: 'peekviewer' },
-  { name: 'Anna Bilous',       email: 'anna_bilous@struktura.io',            role: 'agent', team: 'peekviewer' },
+  { name: 'Anna Bilous',       email: 'anna_bilous@struktura.io',            role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'schedule' },
   { name: 'Yana Fedorova',     email: 'yana_fedorova@struktura.io',          role: 'agent', team: 'peekviewer', peekviewerAdmin: true },
 ];
 
@@ -55,6 +55,7 @@ async function main() {
         team: u.team ?? 'support',
         secondaryTeam: u.secondaryTeam ?? null,
         peekviewerAdmin: u.peekviewerAdmin ?? false,
+        hiddenPeekviewerTabs: u.hiddenPeekviewerTabs ?? '',
       },
       create: {
         name: u.name,
@@ -65,6 +66,7 @@ async function main() {
         team: u.team ?? 'support',
         secondaryTeam: u.secondaryTeam ?? null,
         peekviewerAdmin: u.peekviewerAdmin ?? false,
+        hiddenPeekviewerTabs: u.hiddenPeekviewerTabs ?? '',
       },
     });
   }

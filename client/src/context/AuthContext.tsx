@@ -13,6 +13,7 @@ export interface AuthUser {
   team: Team;
   secondaryTeam: Team | null;
   peekviewerAdmin: boolean;
+  hiddenPeekviewerTabs: string;
   agentId: string | null;
   telegramChatId: string | null;
   avatarUrl: string | null;

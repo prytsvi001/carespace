@@ -15,6 +15,7 @@ declare global {
       team: string;
       secondaryTeam: string | null;
       peekviewerAdmin: boolean;
+      hiddenPeekviewerTabs: string;
       agentId: string | null;
       telegramChatId: string | null;
       avatarUrl: string | null;
@@ -52,6 +53,7 @@ passport.use(
           team: user.team,
           secondaryTeam: user.secondaryTeam,
           peekviewerAdmin: user.peekviewerAdmin,
+          hiddenPeekviewerTabs: user.hiddenPeekviewerTabs,
           agentId: user.agentId,
           telegramChatId: user.telegramChatId,
           avatarUrl: user.avatarUrl,
@@ -77,6 +79,7 @@ passport.deserializeUser(async (id: string, done) => {
       team: user.team,
       secondaryTeam: user.secondaryTeam,
       peekviewerAdmin: user.peekviewerAdmin,
+      hiddenPeekviewerTabs: user.hiddenPeekviewerTabs,
       agentId: user.agentId,
       telegramChatId: user.telegramChatId,
       avatarUrl: user.avatarUrl,
@@ -132,6 +135,7 @@ router.put('/avatar', async (req: Request, res: Response) => {
       team: updated.team,
       secondaryTeam: updated.secondaryTeam,
       peekviewerAdmin: updated.peekviewerAdmin,
+      hiddenPeekviewerTabs: updated.hiddenPeekviewerTabs,
       agentId: updated.agentId,
       telegramChatId: updated.telegramChatId,
       avatarUrl: updated.avatarUrl,
