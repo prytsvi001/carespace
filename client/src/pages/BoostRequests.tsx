@@ -115,6 +115,7 @@ export default function BoostRequests() {
   };
 
   const handleDelete = async (id: string) => {
+    setConfirmDeleteId(null);
     setRequests((prev) => prev.filter((r) => r.id !== id));
     try {
       await deleteBoostRequest(id);
@@ -122,7 +123,6 @@ export default function BoostRequests() {
       console.error(e);
       load();
     }
-    setConfirmDeleteId(null);
   };
 
   return (

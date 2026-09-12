@@ -128,9 +128,9 @@ export default function RowAccountsPool() {
   const [confirmTakeId, setConfirmTakeId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const handleDelete = async (id: string) => {
+    setConfirmDeleteId(null);
     setAccounts((prev) => prev.filter((a) => a.id !== id));
     try { await deleteRowAccount(id); } catch (e) { console.error(e); load(); }
-    setConfirmDeleteId(null);
   };
 
   return (

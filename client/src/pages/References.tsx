@@ -77,6 +77,7 @@ export default function References() {
   };
 
   const handleDelete = async (id: string) => {
+    setConfirmDeleteId(null);
     setRequests((prev) => prev.filter((r) => r.id !== id));
     try {
       await deleteAccountRequest(id);
@@ -84,7 +85,6 @@ export default function References() {
       console.error(e);
       load();
     }
-    setConfirmDeleteId(null);
   };
 
   return (

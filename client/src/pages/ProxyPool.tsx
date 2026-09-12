@@ -100,9 +100,9 @@ export default function ProxyPool() {
   const [confirmTakeId, setConfirmTakeId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const handleDelete = async (id: string) => {
+    setConfirmDeleteId(null);
     setProxies((prev) => prev.filter((p) => p.id !== id));
     try { await deleteProxy(id); } catch (e) { console.error(e); load(); }
-    setConfirmDeleteId(null);
   };
 
   return (
