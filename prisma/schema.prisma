@@ -598,11 +598,13 @@ model BoostRequest {
   status          String    @default("in_progress") // "in_progress" | "complete"
   completedAt     DateTime?
   completedByName String?
+  batchId         String?   // groups everything submitted together in one /bulk call — the "your batch is fully processed" Telegram notification waits until every row sharing this batchId is complete. Null for rows created before this field existed.
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   @@index([status])
   @@index([requesterId])
+  @@index([batchId])
 }
 
 // Peekviewer Team — "Proxy" tab. Shared pool: peekviewerAdmin users bulk-add

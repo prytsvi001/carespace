@@ -428,6 +428,7 @@ export interface BoostRequest {
   status: 'in_progress' | 'complete';
   completedAt: string | null;
   completedByName: string | null;
+  batchId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -437,9 +438,6 @@ export const getBoostRequests = (includeCompleted?: boolean) =>
 
 export const getMySentBoostRequests = () =>
   api.get<BoostRequest[]>('/boost-requests/sent').then((r) => r.data);
-
-export const createBoostRequest = (data: { boostType: 'likes' | 'followers' | 'comments'; link: string; quantity: number }) =>
-  api.post<BoostRequest>('/boost-requests', data).then((r) => r.data);
 
 export const createBoostRequestsBulk = (items: { boostType: 'likes' | 'followers' | 'comments'; link: string; quantity: number }[]) =>
   api.post<BoostRequest[]>('/boost-requests/bulk', { items }).then((r) => r.data);

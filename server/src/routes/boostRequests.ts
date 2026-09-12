@@ -5,6 +5,7 @@
 // is what drops it off the admin worklist (status: 'complete') — the
 // requester keeps seeing their own request (now green) regardless of status,
 // so there's no separate archived flag.
+import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth, requirePeekviewerTeam } from '../middleware/auth';
@@ -64,64 +65,15 @@ router.get('/sent', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/boost-requests
-router.post('/', async (req: Request, res: Response) => {
-  try {
-    const me = req.user as Express.User;
-    const { boostType, link, quantity } = req.body as { boostType?: string; link?: string; quantity?: number };
-
-    if (!boostType || !BOOST_TYPES.includes(boostType as (typeof BOOST_TYPES)[number])) {
-      return res.status(400).json({ error: 'boostType must be likes, followers, or comments' });
-    }
-    if (!link?.trim()) {
-      return res.status(400).json({ error: 'link is required' });
-    }
-    const qty = Number(quantity);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      return res.status(400).json({ error: 'quantity must be a positive number' });
-    }
-
-    const request = await prisma.boostRequest.create({
-      data: {
-        requesterId: me.id,
-        requesterName: me.name,
-        boostType,
-        link: link.trim(),
-        quantity: Math.round(qty),
-      },
-    });
-
-    const admins = await prisma.user.findMany({
-      where: { peekviewerAdmin: true, id: { not: me.id } },
-      select: { id: true, email: true, telegramChatId: true },
-    });
-
-    const subject = `New Boost request — ${boostType}`;
-    const content = `${me.name} requested a ${boostType} boost (${qty}): ${link.trim()}`;
-    const telegramText = `Вам залишили новий boost request від ${me.name} (${boostType}, ${qty}). Перегляньте деталі в CareSpace: ${CARESPACE_URL}`;
-    await Promise.all(admins.map(async (admin) => {
-      await prisma.inboxMessage.create({
-        data: { senderId: me.id, receiverId: admin.id, type: 'general', subject, content },
-      });
-      if (admin.telegramChatId && admin.email === YANA_EMAIL) {
-        await sendTelegramMessage(admin.telegramChatId, telegramText);
-      }
-    }));
-
-    return res.status(201).json(request);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Failed to create boost request' });
-  }
-});
-
 const MAX_BULK_ITEMS = 50;
 
-// POST /api/boost-requests/bulk — create several boost requests (any mix of
-// types/quantities) in one submission, e.g. 3 likes links + 2 comments links
-// + 5 followers links at once. Body: { items: {boostType, link, quantity}[] }.
-// One combined Telegram/Inbox notification is sent for the whole batch
-// rather than one per row.
+// POST /api/boost-requests/bulk — create one or several boost requests (any
+// mix of types/quantities) in one submission, e.g. 3 likes links + 2
+// comments links + 5 followers links at once, all sharing a fresh batchId.
+// Body: { items: {boostType, link, quantity}[] }. One combined Telegram/
+// Inbox notification is sent for the whole batch on creation; the
+// "processed" notification back to the requester (see /:id/complete) waits
+// until every row in the batch is complete, not one per row.
 router.post('/bulk', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
@@ -150,9 +102,10 @@ router.post('/bulk', async (req: Request, res: Response) => {
       cleaned.push({ boostType, link: link.trim(), quantity: Math.round(qty) });
     }
 
+    const batchId = randomUUID();
     const created = await prisma.$transaction(
       cleaned.map((item) => prisma.boostRequest.create({
-        data: { requesterId: me.id, requesterName: me.name, ...item },
+        data: { requesterId: me.id, requesterName: me.name, batchId, ...item },
       }))
     );
 
@@ -185,10 +138,13 @@ router.post('/bulk', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/boost-requests/:id/complete — admin only. Notifies the
-// requester's Telegram exactly once, on the transition into "complete" —
-// re-completing an already-complete request (e.g. a double-click) is a
-// no-op rather than a duplicate notification.
+// PATCH /api/boost-requests/:id/complete — admin only. Re-completing an
+// already-complete request (e.g. a double-click) is a no-op. The requester's
+// Telegram is notified only once ALL requests sharing this row's batchId are
+// complete — completing one of several rows submitted together doesn't
+// notify by itself; completing the last one does, for the whole batch. Rows
+// with no batchId (created before that field existed) notify immediately,
+// same as the old one-row-at-a-time behavior.
 router.patch('/:id/complete', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
@@ -206,12 +162,19 @@ router.patch('/:id/complete', async (req: Request, res: Response) => {
         });
 
     if (!alreadyComplete && existing.requesterId !== me.id) {
-      const requester = await prisma.user.findUnique({ where: { id: existing.requesterId } });
-      if (requester?.telegramChatId) {
-        await sendTelegramMessage(
-          requester.telegramChatId,
-          `Ваш boost request вже виконаний. Перегляньте деталі в CareSpace: ${CARESPACE_URL}`
-        );
+      const batchItems = existing.batchId
+        ? await prisma.boostRequest.findMany({ where: { batchId: existing.batchId } })
+        : [updated];
+      const batchDone = batchItems.every((r) => r.status === 'complete');
+
+      if (batchDone) {
+        const requester = await prisma.user.findUnique({ where: { id: existing.requesterId } });
+        if (requester?.telegramChatId) {
+          const text = batchItems.length > 1
+            ? `Усі ваші boost requests (${batchItems.length}) виконано! Перегляньте деталі в CareSpace: ${CARESPACE_URL}`
+            : `Ваш boost request вже виконаний. Перегляньте деталі в CareSpace: ${CARESPACE_URL}`;
+          await sendTelegramMessage(requester.telegramChatId, text);
+        }
       }
     }
 

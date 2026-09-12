@@ -21,6 +21,9 @@ const BOOST_TYPE_LABELS: Record<BoostType, string> = {
   comments: 'Comments',
 };
 
+// Admin queue is split into these three blocks, in this order.
+const BOOST_TYPE_ORDER: BoostType[] = ['likes', 'comments', 'followers'];
+
 function linkLabel(type: BoostType): string {
   return type === 'followers' ? 'Link (account)' : 'Link (post)';
 }
@@ -129,6 +132,90 @@ export default function BoostRequests() {
     }
   };
 
+  const renderCard = (r: BoostRequest) => {
+    const isComplete = r.status === 'complete';
+    const isEditing = editingId === r.id;
+    return (
+      <div key={r.id} className="card">
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              {BOOST_TYPE_LABELS[r.boostType]}
+            </span>
+            <span
+              className="text-xs font-semibold px-2 py-0.5 rounded-full"
+              style={isComplete
+                ? { backgroundColor: 'rgba(161,249,110,0.28)', color: '#166534' }
+                : { backgroundColor: 'rgba(14,14,14,0.07)', color: 'rgba(14,14,14,0.55)' }}
+            >
+              {isComplete ? 'Complete' : 'In progress'}
+            </span>
+            {isAdmin && (
+              <span className="text-xs text-slate-400">by {r.requesterName}</span>
+            )}
+          </div>
+          <span className="text-xs text-slate-400 shrink-0">
+            {format(new Date(r.createdAt), 'dd MMM yyyy')}
+          </span>
+        </div>
+
+        {isEditing ? (
+          <div className="space-y-2">
+            <input className="input text-sm w-full" value={editLink} onChange={(e) => setEditLink(e.target.value)} placeholder={linkLabel(r.boostType)} />
+            <input className="input text-sm w-full" type="number" min={1} value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} placeholder="Quantity" />
+            <div className="flex gap-2">
+              <button className="btn-accent text-xs" onClick={handleSaveEdit}>Save</button>
+              <button className="btn-secondary text-xs" onClick={() => setEditingId(null)}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-slate-700 break-all">{r.link}</p>
+            <p className="text-xs text-slate-400 mt-1">Quantity: {r.quantity}</p>
+            {r.completedByName && (
+              <p className="text-xs text-slate-400 mt-1">Completed by {r.completedByName}</p>
+            )}
+          </>
+        )}
+
+        {isAdmin && !isEditing && (
+          <div className="mt-3 flex justify-end gap-2 flex-wrap">
+            {!isComplete && (
+              <button
+                onClick={() => handleComplete(r.id)}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
+                style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+              >
+                <CheckCircle2 size={13} strokeWidth={2} />
+                Complete
+              </button>
+            )}
+            <button
+              onClick={() => openEdit(r)}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+              style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+            >
+              <Pencil size={13} strokeWidth={1.8} />
+              Edit
+            </button>
+            <button
+              onClick={() => setConfirmDeleteId(r.id)}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+              style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+            >
+              <Trash2 size={13} strokeWidth={1.8} />
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const groupedByType = isAdmin
+    ? BOOST_TYPE_ORDER.map((type) => ({ type, items: requests.filter((r) => r.boostType === type) })).filter((g) => g.items.length > 0)
+    : [];
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -155,87 +242,20 @@ export default function BoostRequests() {
         <CardListSkeleton />
       ) : requests.length === 0 ? (
         <EmptyState icon={<Rocket size={32} strokeWidth={1.2} />} message="No boost requests yet." />
+      ) : isAdmin ? (
+        <div className="space-y-5">
+          {groupedByType.map(({ type, items }) => (
+            <div key={type} className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'rgba(14,14,14,0.45)' }}>
+                {BOOST_TYPE_LABELS[type]} <span className="font-normal normal-case">({items.length})</span>
+              </p>
+              {items.map((r) => renderCard(r))}
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="space-y-2">
-          {requests.map((r) => {
-            const isComplete = r.status === 'complete';
-            const isEditing = editingId === r.id;
-            return (
-              <div key={r.id} className="card">
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                      {BOOST_TYPE_LABELS[r.boostType]}
-                    </span>
-                    <span
-                      className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                      style={isComplete
-                        ? { backgroundColor: 'rgba(161,249,110,0.28)', color: '#166534' }
-                        : { backgroundColor: 'rgba(14,14,14,0.07)', color: 'rgba(14,14,14,0.55)' }}
-                    >
-                      {isComplete ? 'Complete' : 'In progress'}
-                    </span>
-                    {isAdmin && (
-                      <span className="text-xs text-slate-400">by {r.requesterName}</span>
-                    )}
-                  </div>
-                  <span className="text-xs text-slate-400 shrink-0">
-                    {format(new Date(r.createdAt), 'dd MMM yyyy')}
-                  </span>
-                </div>
-
-                {isEditing ? (
-                  <div className="space-y-2">
-                    <input className="input text-sm w-full" value={editLink} onChange={(e) => setEditLink(e.target.value)} placeholder={linkLabel(r.boostType)} />
-                    <input className="input text-sm w-full" type="number" min={1} value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} placeholder="Quantity" />
-                    <div className="flex gap-2">
-                      <button className="btn-accent text-xs" onClick={handleSaveEdit}>Save</button>
-                      <button className="btn-secondary text-xs" onClick={() => setEditingId(null)}>Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-sm text-slate-700 break-all">{r.link}</p>
-                    <p className="text-xs text-slate-400 mt-1">Quantity: {r.quantity}</p>
-                    {r.completedByName && (
-                      <p className="text-xs text-slate-400 mt-1">Completed by {r.completedByName}</p>
-                    )}
-                  </>
-                )}
-
-                {isAdmin && !isEditing && (
-                  <div className="mt-3 flex justify-end gap-2 flex-wrap">
-                    {!isComplete && (
-                      <button
-                        onClick={() => handleComplete(r.id)}
-                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
-                        style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
-                      >
-                        <CheckCircle2 size={13} strokeWidth={2} />
-                        Complete
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openEdit(r)}
-                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
-                    >
-                      <Pencil size={13} strokeWidth={1.8} />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(r.id)}
-                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
-                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
-                    >
-                      <Trash2 size={13} strokeWidth={1.8} />
-                      Delete
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {requests.map((r) => renderCard(r))}
         </div>
       )}
 
