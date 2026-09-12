@@ -142,8 +142,8 @@ const PEEKVIEWER_LEGACY_TABS: { id: PeekviewerSharedTab; label: string; shortLab
 
 // Peekviewer Team's My Space — same two entries for every member, no role filtering
 const PEEKVIEWER_SPACE_TABS: { id: PeekviewerSpaceTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
-  { id: 'peek-kpi',    label: 'KPI',        shortLabel: 'KPI',       Icon: BarChart3 },
   { id: 'peek-plans',  label: 'My Plans',   shortLabel: 'Plans',     Icon: ListTodo },
+  { id: 'peek-kpi',    label: 'KPI',        shortLabel: 'KPI',       Icon: BarChart3 },
   { id: 'onboarding',  label: 'Onboarding', shortLabel: 'Onboarding', Icon: GraduationCap },
 ];
 
