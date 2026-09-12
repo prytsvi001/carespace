@@ -26,8 +26,16 @@ const BLOB_ACCESS = 'private' as const;
 // storage (presigned), not through this Function's request body.
 const MAX_ATTACHMENT_BYTES = 200 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_TYPES = [
-  'image/*', 'video/*',
+  'image/*', 'video/*', 'audio/*',
   'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain', 'text/csv',
+  'application/zip',
 ];
 
 type OnboardingAttachment = { url: string; pathname: string; name: string; contentType: string; size: number };

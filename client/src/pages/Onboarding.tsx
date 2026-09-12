@@ -1,10 +1,13 @@
 // client/src/pages/Onboarding.tsx
 // Peekviewer Team — "Onboarding" tab (inside My Space): product info and
 // how-to material, in blocks. Only Sandra Moore / Victoria Davis (role
-// head/lead) can create/edit/delete; every team member can read. Photos and
+// head/lead) can create/edit/delete; every team member can read. Any
+// attached file type is supported (images/video/audio, PDFs, Office docs,
+// text/CSV, zip — see onboarding.ts's ALLOWED_ATTACHMENT_TYPES); photos and
 // videos render inline right on the page — no download step — via the same
 // Vercel Blob private-store + presigned-upload pattern Updates uses, just
-// streamed through an <img>/<video> tag instead of a download link.
+// streamed through an <img>/<video> tag, while everything else falls back to
+// a clickable download link (AttachmentPreview below).
 import React, { useEffect, useRef, useState } from 'react';
 import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List, Bold } from 'lucide-react';
 import { uploadPresigned } from '@vercel/blob/client';
@@ -292,7 +295,7 @@ export default function Onboarding() {
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Photos / videos (optional)</label>
+            <label className="block text-xs text-slate-400 mb-1">Files (optional)</label>
 
             {form.attachments.length > 0 && (
               <div className="space-y-1.5 mb-2">
@@ -318,7 +321,7 @@ export default function Onboarding() {
               </div>
             )}
 
-            <input ref={fileInputRef} type="file" multiple accept="image/*,video/*,application/pdf" className="hidden" onChange={handleFilesSelected} />
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesSelected} />
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -327,7 +330,7 @@ export default function Onboarding() {
                 style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.6)' }}
               >
                 <Paperclip size={13} strokeWidth={1.8} />
-                Attach photo / video
+                Attach file
               </button>
               {uploadingCount > 0 && <span className="text-xs text-slate-400">Uploading {uploadingCount}…</span>}
             </div>
