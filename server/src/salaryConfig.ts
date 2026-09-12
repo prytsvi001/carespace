@@ -1,9 +1,10 @@
 // server/src/salaryConfig.ts
-// Fixed roster + pay formulas for the Salary tab. Peekviewer team members are
-// mostly not Users/Agents in this app at all (e.g. Yana Fedorova has no
-// login), so the roster lives here as plain config rather than being derived
-// from the User/Agent tables — only the Support team's auto-pulled figures
-// (hours, reviews, Peek Requests) touch the database.
+// Fixed roster + pay formulas for the Salary tab. Not derived from the User/
+// Agent tables — the roster lives here as plain config, and `userName`/
+// `agentName` are just a lookup key back to a real User row for
+// notifications (every current Peekviewer roster member except Zlata
+// Alekseenko, who left, has a CareSpace login). Only the Support team's
+// auto-pulled figures (hours, reviews, Peek Requests) touch the database.
 
 export type ToggleKey = 'trustpilotOn' | 'updateOn' | 'uMobixOn' | 'strukturaOn' | 'smmDutyOn';
 
@@ -49,12 +50,12 @@ export const SUPPORT_ROSTER: SalaryPerson[] = [
 ];
 
 export const PEEKVIEWER_ROSTER: SalaryPerson[] = [
-  { personKey: 'yana_fedorova',       displayName: 'Yana Fedorova',       team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 600 },
+  { personKey: 'yana_fedorova',       displayName: 'Yana Fedorova',       team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 600, userName: 'Yana Fedorova' },
   { personKey: 'viktoria_horopeka',   displayName: 'Viktoria Horopeka',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }, { key: 'smmDutyOn', label: 'SMM duty', amount: 150 }], userName: 'Victoria Horopeka', hasResolvedRequestCount: true },
-  { personKey: 'tetyana_veremeyenko', displayName: 'Tetyana Veremeyenko', team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'strukturaOn', label: 'Struktura boost', amount: 10 }] },
+  { personKey: 'tetyana_veremeyenko', displayName: 'Tetyana Veremeyenko', team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'strukturaOn', label: 'Struktura boost', amount: 10 }], userName: 'Tetyana Veremeyenko' },
   { personKey: 'iryna_kolodiyenko',   displayName: 'Iryna Kolodiyenko',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Iryna Kolodienko', hasResolvedRequestCount: true },
   { personKey: 'zlata_alekseenko',    displayName: 'Zlata Alekseenko',    team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 400 },
-  { personKey: 'anna_bilous',         displayName: 'Anna Bilous',         team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 300 },
+  { personKey: 'anna_bilous',         displayName: 'Anna Bilous',         team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 300, userName: 'Anna Bilous' },
 ];
 
 export function rosterForTeam(team: 'support' | 'peekviewer'): SalaryPerson[] {
