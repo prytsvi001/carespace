@@ -72,7 +72,8 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
 
   // Compose state
   const [composing, setComposing] = useState(false);
-  const [recipientId, setRecipientId] = useState('');
+  const [recipientIds, setRecipientIds] = useState<string[]>([]);
+  const [showRecipientPicker, setShowRecipientPicker] = useState(false);
   const [msgType, setMsgType] = useState(baseTypeOptions[0]?.value ?? 'general');
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
@@ -99,8 +100,6 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
       setMessages(inbox);
       setSentMessages(sent);
       setUsers(userList);
-      // Only default the recipient once — don't clobber a selection already made in the compose form
-      setRecipientId((prev) => prev || userList[0]?.id || '');
     } catch (e) {
       console.error(e);
     }
@@ -143,7 +142,8 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
     setContent('');
     setReplyingTo(null);
     setMsgType(baseTypeOptions[0]?.value ?? 'general');
-    if (users.length > 0) setRecipientId(users[0].id);
+    setRecipientIds([]);
+    setShowRecipientPicker(false);
   };
 
   const openReply = (msg: InboxMessage) => {
@@ -152,7 +152,8 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
     setContent('');
     setReplyingTo(msg);
     setMsgType('general');
-    setRecipientId(msg.senderId);
+    setRecipientIds([msg.senderId]);
+    setShowRecipientPicker(false);
     setTimeout(() => composeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
   };
 
@@ -161,19 +162,23 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
     setReplyingTo(null);
   };
 
+  const toggleRecipient = (id: string) => {
+    setRecipientIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
   const handleSend = async () => {
-    if (!recipientId || !content.trim()) {
-      setSendError('Please select a recipient and write a message.');
+    if (recipientIds.length === 0 || !content.trim()) {
+      setSendError('Please select at least one recipient and write a message.');
       return;
     }
     setSending(true);
     setSendError('');
     try {
-      const msg: InboxMessage = await sendMessage({
-        recipientId, type: msgType, content: content.trim(),
+      const sent: InboxMessage[] = await sendMessage({
+        recipientIds, type: msgType, content: content.trim(),
         replyToId: replyingTo?.id,
       });
-      setSentMessages((prev) => [msg, ...prev]);
+      setSentMessages((prev) => [...sent, ...prev]);
       setComposing(false);
       setContent('');
       setReplyingTo(null);
@@ -461,17 +466,61 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
+            <div
+              className="relative"
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setShowRecipientPicker(false);
+              }}
+            >
               <label className="block text-xs text-slate-400 mb-1">To</label>
-              <select
-                value={recipientId}
-                onChange={(e) => setRecipientId(e.target.value)}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
+              <button
+                type="button"
+                onClick={() => setShowRecipientPicker((v) => !v)}
+                className="w-full min-h-[38px] text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:border-slate-300"
               >
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
+                {recipientIds.length === 0 ? (
+                  <span className="text-slate-400 px-1">Select recipients…</span>
+                ) : (
+                  recipientIds.map((id) => {
+                    const u = users.find((u) => u.id === id);
+                    if (!u) return null;
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                      >
+                        {u.name}
+                        <X
+                          size={11}
+                          strokeWidth={2}
+                          onClick={(e) => { e.stopPropagation(); toggleRecipient(id); }}
+                        />
+                      </span>
+                    );
+                  })
+                )}
+              </button>
+              {showRecipientPicker && (
+                <div
+                  className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-lg bg-white shadow-lg"
+                  style={{ border: '1px solid rgba(14,14,14,0.09)' }}
+                >
+                  {users.map((u) => (
+                    <label
+                      key={u.id}
+                      className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={recipientIds.includes(u.id)}
+                        onChange={() => toggleRecipient(u.id)}
+                      />
+                      {u.name}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>

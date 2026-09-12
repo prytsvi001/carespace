@@ -232,7 +232,9 @@ export const getUnreadCount = () =>
 export const markMessageRead = (id: string) =>
   api.patch(`/inbox/${id}/read`).then((r) => r.data);
 
-export const sendMessage = (data: { recipientId: string; type: string; content: string; replyToId?: string }) =>
+// recipientIds: one InboxMessage row is created per recipient (same
+// content); the response is always an array, even for a single recipient.
+export const sendMessage = (data: { recipientIds: string[]; type: string; content: string; replyToId?: string }) =>
   api.post('/inbox', data).then((r) => r.data);
 
 export const deleteMessage = (id: string) =>

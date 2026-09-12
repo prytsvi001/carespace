@@ -119,20 +119,30 @@ router.get('/unread-count', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/inbox — send a new message
+// POST /api/inbox — send a new message to one or more recipients. One
+// InboxMessage row is created per recipient (same content) — accepts either
+// `recipientIds` (array, the New Message compose form) or the legacy single
+// `recipientId` (still used by Reply, which is always exactly one person).
 router.post('/', async (req: Request, res: Response) => {
   try {
     const senderId = (req.user as Express.User).id;
     const senderRole = (req.user as Express.User).role;
-    const { recipientId, type, content, replyToId } = req.body as {
+    const { recipientId, recipientIds, type, content, replyToId } = req.body as {
       recipientId?: string;
+      recipientIds?: string[];
       type?: string;
       content?: string;
       replyToId?: string;
     };
 
-    if (!recipientId || !type || !content?.trim()) {
-      return res.status(400).json({ error: 'recipientId, type, and content are required' });
+    const ids = [...new Set(
+      Array.isArray(recipientIds) && recipientIds.length > 0
+        ? recipientIds
+        : (recipientId ? [recipientId] : [])
+    )];
+
+    if (ids.length === 0 || !type || !content?.trim()) {
+      return res.status(400).json({ error: 'recipientIds, type, and content are required' });
     }
 
     const allowed = ALLOWED_TYPES[senderRole] ?? ['general'];
@@ -140,8 +150,8 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Message type not permitted for your role' });
     }
 
-    const recipient = await prisma.user.findUnique({ where: { id: recipientId } });
-    if (!recipient) {
+    const recipients = await prisma.user.findMany({ where: { id: { in: ids } } });
+    if (recipients.length === 0) {
       return res.status(404).json({ error: 'Recipient not found' });
     }
 
@@ -154,25 +164,27 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    const message = await prisma.inboxMessage.create({
-      data: { senderId, receiverId: recipientId, type, content: content.trim(), replyToId: validReplyToId },
-      include: {
-        sender:   { select: { id: true, name: true, role: true } },
-        receiver: { select: { id: true, name: true, role: true } },
-      },
-    });
+    const created = await prisma.$transaction(
+      recipients.map((recipient) => prisma.inboxMessage.create({
+        data: { senderId, receiverId: recipient.id, type, content: content.trim(), replyToId: validReplyToId },
+        include: {
+          sender:   { select: { id: true, name: true, role: true } },
+          receiver: { select: { id: true, name: true, role: true } },
+        },
+      }))
+    );
 
-    if (recipient.telegramChatId) {
-      const senderName = (req.user as Express.User).name;
-      const preview = content.trim().slice(0, 120);
-      const text = type === 'task_assignment'
-        ? `New task assignment from ${senderName}: ${preview} ${CARESPACE_URL}`
-        : `New message from ${senderName}: ${preview} ${CARESPACE_URL}`;
-      await sendTelegramMessage(recipient.telegramChatId, text);
-    }
+    const senderName = (req.user as Express.User).name;
+    const preview = content.trim().slice(0, 120);
+    const text = type === 'task_assignment'
+      ? `New task assignment from ${senderName}: ${preview} ${CARESPACE_URL}`
+      : `New message from ${senderName}: ${preview} ${CARESPACE_URL}`;
+    await Promise.all(recipients.map((recipient) => (
+      recipient.telegramChatId ? sendTelegramMessage(recipient.telegramChatId, text) : Promise.resolve()
+    )));
 
-    const [withReply] = await attachReplyPreviews([message]);
-    return res.status(201).json(formatMessage(withReply));
+    const withReplies = await attachReplyPreviews(created);
+    return res.status(201).json(withReplies.map(formatMessage));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to send message' });
