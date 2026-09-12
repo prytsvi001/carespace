@@ -200,7 +200,7 @@ export default function Onboarding() {
         )}
       </div>
 
-      {!loading && topLevelBlocks.length > 1 && (
+      {!loading && blocks.length > 1 && (
         <div className="card p-3">
           <p className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
             <List size={12} strokeWidth={2} />
@@ -208,15 +208,27 @@ export default function Onboarding() {
           </p>
           <div className="flex flex-col">
             {topLevelBlocks.map((b, i) => (
-              <button
-                key={b.id}
-                onClick={() => scrollToBlock(b.id)}
-                className="flex items-center gap-2 text-left text-sm px-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
-                style={{ color: 'rgba(14,14,14,0.7)' }}
-              >
-                <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{i + 1}.</span>
-                <span className="truncate">{b.title}</span>
-              </button>
+              <React.Fragment key={b.id}>
+                <button
+                  onClick={() => scrollToBlock(b.id)}
+                  className="flex items-center gap-2 text-left text-sm px-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
+                  style={{ color: 'rgba(14,14,14,0.7)' }}
+                >
+                  <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{i + 1}.</span>
+                  <span className="truncate font-medium">{b.title}</span>
+                </button>
+                {childrenOf(b.id).map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => scrollToBlock(c.id)}
+                    className="flex items-center gap-2 text-left text-sm pl-8 pr-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
+                    style={{ color: 'rgba(14,14,14,0.55)' }}
+                  >
+                    <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.3)' }}>–</span>
+                    <span className="truncate">{c.title}</span>
+                  </button>
+                ))}
+              </React.Fragment>
             ))}
           </div>
         </div>
