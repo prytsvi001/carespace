@@ -11,15 +11,12 @@ import {
   BoostRequest,
 } from '../api';
 import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
-import { BoostRequestRow, BoostRequestRowsEditor, emptyBoostRequestRow, cleanBoostRequestRows } from '../components/boostRequestRows';
+import {
+  BoostRequestRow, BoostRequestRowsEditor, emptyBoostRequestRow, cleanBoostRequestRows,
+  BOOST_TYPE_LABELS, groupBoostRequestsByBatch, BoostRequestBatchCard,
+} from '../components/boostRequestRows';
 
 type BoostType = 'likes' | 'followers' | 'comments';
-
-const BOOST_TYPE_LABELS: Record<BoostType, string> = {
-  likes: 'Likes',
-  followers: 'Followers',
-  comments: 'Comments',
-};
 
 // Admin queue is split into these three blocks, in this order.
 const BOOST_TYPE_ORDER: BoostType[] = ['likes', 'comments', 'followers'];
@@ -215,6 +212,7 @@ export default function BoostRequests() {
   const groupedByType = isAdmin
     ? BOOST_TYPE_ORDER.map((type) => ({ type, items: requests.filter((r) => r.boostType === type) })).filter((g) => g.items.length > 0)
     : [];
+  const groupedByBatch = !isAdmin ? groupBoostRequestsByBatch(requests) : [];
 
   return (
     <div className="space-y-4">
@@ -254,8 +252,10 @@ export default function BoostRequests() {
           ))}
         </div>
       ) : (
-        <div className="space-y-2">
-          {requests.map((r) => renderCard(r))}
+        <div className="space-y-3">
+          {groupedByBatch.map(({ key, items }) => (
+            <BoostRequestBatchCard key={key} items={items} />
+          ))}
         </div>
       )}
 

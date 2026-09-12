@@ -9,7 +9,10 @@ import {
   getMySentAccountRequests, createAccountRequest, AccountRequestData, AccountRequestStatus,
   getMySentBoostRequests, createBoostRequestsBulk, BoostRequest,
 } from '../api';
-import { BoostRequestRow, BoostRequestRowsEditor, emptyBoostRequestRow, cleanBoostRequestRows } from '../components/boostRequestRows';
+import {
+  BoostRequestRow, BoostRequestRowsEditor, emptyBoostRequestRow, cleanBoostRequestRows,
+  groupBoostRequestsByBatch, BoostRequestBatchCard,
+} from '../components/boostRequestRows';
 import { InboxMessage, TeamUpdate, UpdateAttachment } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { QAReportPreview } from '../components/qaReport';
@@ -30,17 +33,6 @@ const ACCOUNT_REQUEST_STATUS_META: Record<AccountRequestStatus, { label: string;
   open:        { label: 'Open',        bg: 'rgba(14,14,14,0.07)',    text: 'rgba(14,14,14,0.55)' },
   in_progress: { label: 'In Progress', bg: 'rgba(245,158,11,0.14)',  text: '#b45309' },
   done:        { label: 'Done',        bg: 'rgba(161,249,110,0.28)', text: '#166534' },
-};
-
-const BOOST_STATUS_META: Record<BoostRequest['status'], { label: string; bg: string; text: string }> = {
-  in_progress: { label: 'In Progress', bg: 'rgba(245,158,11,0.14)',  text: '#b45309' },
-  complete:    { label: 'Complete',    bg: 'rgba(161,249,110,0.28)', text: '#166534' },
-};
-
-const BOOST_TYPE_LABELS: Record<BoostRequest['boostType'], string> = {
-  likes: 'Likes',
-  followers: 'Followers',
-  comments: 'Comments',
 };
 
 const ROLE_TYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
@@ -620,32 +612,10 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
             <p className="text-sm text-slate-400">No boost requests sent yet</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {sentBoostRequests.map((r) => {
-              const statusMeta = BOOST_STATUS_META[r.status];
-              return (
-                <div key={r.id} className="card space-y-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                        {BOOST_TYPE_LABELS[r.boostType]}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        {format(new Date(r.createdAt), 'dd MMM yyyy')}
-                      </span>
-                    </div>
-                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0" style={{ backgroundColor: statusMeta.bg, color: statusMeta.text }}>
-                      {statusMeta.label}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-700 break-all">{r.link}</p>
-                  <p className="text-xs text-slate-400">Quantity: {r.quantity}</p>
-                  {r.completedByName && (
-                    <p className="text-xs text-slate-400">Completed by {r.completedByName}</p>
-                  )}
-                </div>
-              );
-            })}
+          <div className="space-y-3">
+            {groupBoostRequestsByBatch(sentBoostRequests).map(({ key, items }) => (
+              <BoostRequestBatchCard key={key} items={items} />
+            ))}
           </div>
         )
       ) : (
