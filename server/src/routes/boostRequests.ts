@@ -15,6 +15,10 @@ router.use(requireAuth);
 router.use(requirePeekviewerTeam);
 
 const BOOST_TYPES = ['likes', 'followers', 'comments'] as const;
+// Sandra Moore/Victoria Davis are also peekviewerAdmin (and still get the
+// InboxMessage, same as before), but only Yana gets the Telegram push for a
+// new request — she's the one actually processing the Boost queue day to day.
+const YANA_EMAIL = 'yana_fedorova@struktura.io';
 
 function isAdmin(user: Express.User): boolean {
   return user.peekviewerAdmin === true;
@@ -89,7 +93,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const admins = await prisma.user.findMany({
       where: { peekviewerAdmin: true, id: { not: me.id } },
-      select: { id: true, telegramChatId: true },
+      select: { id: true, email: true, telegramChatId: true },
     });
 
     const subject = `New Boost request — ${boostType}`;
@@ -99,7 +103,7 @@ router.post('/', async (req: Request, res: Response) => {
       await prisma.inboxMessage.create({
         data: { senderId: me.id, receiverId: admin.id, type: 'general', subject, content },
       });
-      if (admin.telegramChatId) {
+      if (admin.telegramChatId && admin.email === YANA_EMAIL) {
         await sendTelegramMessage(admin.telegramChatId, telegramText);
       }
     }));
