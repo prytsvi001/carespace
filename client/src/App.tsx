@@ -147,6 +147,17 @@ const PEEKVIEWER_SPACE_TABS: { id: PeekviewerSpaceTab; label: string; shortLabel
   { id: 'onboarding',  label: 'Onboarding', shortLabel: 'Onboarding', Icon: GraduationCap },
 ];
 
+// These five Peekviewer-only agents don't get the floating "Quick Actions"
+// button/drawer — Sandra Moore and Victoria Davis (dual-team heads/leads)
+// keep it, everyone else on the team doesn't.
+const QUICK_ACTIONS_HIDDEN_EMAILS = new Set([
+  'anna_bilous@struktura.io',
+  'iryna_kolodienko@struktura.io',
+  'victoria_horopeka@struktura.io',
+  'yana_fedorova@struktura.io',
+  'tetiana_veremeenko@struktura.io',
+]);
+
 const ACTIVE_TEAM_STORAGE_PREFIX = 'carespace_active_team_';
 const ACTIVE_TAB_STORAGE_KEY_SUPPORT = 'carespace_active_tab_support';
 const ACTIVE_TAB_STORAGE_KEY_PEEKVIEWER = 'carespace_active_tab_peekviewer';
@@ -705,11 +716,13 @@ function MainApp() {
         </div>
       </nav>
 
-      <SilentErrorBoundary>
-        <Suspense fallback={null}>
-          <ShortcutsDrawer />
-        </Suspense>
-      </SilentErrorBoundary>
+      {!(user?.email && QUICK_ACTIONS_HIDDEN_EMAILS.has(user.email)) && (
+        <SilentErrorBoundary>
+          <Suspense fallback={null}>
+            <ShortcutsDrawer />
+          </Suspense>
+        </SilentErrorBoundary>
+      )}
 
       <TelegramModal
         open={showTelegramModal}
