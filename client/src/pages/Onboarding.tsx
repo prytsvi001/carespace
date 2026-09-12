@@ -17,8 +17,7 @@ import {
   deleteOnboardingAttachment, getOnboardingAttachmentUrl,
   OnboardingBlockData, OnboardingAttachment,
 } from '../api';
-import { Modal, ConfirmDialog, EmptyState, CardListSkeleton } from '../components/ui';
-import { SectionedContent } from '../components/sectionedContent';
+import { Modal, ConfirmDialog, EmptyState, CardListSkeleton, RichText } from '../components/ui';
 
 function formatFileSize(bytes: number): string {
   if (!bytes) return '';
@@ -326,7 +325,7 @@ export default function Onboarding() {
                       </div>
                     )}
 
-                    <SectionedContent content={b.content} className="text-sm text-slate-600 leading-relaxed" />
+                    <RichText text={b.content} className="text-sm text-slate-600 leading-relaxed" />
 
                     {b.attachments.length > 0 && (
                       <div className="space-y-2">
@@ -362,7 +361,7 @@ export default function Onboarding() {
                               )}
                             </div>
 
-                            <SectionedContent content={c.content} className="text-sm text-slate-600 leading-relaxed" />
+                            <RichText text={c.content} className="text-sm text-slate-600 leading-relaxed" />
 
                             {c.attachments.length > 0 && (
                               <div className="space-y-2">
