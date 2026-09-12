@@ -38,6 +38,7 @@ import rowAccountsRouter from './routes/rowAccounts';
 import requestScheduleRouter from './routes/requestSchedule';
 import onboardingRouter from './routes/onboarding';
 import accountRequestsRouter from './routes/accountRequests';
+import notesRouter from './routes/notes';
 import { requireAuth } from './middleware/auth';
 
 const app = express();
@@ -149,5 +150,6 @@ app.use('/api/row-accounts',   rowAccountsRouter);    // requireAuth + requirePe
 app.use('/api/request-schedule', requestScheduleRouter); // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/onboarding', onboardingRouter); // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/account-requests', accountRequestsRouter); // requireAuth + requirePeekviewerTeam applied inside router
+app.use('/api/notes', notesRouter); // requireAuth applied inside router — every agent, both teams
 
 export default app;

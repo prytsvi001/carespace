@@ -63,6 +63,7 @@ model User {
   authoredOnboardingBlocks OnboardingBlock[]
   accountRequests      AccountRequest[]
   requestScheduleReminderLogs RequestScheduleReminderLog[]
+  notes                Note[]
 
   @@index([peekOnDuty])
   @@index([team])
@@ -727,5 +728,20 @@ model RequestScheduleReminderLog {
   sentAt DateTime @default(now())
 
   @@unique([userId, date])
+  @@index([userId])
+}
+
+// My Space — "Notes" tab. Fully personal (private to the owner, both teams,
+// no author/admin distinction like Onboarding) — title + free text, own CRUD
+// only, no sharing.
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([userId])
 }

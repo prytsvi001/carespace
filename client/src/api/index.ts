@@ -750,4 +750,24 @@ export const updateAccountRequest = (id: string, data: { status?: AccountRequest
 export const deleteAccountRequest = (id: string) =>
   api.delete(`/account-requests/${id}`).then((r) => r.data);
 
+// ─── Notes (My Space — both teams) ─────────────────────────────────────────
+export interface NoteData {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const getNotes = () => api.get<NoteData[]>('/notes').then((r) => r.data);
+
+export const createNote = (data: { title: string; content: string }) =>
+  api.post<NoteData>('/notes', data).then((r) => r.data);
+
+export const updateNote = (id: string, data: { title: string; content: string }) =>
+  api.put<NoteData>(`/notes/${id}`, data).then((r) => r.data);
+
+export const deleteNote = (id: string) =>
+  api.delete(`/notes/${id}`).then((r) => r.data);
+
 export default api;

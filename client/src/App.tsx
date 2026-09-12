@@ -4,7 +4,7 @@ import {
   ClipboardList, CalendarDays, Lightbulb, Bot, ChartBar,
   ListTodo, Star, TrendingUp, FileText, LogOut, User,
   ChevronDown, Bell, BarChart3, Send, CheckCircle2, Camera, Download, Wallet,
-  CalendarClock, Rocket, Wifi, KeyRound, BookOpen, GraduationCap,
+  CalendarClock, Rocket, Wifi, KeyRound, BookOpen, GraduationCap, StickyNote,
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -41,6 +41,7 @@ const RowAccountsPool = React.lazy(() => import('./pages/RowAccountsPool'));
 const References = React.lazy(() => import('./pages/References'));
 const PeekviewerKPI = React.lazy(() => import('./pages/PeekviewerKPI'));
 const Onboarding = React.lazy(() => import('./pages/Onboarding'));
+const Notes = React.lazy(() => import('./pages/Notes'));
 
 function TabLoadingFallback() {
   return (
@@ -99,9 +100,9 @@ class TabErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
 // ── Tab types ────────────────────────────────────────────────────────────────
 
 type SharedTab = 'daily' | 'calendar' | 'requests' | 'qa' | 'stats';
-type SpaceTab  = 'plans' | 'inbox' | 'reviews' | 'pdp' | 'qa-reports' | 'kpi' | 'salary';
+type SpaceTab  = 'plans' | 'inbox' | 'reviews' | 'pdp' | 'qa-reports' | 'kpi' | 'salary' | 'notes';
 type PeekviewerSharedTab = 'schedule' | 'boost' | 'proxy' | 'row-accounts' | 'references' | 'requests' | 'calendar';
-type PeekviewerSpaceTab = 'peek-kpi' | 'peek-plans' | 'onboarding';
+type PeekviewerSpaceTab = 'peek-kpi' | 'peek-plans' | 'onboarding' | 'notes';
 type Tab = SharedTab | SpaceTab | PeekviewerSharedTab | PeekviewerSpaceTab;
 
 const SHARED_TAB_IDS = new Set<Tab>(['daily', 'calendar', 'requests', 'qa', 'stats', 'inbox']);
@@ -118,6 +119,7 @@ const SHARED_TABS: { id: SharedTab; label: string; shortLabel: string; Icon: Rea
 // qa-reports is only visible to head and lead roles
 const ALL_SPACE_TABS: { id: SpaceTab; label: string; shortLabel: string; Icon: React.ElementType; roles: string[] }[] = [
   { id: 'plans',      label: 'My Plans',   shortLabel: 'Plans',   Icon: ListTodo,   roles: ['head', 'lead', 'agent'] },
+  { id: 'notes',      label: 'Notes',      shortLabel: 'Notes',   Icon: StickyNote, roles: ['head', 'lead', 'agent'] },
   { id: 'reviews',    label: 'Reviews',    shortLabel: 'Reviews', Icon: Star,       roles: ['head', 'lead', 'agent'] },
   { id: 'pdp',        label: 'PDP',        shortLabel: 'PDP',     Icon: TrendingUp, roles: ['head', 'lead', 'agent'] },
   { id: 'qa-reports', label: 'QA Reports', shortLabel: 'Reports', Icon: FileText,   roles: ['head', 'lead'] },
@@ -143,6 +145,7 @@ const PEEKVIEWER_LEGACY_TABS: { id: PeekviewerSharedTab; label: string; shortLab
 // Peekviewer Team's My Space — same two entries for every member, no role filtering
 const PEEKVIEWER_SPACE_TABS: { id: PeekviewerSpaceTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
   { id: 'peek-plans',  label: 'My Plans',   shortLabel: 'Plans',     Icon: ListTodo },
+  { id: 'notes',       label: 'Notes',      shortLabel: 'Notes',     Icon: StickyNote },
   { id: 'peek-kpi',    label: 'KPI',        shortLabel: 'KPI',       Icon: BarChart3 },
   { id: 'onboarding',  label: 'Onboarding', shortLabel: 'Onboarding', Icon: GraduationCap },
 ];
@@ -189,7 +192,7 @@ function getInitialTab(userRole: string, isPeekviewerSpace: boolean, hiddenTabs:
 
   if (isPeekviewerSpace) {
     const validPeekviewerTabIds = new Set<Tab>(
-      ([...PEEKVIEWER_SHARED_TAB_IDS, 'peek-kpi', 'peek-plans', 'onboarding'] as Tab[]).filter((id) => !hiddenTabs.has(id))
+      ([...PEEKVIEWER_SHARED_TAB_IDS, 'peek-kpi', 'peek-plans', 'onboarding', 'notes'] as Tab[]).filter((id) => !hiddenTabs.has(id))
     );
     return validPeekviewerTabIds.has(stored) ? stored : fallback;
   }
@@ -663,6 +666,7 @@ function MainApp() {
             {activeTab === 'peek-kpi'     && <PeekviewerKPI />}
             {activeTab === 'peek-plans'   && <MyPlans />}
             {activeTab === 'onboarding'   && <Onboarding />}
+            {activeTab === 'notes'        && <Notes />}
           </Suspense>
         </TabErrorBoundary>
       </main>
