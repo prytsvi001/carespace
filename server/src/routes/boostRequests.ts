@@ -16,9 +16,10 @@ router.use(requireAuth);
 router.use(requirePeekviewerTeam);
 
 const BOOST_TYPES = ['likes', 'followers', 'comments'] as const;
-// Sandra Moore/Victoria Davis are also peekviewerAdmin (and still get the
-// InboxMessage, same as before), but only Yana gets the Telegram push for a
-// new request — she's the one actually processing the Boost queue day to day.
+// Sandra Moore/Victoria Davis are also peekviewerAdmin and see every request
+// directly on the Boost tab, but a new request's Inbox message + Telegram
+// push goes only to Yana — she's the one actually processing the queue day
+// to day, and Sandra/Davis don't need a separate notification for it.
 const YANA_EMAIL = 'yana_fedorova@struktura.io';
 
 function isAdmin(user: Express.User): boolean {
@@ -109,27 +110,24 @@ router.post('/bulk', async (req: Request, res: Response) => {
       }))
     );
 
-    const admins = await prisma.user.findMany({
-      where: { peekviewerAdmin: true, id: { not: me.id } },
-      select: { id: true, email: true, telegramChatId: true },
-    });
+    const yana = await prisma.user.findUnique({ where: { email: YANA_EMAIL } });
 
-    const countsByType: Record<string, number> = {};
-    for (const item of cleaned) countsByType[item.boostType] = (countsByType[item.boostType] ?? 0) + 1;
-    const breakdown = Object.entries(countsByType).map(([type, count]) => `${count} ${type}`).join(', ');
+    if (yana && yana.id !== me.id) {
+      const countsByType: Record<string, number> = {};
+      for (const item of cleaned) countsByType[item.boostType] = (countsByType[item.boostType] ?? 0) + 1;
+      const breakdown = Object.entries(countsByType).map(([type, count]) => `${count} ${type}`).join(', ');
 
-    const subject = `New Boost requests — ${cleaned.length}`;
-    const content = `${me.name} requested ${cleaned.length} boosts (${breakdown})`;
-    const telegramText = `Вам залишили ${cleaned.length} нових boost requests від ${me.name} (${breakdown}). Перегляньте деталі в CareSpace: ${CARESPACE_URL}`;
+      const subject = `New Boost requests — ${cleaned.length}`;
+      const content = `${me.name} requested ${cleaned.length} boosts (${breakdown})`;
+      const telegramText = `Вам залишили ${cleaned.length} нових boost requests від ${me.name} (${breakdown}). Перегляньте деталі в CareSpace: ${CARESPACE_URL}`;
 
-    await Promise.all(admins.map(async (admin) => {
       await prisma.inboxMessage.create({
-        data: { senderId: me.id, receiverId: admin.id, type: 'general', subject, content },
+        data: { senderId: me.id, receiverId: yana.id, type: 'general', subject, content },
       });
-      if (admin.telegramChatId && admin.email === YANA_EMAIL) {
-        await sendTelegramMessage(admin.telegramChatId, telegramText);
+      if (yana.telegramChatId) {
+        await sendTelegramMessage(yana.telegramChatId, telegramText);
       }
-    }));
+    }
 
     return res.status(201).json(created);
   } catch (err) {
