@@ -1,11 +1,12 @@
 // server/src/routes/accountRequests.ts
-// Peekviewer Team — "New account request" (sent from Inbox's New Message
-// form, only offered there when the recipient picked is Anna Bilous). Anna
-// is the sole recipient/processor — there's no receiverId param, this always
-// resolves to her account. Creates a structured AccountRequest (status +
-// comment thread, shown in her References tab) plus a companion InboxMessage
-// so it also lands in her regular Inbox — same split QAAgentReport/
-// SalaryRecord use elsewhere in this app.
+// Peekviewer Team — "New account request" (created from Inbox's "Requests
+// sent to Anna" view). Anna is the sole recipient — there's no receiverId
+// param, this always resolves to her account. Creates a structured
+// AccountRequest (status + comment thread, shown in the References tab)
+// plus a companion InboxMessage so it also lands in her regular Inbox —
+// same split QAAgentReport/SalaryRecord use elsewhere in this app. Anna and
+// Sandra Moore/Victoria Davis (role head/lead) can all set status and add
+// comments; everyone else with References visible sees it read-only.
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth, requirePeekviewerTeam } from '../middleware/auth';
@@ -118,12 +119,14 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/account-requests/:id — Anna only. Body: { status?, comment? }
+// PATCH /api/account-requests/:id — Anna, or Sandra Moore/Victoria Davis
+// (role head/lead), same as Anna. Body: { status?, comment? }
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     const anna = await getAnna();
-    if (!anna || me.id !== anna.id) return res.status(403).json({ error: 'Not permitted' });
+    const isHeadOrLead = me.role === 'head' || me.role === 'lead';
+    if (!anna || (me.id !== anna.id && !isHeadOrLead)) return res.status(403).json({ error: 'Not permitted' });
 
     const { status, comment } = req.body as { status?: string; comment?: string };
     if (status !== undefined && !STATUSES.includes(status as (typeof STATUSES)[number])) {

@@ -1,8 +1,8 @@
 // client/src/pages/References.tsx
 // Peekviewer Team — "References" tab. Queue of "New account request"s sent
-// to Anna Bilous (via Inbox's New Message form). Anna can set a status and
-// add comments; Sandra Moore/Victoria Davis (the only other two who keep
-// this tab) see the same queue read-only.
+// to Anna Bilous (created from Inbox's "Requests sent to Anna" view). Anna,
+// Sandra Moore, and Victoria Davis (the only other two who keep this tab)
+// can all set status and add comments.
 import React, { useEffect, useState } from 'react';
 import { BookOpen, Send } from 'lucide-react';
 import { format } from 'date-fns';
@@ -19,7 +19,9 @@ const STATUS_ORDER: AccountRequestStatus[] = ['open', 'in_progress', 'done'];
 
 export default function References() {
   const { user } = useAuth();
-  const isAnna = user?.email === 'anna_bilous@struktura.io';
+  // Anna processes her own queue; Sandra Moore (head) and Victoria Davis
+  // (lead) have the same status/comment rights she does.
+  const canManage = user?.email === 'anna_bilous@struktura.io' || user?.role === 'head' || user?.role === 'lead';
 
   const [requests, setRequests] = useState<AccountRequestData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +81,7 @@ export default function References() {
                     <p className="text-sm font-semibold text-slate-800">{r.requesterName}</p>
                     <p className="text-xs text-slate-400 mt-0.5">{format(new Date(r.createdAt), 'dd MMM yyyy, HH:mm')}</p>
                   </div>
-                  {isAnna ? (
+                  {canManage ? (
                     <div className="flex gap-1 shrink-0">
                       {STATUS_ORDER.map((s) => (
                         <button
@@ -114,7 +116,7 @@ export default function References() {
                   </div>
                 )}
 
-                {isAnna && (
+                {canManage && (
                   <div className="flex items-center gap-2">
                     <input
                       value={commentDrafts[r.id] || ''}
