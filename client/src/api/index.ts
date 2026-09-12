@@ -435,6 +435,9 @@ export interface BoostRequest {
 export const getBoostRequests = (includeCompleted?: boolean) =>
   api.get<BoostRequest[]>('/boost-requests', { params: { includeCompleted: includeCompleted ? 1 : undefined } }).then((r) => r.data);
 
+export const getMySentBoostRequests = () =>
+  api.get<BoostRequest[]>('/boost-requests/sent').then((r) => r.data);
+
 export const createBoostRequest = (data: { boostType: 'likes' | 'followers' | 'comments'; link: string; quantity: number }) =>
   api.post<BoostRequest>('/boost-requests', data).then((r) => r.data);
 

@@ -1,12 +1,13 @@
 // client/src/pages/Inbox.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mail, MailOpen, Send, X, Trash2, Reply, ChevronDown, ChevronUp, Megaphone, UserPlus } from 'lucide-react';
+import { Mail, MailOpen, Send, X, Trash2, Reply, ChevronDown, ChevronUp, Megaphone, UserPlus, Rocket, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage, deleteMessage,
   addQAAgentReportComment, addQAIssueComment,
   getUpdates, createUpdate, updateUpdate, deleteUpdate, markUpdateRead,
   getMySentAccountRequests, createAccountRequest, AccountRequestData, AccountRequestStatus,
+  getMySentBoostRequests, createBoostRequest, BoostRequest,
 } from '../api';
 import { InboxMessage, TeamUpdate, UpdateAttachment } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -29,6 +30,21 @@ const ACCOUNT_REQUEST_STATUS_META: Record<AccountRequestStatus, { label: string;
   in_progress: { label: 'In Progress', bg: 'rgba(245,158,11,0.14)',  text: '#b45309' },
   done:        { label: 'Done',        bg: 'rgba(161,249,110,0.28)', text: '#166534' },
 };
+
+const BOOST_STATUS_META: Record<BoostRequest['status'], { label: string; bg: string; text: string }> = {
+  in_progress: { label: 'In Progress', bg: 'rgba(245,158,11,0.14)',  text: '#b45309' },
+  complete:    { label: 'Complete',    bg: 'rgba(161,249,110,0.28)', text: '#166534' },
+};
+
+const BOOST_TYPE_LABELS: Record<BoostRequest['boostType'], string> = {
+  likes: 'Likes',
+  followers: 'Followers',
+  comments: 'Comments',
+};
+
+function boostLinkLabel(type: BoostRequest['boostType']): string {
+  return type === 'followers' ? 'Link (account)' : 'Link (post)';
+}
 
 const ROLE_TYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
   head: [
@@ -56,11 +72,12 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
   const isAdmin = role === 'head' || role === 'lead' || (activeTeam === 'peekviewer' && !!user?.peekviewerAdmin);
   const baseTypeOptions = ROLE_TYPE_OPTIONS[role] ?? ROLE_TYPE_OPTIONS.agent;
 
-  const [view, setView] = useState<'received' | 'sent' | 'updates' | 'requests-to-anna'>('received');
+  const [view, setView] = useState<'received' | 'sent' | 'updates' | 'requests-to-anna' | 'boost-requests'>('received');
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [sentMessages, setSentMessages] = useState<InboxMessage[]>([]);
   const [updates, setUpdates] = useState<TeamUpdate[]>([]);
   const [sentAccountRequests, setSentAccountRequests] = useState<AccountRequestData[]>([]);
+  const [sentBoostRequests, setSentBoostRequests] = useState<BoostRequest[]>([]);
   const [users, setUsers] = useState<InboxUser[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -74,13 +91,20 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
   const [replyingTo, setReplyingTo] = useState<InboxMessage | null>(null);
   const composeRef = useRef<HTMLDivElement>(null);
 
-  // "New account request" is only offered when the recipient picked is Anna
-  // Bilous, and only inside the Peekviewer space — everywhere else the type
-  // list is exactly the role-based one.
-  const annaId = users.find((u) => u.name === 'Anna Bilous')?.id;
-  const typeOptions = activeTeam === 'peekviewer' && recipientId && recipientId === annaId
-    ? [...baseTypeOptions, { value: 'account_request', label: 'New account request' }]
-    : baseTypeOptions;
+  // "Requests sent to Anna" — dedicated create form (account requests are no
+  // longer created via the generic New Message compose flow).
+  const [showAccountRequestForm, setShowAccountRequestForm] = useState(false);
+  const [accountRequestContent, setAccountRequestContent] = useState('');
+  const [accountRequestSaving, setAccountRequestSaving] = useState(false);
+  const [accountRequestError, setAccountRequestError] = useState('');
+
+  // "Boost Requests" — dedicated create form (same idea, for Yana).
+  const [showBoostRequestForm, setShowBoostRequestForm] = useState(false);
+  const [boostType, setBoostType] = useState<BoostRequest['boostType']>('likes');
+  const [boostLink, setBoostLink] = useState('');
+  const [boostQuantity, setBoostQuantity] = useState('');
+  const [boostSaving, setBoostSaving] = useState(false);
+  const [boostError, setBoostError] = useState('');
 
   const loadInbox = useCallback(async () => {
     try {
@@ -106,6 +130,11 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
     if (activeTeam === 'peekviewer') {
       try {
         setSentAccountRequests(await getMySentAccountRequests());
+      } catch (e) {
+        console.error(e);
+      }
+      try {
+        setSentBoostRequests(await getMySentBoostRequests());
       } catch (e) {
         console.error(e);
       }
@@ -153,19 +182,11 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
     setSending(true);
     setSendError('');
     try {
-      if (msgType === 'account_request') {
-        await createAccountRequest(content.trim());
-        // The server also creates a companion InboxMessage — simplest to just
-        // reload everything (Sent list + the Requests-sent-to-Anna list) rather
-        // than hand-construct both shapes locally.
-        await loadInbox();
-      } else {
-        const msg: InboxMessage = await sendMessage({
-          recipientId, type: msgType, content: content.trim(),
-          replyToId: replyingTo?.id,
-        });
-        setSentMessages((prev) => [msg, ...prev]);
-      }
+      const msg: InboxMessage = await sendMessage({
+        recipientId, type: msgType, content: content.trim(),
+        replyToId: replyingTo?.id,
+      });
+      setSentMessages((prev) => [msg, ...prev]);
       setComposing(false);
       setContent('');
       setReplyingTo(null);
@@ -173,6 +194,60 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
       setSendError(e?.response?.data?.error ?? 'Failed to send. Please try again.');
     } finally {
       setSending(false);
+    }
+  };
+
+  const openAccountRequestForm = () => {
+    setShowAccountRequestForm(true);
+    setAccountRequestContent('');
+    setAccountRequestError('');
+  };
+
+  const handleCreateAccountRequest = async () => {
+    if (!accountRequestContent.trim()) {
+      setAccountRequestError('Please describe the request.');
+      return;
+    }
+    setAccountRequestSaving(true);
+    setAccountRequestError('');
+    try {
+      await createAccountRequest(accountRequestContent.trim());
+      // The server also creates a companion InboxMessage — simplest to just
+      // reload everything (Sent list + the Requests-sent-to-Anna list) rather
+      // than hand-construct both shapes locally.
+      await loadInbox();
+      setShowAccountRequestForm(false);
+      setAccountRequestContent('');
+    } catch (e: any) {
+      setAccountRequestError(e?.response?.data?.error ?? 'Failed to send. Please try again.');
+    } finally {
+      setAccountRequestSaving(false);
+    }
+  };
+
+  const openBoostRequestForm = () => {
+    setShowBoostRequestForm(true);
+    setBoostType('likes');
+    setBoostLink('');
+    setBoostQuantity('');
+    setBoostError('');
+  };
+
+  const handleCreateBoostRequest = async () => {
+    if (!boostLink.trim() || !(Number(boostQuantity) > 0)) {
+      setBoostError('Please fill in the link and a valid quantity.');
+      return;
+    }
+    setBoostSaving(true);
+    setBoostError('');
+    try {
+      const created = await createBoostRequest({ boostType, link: boostLink.trim(), quantity: Number(boostQuantity) });
+      setSentBoostRequests((prev) => [created, ...prev]);
+      setShowBoostRequestForm(false);
+    } catch (e: any) {
+      setBoostError(e?.response?.data?.error ?? 'Failed to send. Please try again.');
+    } finally {
+      setBoostSaving(false);
     }
   };
 
@@ -282,11 +357,12 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
             {view === 'received' ? 'Messages sent to you'
               : view === 'sent' ? 'Messages you sent'
               : view === 'requests-to-anna' ? 'Account requests you sent to Anna'
+              : view === 'boost-requests' ? 'Your boost requests'
               : 'Team announcements'}
           </p>
         </div>
 
-        {view !== 'updates' && view !== 'requests-to-anna' && (
+        {view === 'received' || view === 'sent' ? (
           <button
             onClick={composing ? closeCompose : openCompose}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all shrink-0"
@@ -301,11 +377,120 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
               : <><Send size={13} strokeWidth={1.8} /> New Message</>
           }
           </button>
-        )}
+        ) : view === 'requests-to-anna' ? (
+          <button
+            onClick={showAccountRequestForm ? () => setShowAccountRequestForm(false) : openAccountRequestForm}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all shrink-0"
+            style={
+              showAccountRequestForm
+                ? { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.50)' }
+                : { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+            }
+          >
+            {showAccountRequestForm
+              ? <><X size={13} strokeWidth={2} /> Cancel</>
+              : <><Plus size={13} strokeWidth={2} /> Create new request</>}
+          </button>
+        ) : view === 'boost-requests' ? (
+          <button
+            onClick={showBoostRequestForm ? () => setShowBoostRequestForm(false) : openBoostRequestForm}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all shrink-0"
+            style={
+              showBoostRequestForm
+                ? { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.50)' }
+                : { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+            }
+          >
+            {showBoostRequestForm
+              ? <><X size={13} strokeWidth={2} /> Cancel</>
+              : <><Plus size={13} strokeWidth={2} /> Create new request</>}
+          </button>
+        ) : null}
       </div>
 
+      {/* Create-request panel — Requests sent to Anna */}
+      {view === 'requests-to-anna' && showAccountRequestForm && (
+        <div className="card space-y-3">
+          <p className="text-sm font-semibold text-slate-700">New account request</p>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Message</label>
+            <textarea
+              value={accountRequestContent}
+              onChange={(e) => setAccountRequestContent(e.target.value)}
+              rows={4}
+              placeholder="Describe the account request…"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700 resize-none"
+            />
+          </div>
+          {accountRequestError && <p className="text-xs text-red-500">{accountRequestError}</p>}
+          <div className="flex justify-end">
+            <button
+              onClick={handleCreateAccountRequest}
+              disabled={accountRequestSaving}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+              style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+            >
+              <Send size={13} strokeWidth={1.8} />
+              {accountRequestSaving ? 'Sending…' : 'Send'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Create-request panel — Boost Requests */}
+      {view === 'boost-requests' && showBoostRequestForm && (
+        <div className="card space-y-3">
+          <p className="text-sm font-semibold text-slate-700">New boost request</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Boost type</label>
+              <select
+                value={boostType}
+                onChange={(e) => setBoostType(e.target.value as BoostRequest['boostType'])}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
+              >
+                <option value="likes">Boost Likes</option>
+                <option value="followers">Boost Followers</option>
+                <option value="comments">Boost Comments</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Quantity</label>
+              <input
+                type="number"
+                min={1}
+                value={boostQuantity}
+                onChange={(e) => setBoostQuantity(e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">{boostLinkLabel(boostType)}</label>
+            <input
+              value={boostLink}
+              onChange={(e) => setBoostLink(e.target.value)}
+              placeholder="https://…"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
+            />
+          </div>
+          {boostError && <p className="text-xs text-red-500">{boostError}</p>}
+          <div className="flex justify-end">
+            <button
+              onClick={handleCreateBoostRequest}
+              disabled={boostSaving}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+              style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
+            >
+              <Send size={13} strokeWidth={1.8} />
+              {boostSaving ? 'Sending…' : 'Send'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Compose panel */}
-      {composing && view !== 'updates' && view !== 'requests-to-anna' && (
+      {composing && (view === 'received' || view === 'sent') && (
         <div ref={composeRef} className="card space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-700">
@@ -326,15 +511,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
               <label className="block text-xs text-slate-400 mb-1">To</label>
               <select
                 value={recipientId}
-                onChange={(e) => {
-                  const nextRecipientId = e.target.value;
-                  setRecipientId(nextRecipientId);
-                  // "New account request" only makes sense while Anna is picked —
-                  // drop back to a role-based type the moment she isn't.
-                  if (msgType === 'account_request' && nextRecipientId !== annaId) {
-                    setMsgType(baseTypeOptions[0]?.value ?? 'general');
-                  }
-                }}
+                onChange={(e) => setRecipientId(e.target.value)}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
               >
                 {users.map((u) => (
@@ -350,7 +527,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
                 onChange={(e) => setMsgType(e.target.value)}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
               >
-                {typeOptions.map((t) => (
+                {baseTypeOptions.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
@@ -386,15 +563,15 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
         </div>
       )}
 
-      {/* Received / Sent / Updates / Requests-sent-to-Anna filter */}
+      {/* Received / Sent / Updates / Requests-sent-to-Anna / Boost Requests filter */}
       <div className="flex gap-1 flex-wrap">
         {([
           ...(['received', 'sent', 'updates'] as const),
-          ...(activeTeam === 'peekviewer' ? (['requests-to-anna'] as const) : []),
+          ...(activeTeam === 'peekviewer' ? (['requests-to-anna', 'boost-requests'] as const) : []),
         ]).map((v) => (
           <button
             key={v}
-            onClick={() => { setView(v); if (v === 'updates' || v === 'requests-to-anna') closeCompose(); }}
+            onClick={() => { setView(v); if (v !== 'received' && v !== 'sent') closeCompose(); }}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium transition-all"
             style={
               view === v
@@ -405,8 +582,9 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
             {v === 'received' ? <Mail size={12} strokeWidth={1.8} />
               : v === 'updates' ? <Megaphone size={12} strokeWidth={1.8} />
               : v === 'requests-to-anna' ? <UserPlus size={12} strokeWidth={1.8} />
+              : v === 'boost-requests' ? <Rocket size={12} strokeWidth={1.8} />
               : null}
-            {v === 'received' ? 'Received' : v === 'sent' ? 'Sent' : v === 'updates' ? 'Updates' : 'Requests sent to Anna'}
+            {v === 'received' ? 'Received' : v === 'sent' ? 'Sent' : v === 'updates' ? 'Updates' : v === 'requests-to-anna' ? 'Requests sent to Anna' : 'Boost Requests'}
             {((v === 'received' && unreadCount > 0) || (v === 'updates' && updatesUnreadCount > 0)) && (
               <span
                 className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
@@ -465,6 +643,43 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
                         </div>
                       ))}
                     </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : view === 'boost-requests' ? (
+        loading ? (
+          <CardListSkeleton />
+        ) : sentBoostRequests.length === 0 ? (
+          <div className="py-14 text-center">
+            <Rocket size={40} strokeWidth={1} className="mx-auto mb-3 text-slate-300" />
+            <p className="text-sm text-slate-400">No boost requests sent yet</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {sentBoostRequests.map((r) => {
+              const statusMeta = BOOST_STATUS_META[r.status];
+              return (
+                <div key={r.id} className="card space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                        {BOOST_TYPE_LABELS[r.boostType]}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {format(new Date(r.createdAt), 'dd MMM yyyy')}
+                      </span>
+                    </div>
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0" style={{ backgroundColor: statusMeta.bg, color: statusMeta.text }}>
+                      {statusMeta.label}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-700 break-all">{r.link}</p>
+                  <p className="text-xs text-slate-400">Quantity: {r.quantity}</p>
+                  {r.completedByName && (
+                    <p className="text-xs text-slate-400">Completed by {r.completedByName}</p>
                   )}
                 </div>
               );

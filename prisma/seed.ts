@@ -17,15 +17,15 @@ const USERS: {
   name: string; email: string; role: string; peekDutyEligible?: boolean;
   team?: string; secondaryTeam?: string; peekviewerAdmin?: boolean; hiddenPeekviewerTabs?: string;
 }[] = [
-  { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead', secondaryTeam: 'peekviewer', peekviewerAdmin: true },
-  { name: 'Sandra Moore',      email: 'oleksandra_kraichynska@struktura.io', role: 'head', secondaryTeam: 'peekviewer', peekviewerAdmin: true },
+  { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead', secondaryTeam: 'peekviewer', peekviewerAdmin: true, hiddenPeekviewerTabs: 'boost' },
+  { name: 'Sandra Moore',      email: 'oleksandra_kraichynska@struktura.io', role: 'head', secondaryTeam: 'peekviewer', peekviewerAdmin: true, hiddenPeekviewerTabs: 'boost' },
   { name: 'Jonathan Lewis',    email: 'yan_horlatyi@struktura.io',           role: 'agent' },
   { name: 'Julia Manson',      email: 'tetiana_blazhievska@struktura.io',    role: 'agent', peekDutyEligible: true },
   { name: 'Nicky Brown',       email: 'myroslava_horshchar@struktura.io',    role: 'agent' },
-  { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler', team: 'peekviewer', hiddenPeekviewerTabs: 'references' },
-  { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler', team: 'peekviewer', hiddenPeekviewerTabs: 'references' },
-  { name: 'Tetyana Veremeyenko', email: 'tetiana_veremeenko@struktura.io',   role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'references' },
-  { name: 'Anna Bilous',       email: 'anna_bilous@struktura.io',            role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'schedule' },
+  { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost' },
+  { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost' },
+  { name: 'Tetyana Veremeyenko', email: 'tetiana_veremeenko@struktura.io',   role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost' },
+  { name: 'Anna Bilous',       email: 'anna_bilous@struktura.io',            role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'schedule,boost' },
   { name: 'Yana Fedorova',     email: 'yana_fedorova@struktura.io',          role: 'agent', team: 'peekviewer', peekviewerAdmin: true, hiddenPeekviewerTabs: 'references' },
 ];
 

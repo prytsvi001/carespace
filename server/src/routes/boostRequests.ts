@@ -43,6 +43,23 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/boost-requests/sent — the caller's own boost requests at every
+// status, regardless of admin status (used by Inbox's "Boost Requests" view
+// so an admin creating one from Inbox sees their own, not the full queue).
+router.get('/sent', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    const requests = await prisma.boostRequest.findMany({
+      where: { requesterId: me.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(requests);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch sent boost requests' });
+  }
+});
+
 // POST /api/boost-requests
 router.post('/', async (req: Request, res: Response) => {
   try {
