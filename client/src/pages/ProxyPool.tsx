@@ -1,12 +1,14 @@
 // client/src/pages/ProxyPool.tsx
 // Peekviewer Team — "Proxy" tab. peekviewerAdmin users bulk-add a pasted
 // list (one proxy per line); any team member can copy or claim one ("Taken
-// by me"). A taken proxy moves from "Available" to "Archive" — both lists
-// are visible to every Peekviewer team member.
+// by me") — taking just highlights the row so whoever claimed it can find it
+// again, it no longer moves the row anywhere. A separate "Archive" button
+// (any team member, no confirmation) is what moves a row to the "Archive"
+// list — both lists are visible to every Peekviewer team member.
 import React, { useEffect, useState } from 'react';
-import { Wifi, Plus, Copy, Check, Trash2, List } from 'lucide-react';
+import { Wifi, Plus, Copy, Check, Trash2, List, Archive } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getProxies, addProxiesBulk, takeProxy, deleteProxy, ProxyItem } from '../api';
+import { getProxies, addProxiesBulk, takeProxy, archiveProxy, deleteProxy, ProxyItem } from '../api';
 import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
 
 export default function ProxyPool() {
@@ -23,8 +25,8 @@ export default function ProxyPool() {
 
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); }, []);
 
-  const available = proxies.filter((p) => !p.takenById);
-  const archived = proxies.filter((p) => p.takenById);
+  const available = proxies.filter((p) => !p.archived);
+  const archived = proxies.filter((p) => p.archived);
   const displayed = view === 'available' ? available : archived;
 
   // Groups the (already newest-first sorted) displayed list into named blocks
@@ -105,6 +107,12 @@ export default function ProxyPool() {
     try { await deleteProxy(id); } catch (e) { console.error(e); load(); }
   };
 
+  // No confirmation — moves the row to Archive immediately.
+  const handleArchive = async (id: string) => {
+    setProxies((prev) => prev.map((p) => (p.id === id ? { ...p, archived: true } : p)));
+    try { await archiveProxy(id); } catch (e) { console.error(e); load(); }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -169,7 +177,17 @@ export default function ProxyPool() {
                 {header || 'Ungrouped'} <span className="font-normal normal-case">({items.length})</span>
               </p>
               {items.map((p) => (
-                <div key={p.id} className="card flex items-center justify-between gap-3" style={p.takenById ? { opacity: 0.55 } : undefined}>
+                <div
+                  key={p.id}
+                  className="card flex items-center justify-between gap-3"
+                  style={
+                    view === 'archive'
+                      ? { opacity: 0.55 }
+                      : p.takenById
+                        ? { backgroundColor: 'rgba(161,249,110,0.16)', border: '1px solid rgba(161,249,110,0.55)' }
+                        : undefined
+                  }
+                >
                   <div className="min-w-0">
                     <p className="text-sm font-mono text-slate-700 truncate">{p.value}</p>
                     {p.takenById ? (
@@ -187,13 +205,23 @@ export default function ProxyPool() {
                       {copiedId === p.id ? <Check size={13} strokeWidth={2} /> : <Copy size={13} strokeWidth={1.8} />}
                       {copiedId === p.id ? 'Copied' : 'Copy'}
                     </button>
-                    {!p.takenById && (
+                    {!p.takenById && view === 'available' && (
                       <button
                         onClick={() => setConfirmTakeId(p.id)}
                         className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
                         style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
                       >
                         Taken by me
+                      </button>
+                    )}
+                    {view === 'available' && (
+                      <button
+                        onClick={() => handleArchive(p.id)}
+                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                      >
+                        <Archive size={13} strokeWidth={1.8} />
+                        Archive
                       </button>
                     )}
                     {isAdmin && (
@@ -250,7 +278,7 @@ export default function ProxyPool() {
 
       <ConfirmDialog
         open={!!confirmTakeId}
-        message="Take this proxy? It will move to Archive and no longer be available to the team."
+        message="Take this proxy? It'll be marked as taken by you and highlighted for the team."
         onConfirm={() => { if (confirmTakeId) handleTake(confirmTakeId); }}
         onCancel={() => setConfirmTakeId(null)}
       />

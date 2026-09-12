@@ -102,7 +102,8 @@ router.post('/bulk', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/row-accounts/:id/take — any team member claims an available account
+// PATCH /api/row-accounts/:id/take — any team member claims an available
+// account. No longer archives it — it stays in the Available list, highlighted.
 router.patch('/:id/take', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
@@ -117,6 +118,24 @@ router.patch('/:id/take', async (req: Request, res: Response) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to take row account' });
+  }
+});
+
+// PATCH /api/row-accounts/:id/archive — any team member; no confirmation
+// step, moves the row straight to the Archive list.
+router.patch('/:id/archive', async (req: Request, res: Response) => {
+  try {
+    const result = await prisma.rowAccount.updateMany({
+      where: { id: req.params.id },
+      data: { archived: true },
+    });
+    if (result.count === 0) return res.status(404).json({ error: 'Not found' });
+
+    const updated = await prisma.rowAccount.findUnique({ where: { id: req.params.id } });
+    return res.json(updated);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to archive row account' });
   }
 });
 

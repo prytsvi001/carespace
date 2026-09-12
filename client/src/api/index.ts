@@ -463,6 +463,7 @@ export interface ProxyItem {
   takenById: string | null;
   takenByName: string | null;
   takenAt: string | null;
+  archived: boolean;
   createdAt: string;
 }
 
@@ -473,6 +474,9 @@ export const addProxiesBulk = (text: string, header?: string) =>
 
 export const takeProxy = (id: string) =>
   api.patch<ProxyItem>(`/proxies/${id}/take`).then((r) => r.data);
+
+export const archiveProxy = (id: string) =>
+  api.patch<ProxyItem>(`/proxies/${id}/archive`).then((r) => r.data);
 
 export const updateProxy = (id: string, data: { value?: string; header?: string }) =>
   api.patch<ProxyItem>(`/proxies/${id}`, data).then((r) => r.data);
@@ -496,6 +500,7 @@ export interface RowAccountItem {
   takenById: string | null;
   takenByName: string | null;
   takenAt: string | null;
+  archived: boolean;
   createdAt: string;
 }
 
@@ -506,6 +511,9 @@ export const addRowAccountsBulk = (text: string, mode: RowAccountMode, header?: 
 
 export const takeRowAccount = (id: string) =>
   api.patch<RowAccountItem>(`/row-accounts/${id}/take`).then((r) => r.data);
+
+export const archiveRowAccount = (id: string) =>
+  api.patch<RowAccountItem>(`/row-accounts/${id}/archive`).then((r) => r.data);
 
 export const updateRowAccount = (id: string, data: Partial<Pick<RowAccountItem, 'login' | 'password' | 'twoFaCode' | 'email' | 'emailPassword' | 'header'>>) =>
   api.patch<RowAccountItem>(`/row-accounts/${id}`, data).then((r) => r.data);

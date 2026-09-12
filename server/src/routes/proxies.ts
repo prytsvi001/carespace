@@ -1,9 +1,10 @@
 // server/src/routes/proxies.ts
 // Peekviewer Team — "Proxy" tab. peekviewerAdmin users (Yana Fedorova, Sandra
 // Moore, Victoria Davis) bulk-add a pasted list (one proxy per line); any
-// team member can claim one ("Taken by me"). A taken proxy isn't deleted —
-// it just moves from "Available" to "Archive" (takenById != null), both
-// visible to every Peekviewer team member.
+// team member can claim one ("Taken by me") — taking no longer archives it,
+// the row stays in "Available", highlighted. A separate "Archive" action
+// (also any team member, no confirmation) is what moves it to "Archive"
+// (archived: true), both lists visible to every Peekviewer team member.
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth, requirePeekviewerTeam } from '../middleware/auth';
@@ -51,7 +52,8 @@ router.post('/bulk', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/proxies/:id/take — any team member claims an available proxy
+// PATCH /api/proxies/:id/take — any team member claims an available proxy.
+// No longer archives it — it stays in the Available list, highlighted.
 router.patch('/:id/take', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
@@ -66,6 +68,24 @@ router.patch('/:id/take', async (req: Request, res: Response) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to take proxy' });
+  }
+});
+
+// PATCH /api/proxies/:id/archive — any team member; no confirmation step,
+// moves the row straight to the Archive list.
+router.patch('/:id/archive', async (req: Request, res: Response) => {
+  try {
+    const result = await prisma.proxy.updateMany({
+      where: { id: req.params.id },
+      data: { archived: true },
+    });
+    if (result.count === 0) return res.status(404).json({ error: 'Not found' });
+
+    const updated = await prisma.proxy.findUnique({ where: { id: req.params.id } });
+    return res.json(updated);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to archive proxy' });
   }
 });
 

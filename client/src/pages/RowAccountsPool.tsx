@@ -1,12 +1,14 @@
 // client/src/pages/RowAccountsPool.tsx
-// Peekviewer Team — "Row Accounts" tab. Same shared-pool/claim shape as
-// ProxyPool.tsx, but each item holds a full credential set, shown as one row
-// of copyable fields (nickname → password → [2FA] → email → email password),
-// and batches are grouped into named blocks by an optional Header.
+// Peekviewer Team — "Row Accounts" tab. Same shared-pool/claim/archive shape
+// as ProxyPool.tsx (taking just highlights the row; a separate Archive
+// button, no confirmation, is what moves it out), but each item holds a full
+// credential set, shown as one row of copyable fields (nickname → password →
+// [2FA] → email → email password), and batches are grouped into named
+// blocks by an optional Header.
 import React, { useEffect, useState } from 'react';
-import { KeyRound, Plus, Copy, Check, Trash2, List } from 'lucide-react';
+import { KeyRound, Plus, Copy, Check, Trash2, List, Archive } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getRowAccounts, addRowAccountsBulk, takeRowAccount, deleteRowAccount, RowAccountItem, RowAccountMode } from '../api';
+import { getRowAccounts, addRowAccountsBulk, takeRowAccount, archiveRowAccount, deleteRowAccount, RowAccountItem, RowAccountMode } from '../api';
 import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
 
 const FIELDS: { key: keyof RowAccountItem; label: string }[] = [
@@ -50,8 +52,8 @@ export default function RowAccountsPool() {
 
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); }, []);
 
-  const available = accounts.filter((a) => !a.takenById);
-  const archived = accounts.filter((a) => a.takenById);
+  const available = accounts.filter((a) => !a.archived);
+  const archived = accounts.filter((a) => a.archived);
   const displayed = view === 'available' ? available : archived;
 
   // Groups the (already newest-first sorted) displayed list into named blocks
@@ -133,6 +135,12 @@ export default function RowAccountsPool() {
     try { await deleteRowAccount(id); } catch (e) { console.error(e); load(); }
   };
 
+  // No confirmation — moves the row to Archive immediately.
+  const handleArchive = async (id: string) => {
+    setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, archived: true } : a)));
+    try { await archiveRowAccount(id); } catch (e) { console.error(e); load(); }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -197,7 +205,17 @@ export default function RowAccountsPool() {
                 {header || 'Ungrouped'} <span className="font-normal normal-case">({items.length})</span>
               </p>
               {items.map((a) => (
-                <div key={a.id} className="card" style={a.takenById ? { opacity: 0.55 } : undefined}>
+                <div
+                  key={a.id}
+                  className="card"
+                  style={
+                    view === 'archive'
+                      ? { opacity: 0.55 }
+                      : a.takenById
+                        ? { backgroundColor: 'rgba(161,249,110,0.16)', border: '1px solid rgba(161,249,110,0.55)' }
+                        : undefined
+                  }
+                >
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-4 flex-wrap min-w-0">
                       {FIELDS.map(({ key, label }) => (
@@ -211,13 +229,23 @@ export default function RowAccountsPool() {
                       ))}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {!a.takenById && (
+                      {!a.takenById && view === 'available' && (
                         <button
                           onClick={() => setConfirmTakeId(a.id)}
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:brightness-95"
                           style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
                         >
                           Taken by me
+                        </button>
+                      )}
+                      {view === 'available' && (
+                        <button
+                          onClick={() => handleArchive(a.id)}
+                          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                          style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                        >
+                          <Archive size={13} strokeWidth={1.8} />
+                          Archive
                         </button>
                       )}
                       {isAdmin && (
@@ -303,7 +331,7 @@ export default function RowAccountsPool() {
 
       <ConfirmDialog
         open={!!confirmTakeId}
-        message="Take this account? It will move to Archive and no longer be available to the team."
+        message="Take this account? It'll be marked as taken by you and highlighted for the team."
         onConfirm={() => { if (confirmTakeId) handleTake(confirmTakeId); }}
         onCancel={() => setConfirmTakeId(null)}
       />

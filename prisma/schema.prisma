@@ -609,11 +609,13 @@ model BoostRequest {
 
 // Peekviewer Team — "Proxy" tab. Shared pool: peekviewerAdmin users bulk-add
 // (one row per pasted line), any team member can claim ("Taken by me") and
-// copy the value. A taken proxy isn't deleted — it just moves from the
-// "Available" list to the "Archive" list (takenById != null), both visible to
-// everyone. `header` classifies a whole bulk-add batch (e.g. "Mobile", "USA",
-// "Ukraine") — the list groups proxies by this value into named blocks; "" is
-// the ungrouped/legacy bucket.
+// copy the value. Taking no longer archives it by itself — the row stays in
+// the "Available" list, highlighted, until whoever's using it (or anyone)
+// explicitly clicks Archive, which is what moves it to the "Archive" list
+// (archived: true; takenById is independent of this — a row can be taken
+// but not yet archived). `header` classifies a whole bulk-add batch (e.g.
+// "Mobile", "USA", "Ukraine") — the list groups proxies by this value into
+// named blocks; "" is the ungrouped/legacy bucket.
 model Proxy {
   id          String    @id @default(cuid())
   value       String
@@ -623,16 +625,19 @@ model Proxy {
   takenById   String?
   takenByName String?
   takenAt     DateTime?
+  archived    Boolean   @default(false)
   createdAt   DateTime  @default(now())
 
   @@index([takenById])
   @@index([header])
+  @@index([archived])
 }
 
-// Peekviewer Team — "Row Accounts" tab. Same shared-pool/claim shape as Proxy,
-// but holds a full credential set. Stored as plain text — internal-only app,
-// confirmed acceptable trust model (same as everywhere else in this app).
-// `header` groups a bulk-add batch into a named block, same as Proxy.header.
+// Peekviewer Team — "Row Accounts" tab. Same shared-pool/claim/archive shape
+// as Proxy, but holds a full credential set. Stored as plain text —
+// internal-only app, confirmed acceptable trust model (same as everywhere
+// else in this app). `header` groups a bulk-add batch into a named block,
+// same as Proxy.header.
 model RowAccount {
   id            String    @id @default(cuid())
   login         String
@@ -646,10 +651,12 @@ model RowAccount {
   takenById     String?
   takenByName   String?
   takenAt       DateTime?
+  archived      Boolean   @default(false)
   createdAt     DateTime  @default(now())
 
   @@index([takenById])
   @@index([header])
+  @@index([archived])
 }
 
 // Peekviewer Team — "Request Schedule" tab. The base day-to-agent assignment
