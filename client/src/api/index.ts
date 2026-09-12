@@ -725,6 +725,7 @@ export interface AccountRequestData {
   content: string;
   status: AccountRequestStatus;
   comments: AccountRequestComment[];
+  archived: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -738,7 +739,10 @@ export const getMySentAccountRequests = () => api.get<AccountRequestData[]>('/ac
 export const createAccountRequest = (content: string) =>
   api.post<AccountRequestData>('/account-requests', { content }).then((r) => r.data);
 
-export const updateAccountRequest = (id: string, data: { status?: AccountRequestStatus; comment?: string }) =>
+export const updateAccountRequest = (id: string, data: { status?: AccountRequestStatus; comment?: string; archived?: boolean }) =>
   api.patch<AccountRequestData>(`/account-requests/${id}`, data).then((r) => r.data);
+
+export const deleteAccountRequest = (id: string) =>
+  api.delete(`/account-requests/${id}`).then((r) => r.data);
 
 export default api;

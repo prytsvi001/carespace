@@ -703,10 +703,12 @@ model AccountRequest {
   content        String
   status         String   @default("open") // "open" | "in_progress" | "done"
   comments       String   @default("[]")   // JSON: [{id, authorName, text, createdAt}]
+  archived       Boolean  @default(false)
   inboxMessageId String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@index([requesterId])
   @@index([status])
+  @@index([archived])
 }

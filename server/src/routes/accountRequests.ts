@@ -33,9 +33,14 @@ function isAnnaOrAdmin(me: Express.User, annaId: string): boolean {
   return me.id === annaId || me.peekviewerAdmin === true;
 }
 
+// Same rights as Anna herself: set status, comment, archive, delete.
+function canManage(me: Express.User, annaId: string): boolean {
+  return me.id === annaId || me.role === 'head' || me.role === 'lead';
+}
+
 function formatRequest(r: {
   id: string; requesterId: string; requesterName: string; content: string; status: string;
-  comments: string; createdAt: Date; updatedAt: Date;
+  comments: string; archived: boolean; createdAt: Date; updatedAt: Date;
 }) {
   return {
     id: r.id,
@@ -44,6 +49,7 @@ function formatRequest(r: {
     content: r.content,
     status: r.status,
     comments: parseComments(r.comments),
+    archived: r.archived,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };
@@ -120,15 +126,14 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PATCH /api/account-requests/:id — Anna, or Sandra Moore/Victoria Davis
-// (role head/lead), same as Anna. Body: { status?, comment? }
+// (role head/lead), same as Anna. Body: { status?, comment?, archived? }
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     const anna = await getAnna();
-    const isHeadOrLead = me.role === 'head' || me.role === 'lead';
-    if (!anna || (me.id !== anna.id && !isHeadOrLead)) return res.status(403).json({ error: 'Not permitted' });
+    if (!anna || !canManage(me, anna.id)) return res.status(403).json({ error: 'Not permitted' });
 
-    const { status, comment } = req.body as { status?: string; comment?: string };
+    const { status, comment, archived } = req.body as { status?: string; comment?: string; archived?: boolean };
     if (status !== undefined && !STATUSES.includes(status as (typeof STATUSES)[number])) {
       return res.status(400).json({ error: 'status must be open, in_progress, or done' });
     }
@@ -145,6 +150,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       where: { id: req.params.id },
       data: {
         ...(status !== undefined ? { status } : {}),
+        ...(archived !== undefined ? { archived } : {}),
         comments: JSON.stringify(comments),
       },
     });
@@ -153,6 +159,21 @@ router.patch('/:id', async (req: Request, res: Response) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update account request' });
+  }
+});
+
+// DELETE /api/account-requests/:id — Anna, or Sandra Moore/Victoria Davis
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    const anna = await getAnna();
+    if (!anna || !canManage(me, anna.id)) return res.status(403).json({ error: 'Not permitted' });
+
+    await prisma.accountRequest.delete({ where: { id: req.params.id } }).catch(() => null);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete account request' });
   }
 });
 
