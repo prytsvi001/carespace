@@ -9,7 +9,7 @@
 // streamed through an <img>/<video> tag, while everything else falls back to
 // a clickable download link (AttachmentPreview below).
 import React, { useEffect, useRef, useState } from 'react';
-import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List, Bold } from 'lucide-react';
+import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List, Bold, ChevronRight, ChevronDown } from 'lucide-react';
 import { uploadPresigned } from '@vercel/blob/client';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -29,6 +29,18 @@ function formatFileSize(bytes: number): string {
 }
 
 interface FormData { title: string; content: string; attachments: OnboardingAttachment[]; parentId: string | null }
+
+// Cycled by a top-level block's position — purely decorative, gives each
+// block its own identity (a colored dot + left accent bar) without needing
+// admins to pick a color/icon per block themselves.
+const ACCENT_PALETTE = [
+  { dot: '#3b82f6', bg: 'rgba(59,130,246,0.07)', line: 'rgba(59,130,246,0.35)' },
+  { dot: '#22c55e', bg: 'rgba(34,197,94,0.07)', line: 'rgba(34,197,94,0.35)' },
+  { dot: '#8b5cf6', bg: 'rgba(139,92,246,0.07)', line: 'rgba(139,92,246,0.35)' },
+  { dot: '#f59e0b', bg: 'rgba(245,158,11,0.07)', line: 'rgba(245,158,11,0.35)' },
+  { dot: '#f43f5e', bg: 'rgba(244,63,94,0.07)', line: 'rgba(244,63,94,0.35)' },
+  { dot: '#14b8a6', bg: 'rgba(20,184,166,0.07)', line: 'rgba(20,184,166,0.35)' },
+];
 
 function AttachmentPreview({ a }: { a: OnboardingAttachment }) {
   const src = getOnboardingAttachmentUrl(a.url);
@@ -57,11 +69,27 @@ export default function Onboarding() {
 
   const [blocks, setBlocks] = useState<OnboardingBlockData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const load = async () => {
-    try { setBlocks(await getOnboardingBlocks()); } catch (e) { console.error(e); }
+    try {
+      const data = await getOnboardingBlocks();
+      setBlocks(data);
+      // Default to the first top-level block open so the page isn't just a
+      // flat list of closed rows on first visit.
+      const firstTop = data.find((b) => !b.parentId);
+      if (firstTop) setExpandedIds((prev) => (prev.size > 0 ? prev : new Set([firstTop.id])));
+    } catch (e) { console.error(e); }
   };
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); }, []);
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -157,6 +185,9 @@ export default function Onboarding() {
       } else {
         const created = await createOnboardingBlock(data);
         setBlocks((prev) => [...prev, created]);
+        if (!created.parentId) {
+          setExpandedIds((prev) => new Set(prev).add(created.id));
+        }
       }
       setShowForm(false);
     } catch {
@@ -240,98 +271,119 @@ export default function Onboarding() {
         <EmptyState icon={<GraduationCap size={32} strokeWidth={1.2} />} message="Nothing here yet." />
       ) : (
         <div className="space-y-3">
-          {topLevelBlocks.map((b) => {
+          {topLevelBlocks.map((b, i) => {
             const children = childrenOf(b.id);
+            const accent = ACCENT_PALETTE[i % ACCENT_PALETTE.length];
+            const isOpen = expandedIds.has(b.id);
             return (
-              <div key={b.id} id={blockAnchorId(b.id)} className="card space-y-3" style={{ scrollMarginTop: '80px' }}>
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-slate-800">{b.title}</h3>
-                  {b.isAuthor && (
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => openEdit(b)}
-                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
-                      >
-                        <Pencil size={13} strokeWidth={1.8} />
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => setConfirmDeleteId(b.id)}
-                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
-                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
-                      >
-                        <Trash2 size={13} strokeWidth={1.8} />
-                        Delete
-                      </button>
-                    </div>
+              <div
+                key={b.id}
+                id={blockAnchorId(b.id)}
+                className="card overflow-hidden"
+                style={{ scrollMarginTop: '80px', borderLeft: `3px solid ${accent.dot}`, padding: 0 }}
+              >
+                <button
+                  onClick={() => toggleExpanded(b.id)}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-slate-50"
+                  style={{ backgroundColor: isOpen ? accent.bg : undefined }}
+                >
+                  {isOpen
+                    ? <ChevronDown size={15} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+                    : <ChevronRight size={15} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />}
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accent.dot }} />
+                  <h3 className="text-sm font-semibold text-slate-800 flex-1 min-w-0 truncate">{b.title}</h3>
+                  {children.length > 0 && (
+                    <span
+                      className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
+                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+                    >
+                      {children.length} sub-block{children.length === 1 ? '' : 's'}
+                    </span>
                   )}
-                </div>
+                </button>
 
-                <div>
-                  <RichText text={b.content} className="text-sm text-slate-600 leading-relaxed" />
-                </div>
-
-                {b.attachments.length > 0 && (
-                  <div className="space-y-2">
-                    {b.attachments.map((a) => <AttachmentPreview key={a.url} a={a} />)}
-                  </div>
-                )}
-
-                {children.length > 0 && (
-                  <div className="space-y-2.5 pt-1">
-                    {children.map((c) => (
-                      <div
-                        key={c.id}
-                        id={blockAnchorId(c.id)}
-                        className="rounded-lg p-3 space-y-2.5"
-                        style={{ backgroundColor: 'rgba(14,14,14,0.02)', border: '1px solid rgba(14,14,14,0.07)', scrollMarginTop: '80px' }}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <h4 className="text-sm font-medium text-slate-700">{c.title}</h4>
-                          {c.isAuthor && (
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                onClick={() => openEdit(c)}
-                                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
-                                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
-                              >
-                                <Pencil size={12} strokeWidth={1.8} />
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => setConfirmDeleteId(c.id)}
-                                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
-                                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
-                              >
-                                <Trash2 size={12} strokeWidth={1.8} />
-                                Delete
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
-                        <RichText text={c.content} className="text-sm text-slate-600 leading-relaxed" />
-
-                        {c.attachments.length > 0 && (
-                          <div className="space-y-2">
-                            {c.attachments.map((a) => <AttachmentPreview key={a.url} a={a} />)}
-                          </div>
-                        )}
+                {isOpen && (
+                  <div className="px-4 pb-4 pt-1 space-y-3">
+                    {b.isAuthor && (
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => openEdit(b)}
+                          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                          style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                        >
+                          <Pencil size={13} strokeWidth={1.8} />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(b.id)}
+                          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                          style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+                        >
+                          <Trash2 size={13} strokeWidth={1.8} />
+                          Delete
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
 
-                {isAdmin && (
-                  <button
-                    onClick={() => openCreate(b.id)}
-                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
-                    style={{ backgroundColor: 'rgba(161,249,110,0.14)', color: 'rgba(14,14,14,0.65)' }}
-                  >
-                    <Plus size={12} strokeWidth={2} />
-                    Add sub-block
-                  </button>
+                    <RichText text={b.content} className="text-sm text-slate-600 leading-relaxed" />
+
+                    {b.attachments.length > 0 && (
+                      <div className="space-y-2">
+                        {b.attachments.map((a) => <AttachmentPreview key={a.url} a={a} />)}
+                      </div>
+                    )}
+
+                    {children.length > 0 && (
+                      <div className="pl-4 space-y-3" style={{ borderLeft: `2px solid ${accent.line}` }}>
+                        {children.map((c) => (
+                          <div key={c.id} id={blockAnchorId(c.id)} className="space-y-2" style={{ scrollMarginTop: '80px' }}>
+                            <div className="flex items-start justify-between gap-3">
+                              <h4 className="text-sm font-medium text-slate-700">{c.title}</h4>
+                              {c.isAuthor && (
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    onClick={() => openEdit(c)}
+                                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+                                    style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                                  >
+                                    <Pencil size={12} strokeWidth={1.8} />
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmDeleteId(c.id)}
+                                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                                    style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+                                  >
+                                    <Trash2 size={12} strokeWidth={1.8} />
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            <RichText text={c.content} className="text-sm text-slate-600 leading-relaxed" />
+
+                            {c.attachments.length > 0 && (
+                              <div className="space-y-2">
+                                {c.attachments.map((a) => <AttachmentPreview key={a.url} a={a} />)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {isAdmin && (
+                      <button
+                        onClick={() => openCreate(b.id)}
+                        className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
+                        style={{ backgroundColor: 'rgba(161,249,110,0.14)', color: 'rgba(14,14,14,0.65)' }}
+                      >
+                        <Plus size={12} strokeWidth={2} />
+                        Add sub-block
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             );
