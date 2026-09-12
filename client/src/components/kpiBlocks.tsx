@@ -79,6 +79,21 @@ function DutiesAccordion({ content }: { content: string }) {
 }
 
 // ─── Графік роботи — week strip + callouts ──────────────────────────────
+const DAY_ABBREVIATIONS: Record<string, string> = {
+  'понеділок': 'пн',
+  'вівторок': 'вт',
+  'середа': 'ср',
+  'четвер': 'чт',
+  "п'ятниця": 'пт',
+  'субота': 'сб',
+  'неділя': 'нд',
+};
+
+function dayAbbreviation(day: string): string {
+  const normalized = day.toLowerCase().replace(/[’‘]/g, "'");
+  return DAY_ABBREVIATIONS[normalized] || day.slice(0, 2);
+}
+
 function dayStatusStyle(status: string): { bg: string; text: string; border?: string } {
   const s = status.toLowerCase();
   if (s.includes('обов')) return { bg: '#A1F96E', text: '#0E0E0E' };
@@ -122,7 +137,7 @@ function ScheduleView({ content }: { content: string }) {
                 style={{ backgroundColor: style.bg, color: style.text, border: style.border }}
                 title={status}
               >
-                {day.slice(0, 2)}
+                {dayAbbreviation(day)}
               </div>
               <span className="text-[10px]" style={{ color: 'rgba(14,14,14,0.4)' }}>{day}</span>
             </div>
