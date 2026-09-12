@@ -683,11 +683,15 @@ model OnboardingBlock {
   title       String
   content     String
   attachments String    @default("[]") // JSON: [{url, pathname, name, contentType, size}]
+  parentId    String?   // set on a sub-block — the top-level block it's nested under. One level of nesting only: a block that has a parentId may not itself be used as a parent (enforced in onboarding.ts, not here).
+  parent      OnboardingBlock?  @relation("OnboardingBlockChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children    OnboardingBlock[] @relation("OnboardingBlockChildren")
   editedAt    DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([authorId])
+  @@index([parentId])
 }
 
 // Peekviewer Team — "New account request" (sent via Inbox's New Message

@@ -63,7 +63,7 @@ function isAdmin(user: Express.User): boolean {
 
 function formatBlock(b: {
   id: string; authorId: string | null; authorName: string; title: string; content: string;
-  attachments: string; editedAt: Date | null; createdAt: Date; updatedAt: Date;
+  attachments: string; parentId: string | null; editedAt: Date | null; createdAt: Date; updatedAt: Date;
 }, viewerId: string) {
   return {
     id: b.id,
@@ -72,6 +72,7 @@ function formatBlock(b: {
     title: b.title,
     content: b.content,
     attachments: parseAttachments(b.attachments),
+    parentId: b.parentId,
     editedAt: b.editedAt,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
@@ -79,7 +80,9 @@ function formatBlock(b: {
   };
 }
 
-// GET /api/onboarding — everyone on the team, oldest first (reading order)
+// GET /api/onboarding — everyone on the team, oldest first (reading order).
+// Flat list, including parentId — the client builds the two-level tree
+// (top-level blocks + their sub-blocks) itself.
 router.get('/', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
@@ -91,15 +94,25 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/onboarding — admin only
+// POST /api/onboarding — admin only. Body may include parentId to create a
+// sub-block nested under an existing top-level block — that target block
+// must itself have no parent (one level of nesting only).
 router.post('/', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
 
-    const { title, content, attachments } = req.body as { title?: string; content?: string; attachments?: unknown };
+    const { title, content, attachments, parentId } = req.body as {
+      title?: string; content?: string; attachments?: unknown; parentId?: string | null;
+    };
     if (!title?.trim() || !content?.trim()) {
       return res.status(400).json({ error: 'title and content are required' });
+    }
+
+    if (parentId) {
+      const parent = await prisma.onboardingBlock.findUnique({ where: { id: parentId } });
+      if (!parent) return res.status(400).json({ error: 'Parent block not found' });
+      if (parent.parentId) return res.status(400).json({ error: 'Only one level of sub-blocks is supported' });
     }
 
     const block = await prisma.onboardingBlock.create({
@@ -109,6 +122,7 @@ router.post('/', async (req: Request, res: Response) => {
         title: title.trim(),
         content: content.trim(),
         attachments: JSON.stringify(sanitizeAttachments(attachments)),
+        parentId: parentId || null,
       },
     });
 
@@ -196,15 +210,29 @@ router.delete('/attachments', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/onboarding/:id — author only
+// PUT /api/onboarding/:id — author only. parentId is optional; when present
+// it's validated the same way as on create (target must be a top-level
+// block), and a block that already has children can't be given a parent
+// itself (still just one level of nesting).
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
 
-    const { title, content, attachments } = req.body as { title?: string; content?: string; attachments?: unknown };
+    const { title, content, attachments, parentId } = req.body as {
+      title?: string; content?: string; attachments?: unknown; parentId?: string | null;
+    };
     if (!title?.trim() || !content?.trim()) {
       return res.status(400).json({ error: 'title and content are required' });
+    }
+
+    if (parentId) {
+      if (parentId === req.params.id) return res.status(400).json({ error: "A block can't be its own parent" });
+      const parent = await prisma.onboardingBlock.findUnique({ where: { id: parentId } });
+      if (!parent) return res.status(400).json({ error: 'Parent block not found' });
+      if (parent.parentId) return res.status(400).json({ error: 'Only one level of sub-blocks is supported' });
+      const hasChildren = await prisma.onboardingBlock.count({ where: { parentId: req.params.id } });
+      if (hasChildren > 0) return res.status(400).json({ error: 'A block with sub-blocks of its own cannot become a sub-block' });
     }
 
     const result = await prisma.onboardingBlock.updateMany({
@@ -213,6 +241,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         title: title.trim(),
         content: content.trim(),
         attachments: JSON.stringify(sanitizeAttachments(attachments)),
+        ...(parentId !== undefined ? { parentId: parentId || null } : {}),
         editedAt: new Date(),
       },
     });

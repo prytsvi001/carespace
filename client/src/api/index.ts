@@ -695,6 +695,7 @@ export interface OnboardingBlockData {
   title: string;
   content: string;
   attachments: OnboardingAttachment[];
+  parentId: string | null;
   editedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -703,10 +704,10 @@ export interface OnboardingBlockData {
 
 export const getOnboardingBlocks = () => api.get<OnboardingBlockData[]>('/onboarding').then((r) => r.data);
 
-export const createOnboardingBlock = (data: { title: string; content: string; attachments?: OnboardingAttachment[] }) =>
+export const createOnboardingBlock = (data: { title: string; content: string; attachments?: OnboardingAttachment[]; parentId?: string | null }) =>
   api.post<OnboardingBlockData>('/onboarding', data).then((r) => r.data);
 
-export const updateOnboardingBlock = (id: string, data: { title: string; content: string; attachments?: OnboardingAttachment[] }) =>
+export const updateOnboardingBlock = (id: string, data: { title: string; content: string; attachments?: OnboardingAttachment[]; parentId?: string | null }) =>
   api.put<OnboardingBlockData>(`/onboarding/${id}`, data).then((r) => r.data);
 
 export const deleteOnboardingBlock = (id: string) =>

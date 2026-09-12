@@ -28,7 +28,7 @@ function formatFileSize(bytes: number): string {
   return `${n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
 }
 
-interface FormData { title: string; content: string; attachments: OnboardingAttachment[] }
+interface FormData { title: string; content: string; attachments: OnboardingAttachment[]; parentId: string | null }
 
 function AttachmentPreview({ a }: { a: OnboardingAttachment }) {
   const src = getOnboardingAttachmentUrl(a.url);
@@ -65,7 +65,7 @@ export default function Onboarding() {
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<FormData>({ title: '', content: '', attachments: [] });
+  const [form, setForm] = useState<FormData>({ title: '', content: '', attachments: [], parentId: null });
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -74,16 +74,18 @@ export default function Onboarding() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
-  const openCreate = () => {
+  // parentId set means "create a sub-block under this top-level block" —
+  // reached via that block's own "+ Add sub-block" button.
+  const openCreate = (parentId: string | null = null) => {
     setEditingId(null);
-    setForm({ title: '', content: '', attachments: [] });
+    setForm({ title: '', content: '', attachments: [], parentId });
     setFormError(''); setUploadError('');
     setShowForm(true);
   };
 
   const openEdit = (b: OnboardingBlockData) => {
     setEditingId(b.id);
-    setForm({ title: b.title, content: b.content, attachments: b.attachments });
+    setForm({ title: b.title, content: b.content, attachments: b.attachments, parentId: b.parentId });
     setFormError(''); setUploadError('');
     setShowForm(true);
   };
@@ -148,7 +150,7 @@ export default function Onboarding() {
     setSubmitting(true);
     setFormError('');
     try {
-      const data = { title: form.title.trim(), content: form.content.trim(), attachments: form.attachments };
+      const data = { title: form.title.trim(), content: form.content.trim(), attachments: form.attachments, parentId: form.parentId };
       if (editingId) {
         const updated = await updateOnboardingBlock(editingId, data);
         setBlocks((prev) => prev.map((b) => (b.id === editingId ? updated : b)));
@@ -165,7 +167,9 @@ export default function Onboarding() {
   };
 
   const handleDelete = async (id: string) => {
-    setBlocks((prev) => prev.filter((b) => b.id !== id));
+    // Deleting a top-level block cascades to its sub-blocks server-side —
+    // drop them from local state too so the optimistic update matches.
+    setBlocks((prev) => prev.filter((b) => b.id !== id && b.parentId !== id));
     try { await deleteOnboardingBlock(id); } catch (e) { console.error(e); load(); }
     setConfirmDeleteId(null);
   };
@@ -175,6 +179,12 @@ export default function Onboarding() {
     document.getElementById(blockAnchorId(id))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  // Two-level tree: top-level blocks (e.g. "Мультилогін") each with their own
+  // sub-blocks (e.g. "Знайомство з додатком", "Робота з додатком"). Quick
+  // navigation only lists top-level blocks.
+  const topLevelBlocks = blocks.filter((b) => !b.parentId);
+  const childrenOf = (id: string) => blocks.filter((b) => b.parentId === id);
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -183,21 +193,21 @@ export default function Onboarding() {
           <p className="text-sm text-slate-400">Product info and how-to material</p>
         </div>
         {isAdmin && (
-          <button onClick={openCreate} className="btn-accent text-sm flex items-center gap-1.5 shrink-0">
+          <button onClick={() => openCreate()} className="btn-accent text-sm flex items-center gap-1.5 shrink-0">
             <Plus size={14} strokeWidth={2} />
             Create New Block
           </button>
         )}
       </div>
 
-      {!loading && blocks.length > 1 && (
+      {!loading && topLevelBlocks.length > 1 && (
         <div className="card p-3">
           <p className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
             <List size={12} strokeWidth={2} />
             Quick navigation
           </p>
           <div className="flex flex-col">
-            {blocks.map((b, i) => (
+            {topLevelBlocks.map((b, i) => (
               <button
                 key={b.id}
                 onClick={() => scrollToBlock(b.id)}
@@ -214,51 +224,115 @@ export default function Onboarding() {
 
       {loading ? (
         <CardListSkeleton />
-      ) : blocks.length === 0 ? (
+      ) : topLevelBlocks.length === 0 ? (
         <EmptyState icon={<GraduationCap size={32} strokeWidth={1.2} />} message="Nothing here yet." />
       ) : (
         <div className="space-y-3">
-          {blocks.map((b) => (
-            <div key={b.id} id={blockAnchorId(b.id)} className="card space-y-3" style={{ scrollMarginTop: '80px' }}>
-              <div className="flex items-start justify-between gap-3">
-                <h3 className="text-sm font-semibold text-slate-800">{b.title}</h3>
-                {b.isAuthor && (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => openEdit(b)}
-                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
-                    >
-                      <Pencil size={13} strokeWidth={1.8} />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(b.id)}
-                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
-                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
-                    >
-                      <Trash2 size={13} strokeWidth={1.8} />
-                      Delete
-                    </button>
+          {topLevelBlocks.map((b) => {
+            const children = childrenOf(b.id);
+            return (
+              <div key={b.id} id={blockAnchorId(b.id)} className="card space-y-3" style={{ scrollMarginTop: '80px' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-800">{b.title}</h3>
+                  {b.isAuthor && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => openEdit(b)}
+                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                      >
+                        <Pencil size={13} strokeWidth={1.8} />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(b.id)}
+                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+                      >
+                        <Trash2 size={13} strokeWidth={1.8} />
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <RichText text={b.content} className="text-sm text-slate-600 leading-relaxed" />
+                </div>
+
+                {b.attachments.length > 0 && (
+                  <div className="space-y-2">
+                    {b.attachments.map((a) => <AttachmentPreview key={a.url} a={a} />)}
                   </div>
                 )}
-              </div>
 
-              <div>
-                <RichText text={b.content} className="text-sm text-slate-600 leading-relaxed" />
-              </div>
+                {children.length > 0 && (
+                  <div className="space-y-2.5 pt-1">
+                    {children.map((c) => (
+                      <div
+                        key={c.id}
+                        id={blockAnchorId(c.id)}
+                        className="rounded-lg p-3 space-y-2.5"
+                        style={{ backgroundColor: 'rgba(14,14,14,0.02)', border: '1px solid rgba(14,14,14,0.07)', scrollMarginTop: '80px' }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <h4 className="text-sm font-medium text-slate-700">{c.title}</h4>
+                          {c.isAuthor && (
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => openEdit(c)}
+                                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+                                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                              >
+                                <Pencil size={12} strokeWidth={1.8} />
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteId(c.id)}
+                                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+                              >
+                                <Trash2 size={12} strokeWidth={1.8} />
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
 
-              {b.attachments.length > 0 && (
-                <div className="space-y-2">
-                  {b.attachments.map((a) => <AttachmentPreview key={a.url} a={a} />)}
-                </div>
-              )}
-            </div>
-          ))}
+                        <RichText text={c.content} className="text-sm text-slate-600 leading-relaxed" />
+
+                        {c.attachments.length > 0 && (
+                          <div className="space-y-2">
+                            {c.attachments.map((a) => <AttachmentPreview key={a.url} a={a} />)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {isAdmin && (
+                  <button
+                    onClick={() => openCreate(b.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
+                    style={{ backgroundColor: 'rgba(161,249,110,0.14)', color: 'rgba(14,14,14,0.65)' }}
+                  >
+                    <Plus size={12} strokeWidth={2} />
+                    Add sub-block
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      <Modal open={showForm} onClose={() => setShowForm(false)} title={editingId ? 'Edit Block' : 'Create New Block'} maxWidth="max-w-2xl">
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={editingId ? (form.parentId ? 'Edit Sub-block' : 'Edit Block') : (form.parentId ? 'Add Sub-block' : 'Create New Block')}
+        maxWidth="max-w-2xl"
+      >
         <div className="space-y-4">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Title</label>
