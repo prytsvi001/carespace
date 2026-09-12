@@ -94,12 +94,13 @@ router.post('/', async (req: Request, res: Response) => {
 
     const subject = `New Boost request — ${boostType}`;
     const content = `${me.name} requested a ${boostType} boost (${qty}): ${link.trim()}`;
+    const telegramText = `Вам залишили новий boost request від ${me.name} (${boostType}, ${qty}). Перегляньте деталі в CareSpace: ${CARESPACE_URL}`;
     await Promise.all(admins.map(async (admin) => {
       await prisma.inboxMessage.create({
         data: { senderId: me.id, receiverId: admin.id, type: 'general', subject, content },
       });
       if (admin.telegramChatId) {
-        await sendTelegramMessage(admin.telegramChatId, `${content} ${CARESPACE_URL}`);
+        await sendTelegramMessage(admin.telegramChatId, telegramText);
       }
     }));
 
@@ -110,19 +111,36 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/boost-requests/:id/complete — admin only
+// PATCH /api/boost-requests/:id/complete — admin only. Notifies the
+// requester's Telegram exactly once, on the transition into "complete" —
+// re-completing an already-complete request (e.g. a double-click) is a
+// no-op rather than a duplicate notification.
 router.patch('/:id/complete', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not permitted' });
 
-    const result = await prisma.boostRequest.updateMany({
-      where: { id: req.params.id },
-      data: { status: 'complete', completedAt: new Date(), completedByName: me.name },
-    });
-    if (result.count === 0) return res.status(404).json({ error: 'Not found' });
+    const existing = await prisma.boostRequest.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
 
-    const updated = await prisma.boostRequest.findUnique({ where: { id: req.params.id } });
+    const alreadyComplete = existing.status === 'complete';
+    const updated = alreadyComplete
+      ? existing
+      : await prisma.boostRequest.update({
+          where: { id: req.params.id },
+          data: { status: 'complete', completedAt: new Date(), completedByName: me.name },
+        });
+
+    if (!alreadyComplete && existing.requesterId !== me.id) {
+      const requester = await prisma.user.findUnique({ where: { id: existing.requesterId } });
+      if (requester?.telegramChatId) {
+        await sendTelegramMessage(
+          requester.telegramChatId,
+          `Ваш boost request вже виконаний. Перегляньте деталі в CareSpace: ${CARESPACE_URL}`
+        );
+      }
+    }
+
     return res.json(updated);
   } catch (err) {
     console.error(err);

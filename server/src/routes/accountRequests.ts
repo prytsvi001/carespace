@@ -110,7 +110,10 @@ router.post('/', async (req: Request, res: Response) => {
       });
       messageId = message.id;
       if (anna.telegramChatId) {
-        await sendTelegramMessage(anna.telegramChatId, `New account request from ${me.name}: ${content.trim().slice(0, 120)} ${CARESPACE_URL}`);
+        await sendTelegramMessage(
+          anna.telegramChatId,
+          `Вам залишили новий запит на створення акаунту від ${me.name}. Перегляньте деталі в CareSpace: ${CARESPACE_URL}`
+        );
       }
     }
 
@@ -154,6 +157,18 @@ router.patch('/:id', async (req: Request, res: Response) => {
         comments: JSON.stringify(comments),
       },
     });
+
+    // Notify the requester exactly once, on the transition into "done" —
+    // not on every subsequent comment/archive edit to an already-done request.
+    if (status === 'done' && existing.status !== 'done' && existing.requesterId !== me.id) {
+      const requester = await prisma.user.findUnique({ where: { id: existing.requesterId } });
+      if (requester?.telegramChatId) {
+        await sendTelegramMessage(
+          requester.telegramChatId,
+          `Ваш запит на створення акаунту (New Account Request) вже виконаний. Перегляньте деталі в CareSpace: ${CARESPACE_URL}`
+        );
+      }
+    }
 
     res.json(formatRequest(updated));
   } catch (err) {
