@@ -7,8 +7,9 @@ import {
   addQAAgentReportComment, addQAIssueComment,
   getUpdates, createUpdate, updateUpdate, deleteUpdate, markUpdateRead,
   getMySentAccountRequests, createAccountRequest, AccountRequestData, AccountRequestStatus,
-  getMySentBoostRequests, createBoostRequest, BoostRequest,
+  getMySentBoostRequests, createBoostRequestsBulk, BoostRequest,
 } from '../api';
+import { BoostRequestRow, BoostRequestRowsEditor, emptyBoostRequestRow, cleanBoostRequestRows } from '../components/boostRequestRows';
 import { InboxMessage, TeamUpdate, UpdateAttachment } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { QAReportPreview } from '../components/qaReport';
@@ -41,10 +42,6 @@ const BOOST_TYPE_LABELS: Record<BoostRequest['boostType'], string> = {
   followers: 'Followers',
   comments: 'Comments',
 };
-
-function boostLinkLabel(type: BoostRequest['boostType']): string {
-  return type === 'followers' ? 'Link (account)' : 'Link (post)';
-}
 
 const ROLE_TYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
   head: [
@@ -100,9 +97,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
 
   // "Boost Requests" — dedicated create form (same idea, for Yana).
   const [showBoostRequestForm, setShowBoostRequestForm] = useState(false);
-  const [boostType, setBoostType] = useState<BoostRequest['boostType']>('likes');
-  const [boostLink, setBoostLink] = useState('');
-  const [boostQuantity, setBoostQuantity] = useState('');
+  const [boostRows, setBoostRows] = useState<BoostRequestRow[]>([emptyBoostRequestRow()]);
   const [boostSaving, setBoostSaving] = useState(false);
   const [boostError, setBoostError] = useState('');
 
@@ -227,22 +222,21 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
 
   const openBoostRequestForm = () => {
     setShowBoostRequestForm(true);
-    setBoostType('likes');
-    setBoostLink('');
-    setBoostQuantity('');
+    setBoostRows([emptyBoostRequestRow()]);
     setBoostError('');
   };
 
   const handleCreateBoostRequest = async () => {
-    if (!boostLink.trim() || !(Number(boostQuantity) > 0)) {
-      setBoostError('Please fill in the link and a valid quantity.');
+    const cleaned = cleanBoostRequestRows(boostRows);
+    if (!cleaned) {
+      setBoostError('Please fill in a link and a valid quantity for every row.');
       return;
     }
     setBoostSaving(true);
     setBoostError('');
     try {
-      const created = await createBoostRequest({ boostType, link: boostLink.trim(), quantity: Number(boostQuantity) });
-      setSentBoostRequests((prev) => [created, ...prev]);
+      const created = await createBoostRequestsBulk(cleaned);
+      setSentBoostRequests((prev) => [...created, ...prev]);
       setShowBoostRequestForm(false);
     } catch (e: any) {
       setBoostError(e?.response?.data?.error ?? 'Failed to send. Please try again.');
@@ -440,40 +434,8 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
       {/* Create-request panel — Boost Requests */}
       {view === 'boost-requests' && showBoostRequestForm && (
         <div className="card space-y-3">
-          <p className="text-sm font-semibold text-slate-700">New boost request</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Boost type</label>
-              <select
-                value={boostType}
-                onChange={(e) => setBoostType(e.target.value as BoostRequest['boostType'])}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
-              >
-                <option value="likes">Boost Likes</option>
-                <option value="followers">Boost Followers</option>
-                <option value="comments">Boost Comments</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Quantity</label>
-              <input
-                type="number"
-                min={1}
-                value={boostQuantity}
-                onChange={(e) => setBoostQuantity(e.target.value)}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">{boostLinkLabel(boostType)}</label>
-            <input
-              value={boostLink}
-              onChange={(e) => setBoostLink(e.target.value)}
-              placeholder="https://…"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
-            />
-          </div>
+          <p className="text-sm font-semibold text-slate-700">New boost request{boostRows.length > 1 ? 's' : ''}</p>
+          <BoostRequestRowsEditor rows={boostRows} onChange={setBoostRows} />
           {boostError && <p className="text-xs text-red-500">{boostError}</p>}
           <div className="flex justify-end">
             <button
@@ -483,7 +445,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
               style={{ backgroundColor: '#A1F96E', color: '#0E0E0E' }}
             >
               <Send size={13} strokeWidth={1.8} />
-              {boostSaving ? 'Sending…' : 'Send'}
+              {boostSaving ? 'Sending…' : `Send ${boostRows.length} boost request${boostRows.length === 1 ? '' : 's'}`}
             </button>
           </div>
         </div>

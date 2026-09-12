@@ -7,10 +7,11 @@ import { Rocket, Plus, Pencil, Trash2, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
 import {
-  getBoostRequests, createBoostRequest, completeBoostRequest, updateBoostRequest, deleteBoostRequest,
+  getBoostRequests, createBoostRequestsBulk, completeBoostRequest, updateBoostRequest, deleteBoostRequest,
   BoostRequest,
 } from '../api';
 import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
+import { BoostRequestRow, BoostRequestRowsEditor, emptyBoostRequestRow, cleanBoostRequestRows } from '../components/boostRequestRows';
 
 type BoostType = 'likes' | 'followers' | 'comments';
 
@@ -48,29 +49,32 @@ export default function BoostRequests() {
 
   // ── Create modal ──────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
-  const [boostType, setBoostType] = useState<BoostType>('likes');
-  const [link, setLink] = useState('');
-  const [quantity, setQuantity] = useState('');
+  const [rows, setRows] = useState<BoostRequestRow[]>([emptyBoostRequestRow()]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
   const openCreate = () => {
-    setBoostType('likes'); setLink(''); setQuantity(''); setCreateError('');
+    setRows([emptyBoostRequestRow()]);
+    setCreateError('');
     setShowCreate(true);
   };
 
-  const canSend = link.trim() && Number(quantity) > 0;
+  const cleanedRows = cleanBoostRequestRows(rows);
+  const canSend = !!cleanedRows;
 
   const handleCreate = async () => {
-    if (!canSend) return;
+    if (!cleanedRows) {
+      setCreateError('Please fill in a link and a valid quantity for every row.');
+      return;
+    }
     setCreating(true);
     setCreateError('');
     try {
-      const created = await createBoostRequest({ boostType, link: link.trim(), quantity: Number(quantity) });
-      setRequests((prev) => [created, ...prev]);
+      const created = await createBoostRequestsBulk(cleanedRows);
+      setRequests((prev) => [...created, ...prev]);
       setShowCreate(false);
     } catch (e: any) {
-      setCreateError(e?.response?.data?.error ?? 'Failed to send request.');
+      setCreateError(e?.response?.data?.error ?? 'Failed to send requests.');
     } finally {
       setCreating(false);
     }
@@ -235,32 +239,13 @@ export default function BoostRequests() {
         </div>
       )}
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create New Request">
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create New Request" maxWidth="max-w-xl">
         <div className="space-y-3">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Boost type</label>
-            <select
-              className="input text-sm w-full"
-              value={boostType}
-              onChange={(e) => setBoostType(e.target.value as BoostType)}
-            >
-              <option value="likes">Boost Likes</option>
-              <option value="followers">Boost Followers</option>
-              <option value="comments">Boost Comments</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">{linkLabel(boostType)}</label>
-            <input className="input text-sm w-full" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Quantity</label>
-            <input className="input text-sm w-full" type="number" min={1} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-          </div>
+          <BoostRequestRowsEditor rows={rows} onChange={setRows} />
           {createError && <p className="text-xs text-red-500">{createError}</p>}
           <div className="flex justify-end">
             <button className="btn-accent text-sm" onClick={handleCreate} disabled={!canSend || creating}>
-              {creating ? 'Sending…' : 'Send boost request'}
+              {creating ? 'Sending…' : `Send ${rows.length} boost request${rows.length === 1 ? '' : 's'}`}
             </button>
           </div>
         </div>

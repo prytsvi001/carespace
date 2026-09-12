@@ -441,6 +441,9 @@ export const getMySentBoostRequests = () =>
 export const createBoostRequest = (data: { boostType: 'likes' | 'followers' | 'comments'; link: string; quantity: number }) =>
   api.post<BoostRequest>('/boost-requests', data).then((r) => r.data);
 
+export const createBoostRequestsBulk = (items: { boostType: 'likes' | 'followers' | 'comments'; link: string; quantity: number }[]) =>
+  api.post<BoostRequest[]>('/boost-requests/bulk', { items }).then((r) => r.data);
+
 export const completeBoostRequest = (id: string) =>
   api.patch<BoostRequest>(`/boost-requests/${id}/complete`).then((r) => r.data);
 

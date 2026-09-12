@@ -115,6 +115,76 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+const MAX_BULK_ITEMS = 50;
+
+// POST /api/boost-requests/bulk — create several boost requests (any mix of
+// types/quantities) in one submission, e.g. 3 likes links + 2 comments links
+// + 5 followers links at once. Body: { items: {boostType, link, quantity}[] }.
+// One combined Telegram/Inbox notification is sent for the whole batch
+// rather than one per row.
+router.post('/bulk', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    const { items } = req.body as { items?: { boostType?: string; link?: string; quantity?: number }[] };
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items must be a non-empty array' });
+    }
+    if (items.length > MAX_BULK_ITEMS) {
+      return res.status(400).json({ error: `Too many requests at once (max ${MAX_BULK_ITEMS})` });
+    }
+
+    const cleaned: { boostType: string; link: string; quantity: number }[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const { boostType, link, quantity } = items[i];
+      if (!boostType || !BOOST_TYPES.includes(boostType as (typeof BOOST_TYPES)[number])) {
+        return res.status(400).json({ error: `Row ${i + 1}: boostType must be likes, followers, or comments` });
+      }
+      if (!link?.trim()) {
+        return res.status(400).json({ error: `Row ${i + 1}: link is required` });
+      }
+      const qty = Number(quantity);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        return res.status(400).json({ error: `Row ${i + 1}: quantity must be a positive number` });
+      }
+      cleaned.push({ boostType, link: link.trim(), quantity: Math.round(qty) });
+    }
+
+    const created = await prisma.$transaction(
+      cleaned.map((item) => prisma.boostRequest.create({
+        data: { requesterId: me.id, requesterName: me.name, ...item },
+      }))
+    );
+
+    const admins = await prisma.user.findMany({
+      where: { peekviewerAdmin: true, id: { not: me.id } },
+      select: { id: true, email: true, telegramChatId: true },
+    });
+
+    const countsByType: Record<string, number> = {};
+    for (const item of cleaned) countsByType[item.boostType] = (countsByType[item.boostType] ?? 0) + 1;
+    const breakdown = Object.entries(countsByType).map(([type, count]) => `${count} ${type}`).join(', ');
+
+    const subject = `New Boost requests — ${cleaned.length}`;
+    const content = `${me.name} requested ${cleaned.length} boosts (${breakdown})`;
+    const telegramText = `Вам залишили ${cleaned.length} нових boost requests від ${me.name} (${breakdown}). Перегляньте деталі в CareSpace: ${CARESPACE_URL}`;
+
+    await Promise.all(admins.map(async (admin) => {
+      await prisma.inboxMessage.create({
+        data: { senderId: me.id, receiverId: admin.id, type: 'general', subject, content },
+      });
+      if (admin.telegramChatId && admin.email === YANA_EMAIL) {
+        await sendTelegramMessage(admin.telegramChatId, telegramText);
+      }
+    }));
+
+    return res.status(201).json(created);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to create boost requests' });
+  }
+});
+
 // PATCH /api/boost-requests/:id/complete — admin only. Notifies the
 // requester's Telegram exactly once, on the transition into "complete" —
 // re-completing an already-complete request (e.g. a double-click) is a
