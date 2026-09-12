@@ -62,6 +62,7 @@ model User {
   boostRequests        BoostRequest[]
   authoredOnboardingBlocks OnboardingBlock[]
   accountRequests      AccountRequest[]
+  requestScheduleReminderLogs RequestScheduleReminderLog[]
 
   @@index([peekOnDuty])
   @@index([team])
@@ -711,4 +712,20 @@ model AccountRequest {
   @@index([requesterId])
   @@index([status])
   @@index([archived])
+}
+
+// One row per user per Kyiv-local date a "your turn to submit new-profile
+// requests" Telegram reminder was actually sent — dedup guard for the
+// request-schedule-reminder cron job, same @@unique-then-catch-P2002 pattern
+// as TelegramReminderLog (that one is keyed by Agent, but Tetyana/Yana/Anna/
+// Iryna/Horopeka aren't all in the Agent table, so this is keyed by User).
+model RequestScheduleReminderLog {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id])
+  date   String   // "YYYY-MM-DD", Kyiv-local calendar day the reminder is about
+  sentAt DateTime @default(now())
+
+  @@unique([userId, date])
+  @@index([userId])
 }

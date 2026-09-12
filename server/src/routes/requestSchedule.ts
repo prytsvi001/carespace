@@ -25,7 +25,7 @@ const router = Router();
 router.use(requireAuth);
 router.use(requirePeekviewerTeam);
 
-const CALENDAR_ROTATION_EMAILS = [
+export const CALENDAR_ROTATION_EMAILS = [
   'tetiana_veremeenko@struktura.io',
   'iryna_kolodienko@struktura.io',
   'victoria_horopeka@struktura.io',
@@ -71,7 +71,7 @@ function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
 }
 
-async function getRotationUsers(emails: string[]) {
+export async function getRotationUsers(emails: string[]) {
   const users = await prisma.user.findMany({
     where: { email: { in: emails } },
     select: { id: true, name: true, email: true },
@@ -144,12 +144,44 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-async function resolveCurrentAssignee(d: string, calendarRotation: { id: string; name: string }[]) {
+export async function resolveCurrentAssignee(d: string, calendarRotation: { id: string; name: string }[]) {
   const existing = await prisma.requestScheduleOverride.findUnique({ where: { date: d } });
   if (existing) return { userId: existing.userId, userName: existing.userName };
   const base = calendarRotation[calendarRotationIndexForDate(d)];
   return { userId: base.id, userName: base.name };
 }
+
+// Kyiv-local "today" as "YYYY-MM-DD" — matches how every date in this file is
+// keyed (RequestScheduleOverride.date, dateKey()), so this must agree with
+// Kyiv wall-clock time rather than the server's UTC clock or a browser's
+// local time (same reasoning as cron.ts's getKyivParts, duplicated here in
+// miniature to avoid a cross-file dependency for eight lines of formatting).
+export function todayKyivDateStr(): string {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const parts = fmt.formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '01';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+// GET /api/request-schedule/today — who's on duty today (Kyiv-local date),
+// for the "your turn" banner. Any Peekviewer team member can check this
+// (not just admins) — it's their own reminder, not a management action.
+router.get('/today', async (_req: Request, res: Response) => {
+  try {
+    const calendarRotation = await getRotationUsers(CALENDAR_ROTATION_EMAILS);
+    if (calendarRotation.length === 0) {
+      return res.status(500).json({ error: 'Rotation roster not found' });
+    }
+    const date = todayKyivDateStr();
+    const assignee = await resolveCurrentAssignee(date, calendarRotation);
+    res.json({ date, ...assignee });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch today's request schedule assignee" });
+  }
+});
 
 // POST /api/request-schedule/swap — body: { date, targetDate } both "YYYY-MM-DD".
 // Swaps the two dates' assignees. Permitted for whoever is currently assigned

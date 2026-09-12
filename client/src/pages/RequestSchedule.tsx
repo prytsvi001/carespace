@@ -14,8 +14,12 @@ import {
   PointerSensor, useSensor, useSensors, useDroppable, useDraggable,
 } from '@dnd-kit/core';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths } from 'date-fns';
+import { Megaphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getRequestSchedule, swapRequestScheduleDay, assignRequestScheduleDay, RequestScheduleDay, RequestScheduleData } from '../api';
+import {
+  getRequestSchedule, swapRequestScheduleDay, assignRequestScheduleDay, getTodayRequestScheduleAssignee,
+  RequestScheduleDay, RequestScheduleData,
+} from '../api';
 import { Spinner, Modal } from '../components/ui';
 
 interface AssigneeStyle { bg: string; text: string; border: string; dot: string }
@@ -97,8 +101,19 @@ export default function RequestSchedule() {
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState<RequestScheduleDay | null>(null);
   const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [isMyTurnToday, setIsMyTurnToday] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Independent of `currentMonth` (the calendar view being browsed) — always
+  // reflects today (Kyiv-local), so the banner doesn't disappear just
+  // because someone navigated the calendar to a different month.
+  useEffect(() => {
+    if (!user?.id) return;
+    getTodayRequestScheduleAssignee()
+      .then((a) => setIsMyTurnToday(a.userId === user.id))
+      .catch((e) => console.error(e));
+  }, [user?.id]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -180,6 +195,18 @@ export default function RequestSchedule() {
 
   return (
     <div className="space-y-4">
+      {isMyTurnToday && (
+        <div
+          className="flex items-center gap-2.5 rounded-lg px-3.5 py-3"
+          style={{ backgroundColor: 'rgba(161,249,110,0.22)', border: '1px solid rgba(161,249,110,0.55)' }}
+        >
+          <Megaphone size={18} strokeWidth={1.8} className="shrink-0" style={{ color: '#166534' }} />
+          <p className="text-sm font-semibold" style={{ color: '#0E0E0E' }}>
+            Твоя черга кидати запити на нові профілі!
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-ink">Request Schedule</h2>

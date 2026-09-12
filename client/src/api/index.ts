@@ -673,6 +673,11 @@ export interface RequestScheduleData {
 export const getRequestSchedule = (year: number, month: number) =>
   api.get<RequestScheduleData>('/request-schedule', { params: { year, month } }).then((r) => r.data);
 
+export interface RequestScheduleTodayAssignee { date: string; userId: string; userName: string }
+
+export const getTodayRequestScheduleAssignee = () =>
+  api.get<RequestScheduleTodayAssignee>('/request-schedule/today').then((r) => r.data);
+
 export const swapRequestScheduleDay = (date: string, targetDate: string) =>
   api.post('/request-schedule/swap', { date, targetDate }).then((r) => r.data);
 

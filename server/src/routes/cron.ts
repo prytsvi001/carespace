@@ -2,6 +2,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { sendTelegramMessage } from '../telegram';
+import { CALENDAR_ROTATION_EMAILS, getRotationUsers, resolveCurrentAssignee, todayKyivDateStr } from './requestSchedule';
 
 const router = Router();
 
@@ -266,6 +267,48 @@ router.get('/shift-reminders', async (_req: Request, res: Response) => {
   } catch (err) {
     console.error('Shift reminder cron error:', err);
     res.status(500).json({ error: 'Failed to process shift reminders' });
+  }
+});
+
+// 10:00 Kyiv — "your turn to submit new-profile requests" nudge for whoever
+// the Request Schedule calendar has on duty today. Shares the same
+// TOLERANCE_MINUTES window as shift-reminders (GitHub Actions' schedule
+// trigger doesn't fire on time — see the comment above that constant), and
+// dedups via RequestScheduleReminderLog (one row per user per Kyiv date)
+// rather than TelegramReminderLog since not every rotation agent has an
+// Agent record.
+const REQUEST_SCHEDULE_REMINDER_TARGET_MINUTES = 10 * 60;
+const REQUEST_SCHEDULE_REMINDER_MESSAGE = 'Твоя черга кидати запити на нові профілі! 📋';
+
+// GET /api/cron/request-schedule-reminder
+router.get('/request-schedule-reminder', async (_req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    const kyiv = getKyivParts(now);
+    const diff = kyiv.minutesSinceMidnight - REQUEST_SCHEDULE_REMINDER_TARGET_MINUTES;
+    const inWindow = diff >= 0 && diff < TOLERANCE_MINUTES;
+    if (!inWindow) return res.json({ ok: true, sent: [], reason: 'out of window' });
+
+    const dateStr = todayKyivDateStr();
+    const calendarRotation = await getRotationUsers(CALENDAR_ROTATION_EMAILS);
+    if (calendarRotation.length === 0) return res.json({ ok: true, sent: [] });
+
+    const assignee = await resolveCurrentAssignee(dateStr, calendarRotation);
+    const user = await prisma.user.findUnique({ where: { id: assignee.userId } });
+    if (!user?.telegramChatId) return res.json({ ok: true, sent: [] });
+
+    try {
+      await prisma.requestScheduleReminderLog.create({ data: { userId: user.id, date: dateStr } });
+    } catch (err: unknown) {
+      if ((err as { code?: string })?.code === 'P2002') return res.json({ ok: true, sent: [] }); // already sent today
+      throw err;
+    }
+
+    await sendTelegramMessage(user.telegramChatId, REQUEST_SCHEDULE_REMINDER_MESSAGE);
+    res.json({ ok: true, sent: [`${user.id}:${dateStr}`] });
+  } catch (err) {
+    console.error('Request schedule reminder cron error:', err);
+    res.status(500).json({ error: 'Failed to process request schedule reminder' });
   }
 });
 
