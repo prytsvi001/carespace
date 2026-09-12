@@ -584,7 +584,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
               : v === 'requests-to-anna' ? <UserPlus size={12} strokeWidth={1.8} />
               : v === 'boost-requests' ? <Rocket size={12} strokeWidth={1.8} />
               : null}
-            {v === 'received' ? 'Received' : v === 'sent' ? 'Sent' : v === 'updates' ? 'Updates' : v === 'requests-to-anna' ? 'Requests sent to Anna' : 'Boost Requests'}
+            {v === 'received' ? 'Received' : v === 'sent' ? 'Sent' : v === 'updates' ? 'Updates' : v === 'requests-to-anna' ? 'New Account Request' : 'Boost Requests'}
             {((v === 'received' && unreadCount > 0) || (v === 'updates' && updatesUnreadCount > 0)) && (
               <span
                 className="text-xs font-semibold px-1.5 py-0.5 rounded-full"

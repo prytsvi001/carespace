@@ -133,7 +133,7 @@ const PEEKVIEWER_CORE_TABS: { id: PeekviewerSharedTab; label: string; shortLabel
   { id: 'boost',         label: 'Boost',            shortLabel: 'Boost',    Icon: Rocket },
   { id: 'proxy',         label: 'Proxy',             shortLabel: 'Proxy',    Icon: Wifi },
   { id: 'row-accounts',  label: 'Row Accounts',      shortLabel: 'Accounts', Icon: KeyRound },
-  { id: 'references',    label: 'References',        shortLabel: 'Refs',     Icon: BookOpen },
+  { id: 'references',    label: 'New Accounts',       shortLabel: 'New Accts', Icon: BookOpen },
 ];
 const PEEKVIEWER_LEGACY_TABS: { id: PeekviewerSharedTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
   { id: 'requests', label: 'Peek Requests', shortLabel: 'Peek',     Icon: Lightbulb },
