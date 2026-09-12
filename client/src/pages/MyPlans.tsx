@@ -1,15 +1,19 @@
 // client/src/pages/MyPlans.tsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Plus, Trash2, Pencil, CheckCircle2, Circle, X, Clock, Globe } from 'lucide-react';
+import { Plus, Trash2, Pencil, CheckCircle2, Circle, X, Clock, Globe, List } from 'lucide-react';
 import { format, addDays, endOfWeek, isSameDay, isSameMonth } from 'date-fns';
-import { getPlans, createPlan, updatePlan, deletePlan, getQuickLinks, createQuickLink, deleteQuickLink } from '../api';
+import {
+  getPlans, createPlan, updatePlan, deletePlan, getQuickLinks, createQuickLink, deleteQuickLink,
+  getNotes, createNote, updateNote, deleteNote, NoteData,
+} from '../api';
 import type { Plan, QuickLink } from '../types';
+import { Modal, ConfirmDialog, RichText } from '../components/ui';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type Priority = 'high' | 'medium' | 'low';
 type Category = 'work' | 'learning' | 'personal';
-type TopView = 'tasks' | 'links';
+type TopView = 'tasks' | 'links' | 'notes';
 type BucketKey = 'today' | 'tomorrow' | 'thisWeek' | 'thisMonth' | 'later' | 'noDate';
 
 const PRIORITY_SORT: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
@@ -51,6 +55,7 @@ const LINK_KNOWN_CATS = ['sheets', 'docs', 'tools', 'jira'] as const;
 const VIEW_LABELS: Record<TopView, string> = {
   tasks: 'Tasks',
   links: 'Quick Links',
+  notes: 'Notes',
 };
 
 const SECTIONS: { key: BucketKey; label: string }[] = [
@@ -599,6 +604,16 @@ export default function MyPlans() {
   const [linkSaving, setLinkSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // ── Notes state ──────────────────────────────────────────────────────────────
+  const [notes, setNotes] = useState<NoteData[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [showNoteForm, setShowNoteForm] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteForm, setNoteForm] = useState({ title: '', content: '' });
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteFormError, setNoteFormError] = useState('');
+  const [confirmDeleteNoteId, setConfirmDeleteNoteId] = useState<string | null>(null);
+
   // ── Load callbacks ───────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
@@ -625,8 +640,21 @@ export default function MyPlans() {
     }
   }, []);
 
+  const loadNotes = useCallback(async () => {
+    setNotesLoading(true);
+    try {
+      const data = await getNotes();
+      setNotes(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setNotesLoading(false);
+    }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (view === 'links' && links.length === 0) loadLinks(); }, [view, loadLinks, links.length]);
+  useEffect(() => { if (view === 'notes' && notes.length === 0) loadNotes(); }, [view, loadNotes, notes.length]);
 
   // ── Plan handlers ────────────────────────────────────────────────────────────
 
@@ -702,6 +730,57 @@ export default function MyPlans() {
       console.error(e);
       loadLinks();
     }
+  };
+
+  // ── Note handlers ────────────────────────────────────────────────────────────
+
+  const openCreateNote = () => {
+    setEditingNoteId(null);
+    setNoteForm({ title: '', content: '' });
+    setNoteFormError('');
+    setShowNoteForm(true);
+  };
+
+  const openEditNote = (n: NoteData) => {
+    setEditingNoteId(n.id);
+    setNoteForm({ title: n.title, content: n.content });
+    setNoteFormError('');
+    setShowNoteForm(true);
+  };
+
+  const handleSubmitNote = async () => {
+    if (!noteForm.title.trim() || !noteForm.content.trim()) {
+      setNoteFormError('Title and text are required.');
+      return;
+    }
+    setNoteSaving(true);
+    setNoteFormError('');
+    try {
+      const data = { title: noteForm.title.trim(), content: noteForm.content.trim() };
+      if (editingNoteId) {
+        const updated = await updateNote(editingNoteId, data);
+        setNotes((prev) => prev.map((n) => (n.id === editingNoteId ? updated : n)));
+      } else {
+        const created = await createNote(data);
+        setNotes((prev) => [...prev, created]);
+      }
+      setShowNoteForm(false);
+    } catch {
+      setNoteFormError('Failed to save. Please try again.');
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const handleDeleteNote = async (id: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== id));
+    try { await deleteNote(id); } catch (e) { console.error(e); loadNotes(); }
+    setConfirmDeleteNoteId(null);
+  };
+
+  const noteAnchorId = (id: string) => `note-${id}`;
+  const scrollToNote = (id: string) => {
+    document.getElementById(noteAnchorId(id))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   // ── Task grouping ────────────────────────────────────────────────────────────
@@ -936,6 +1015,80 @@ export default function MyPlans() {
     );
   };
 
+  // ── Notes view ───────────────────────────────────────────────────────────────
+
+  const renderNotesView = () => (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={openCreateNote} className="btn-accent text-sm flex items-center gap-1.5">
+          <Plus size={14} strokeWidth={2} />
+          Add Note
+        </button>
+      </div>
+
+      {!notesLoading && notes.length > 1 && (
+        <div className="card p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
+            <List size={12} strokeWidth={2} />
+            Quick navigation
+          </p>
+          <div className="flex flex-col">
+            {notes.map((n, i) => (
+              <button
+                key={n.id}
+                onClick={() => scrollToNote(n.id)}
+                className="flex items-center gap-2 text-left text-sm px-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
+                style={{ color: 'rgba(14,14,14,0.7)' }}
+              >
+                <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{i + 1}.</span>
+                <span className="truncate">{n.title}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {notesLoading ? (
+        <div className="py-10 text-center text-sm" style={{ color: 'rgba(14,14,14,0.38)' }}>
+          Loading…
+        </div>
+      ) : notes.length === 0 ? (
+        <div className="py-10 text-center text-sm" style={{ color: 'rgba(14,14,14,0.38)' }}>
+          No notes yet — add your first above.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {notes.map((n) => (
+            <div key={n.id} id={noteAnchorId(n.id)} className="card space-y-3" style={{ scrollMarginTop: '80px' }}>
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="text-sm font-semibold text-slate-800">{n.title}</h3>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => openEditNote(n)}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                    style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                  >
+                    <Pencil size={13} strokeWidth={1.8} />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => setConfirmDeleteNoteId(n.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                    style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+                  >
+                    <Trash2 size={13} strokeWidth={1.8} />
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <RichText text={n.content} className="text-sm text-slate-600 leading-relaxed" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   const totalCount = plans.length;
@@ -964,7 +1117,7 @@ export default function MyPlans() {
         className="flex rounded-lg overflow-hidden text-sm w-fit"
         style={{ border: '1px solid rgba(14,14,14,0.12)' }}
       >
-        {(['tasks', 'links'] as TopView[]).map((v) => (
+        {(['tasks', 'links', 'notes'] as TopView[]).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -986,6 +1139,8 @@ export default function MyPlans() {
       {/* Content */}
       {view === 'links' ? (
         renderLinksView()
+      ) : view === 'notes' ? (
+        renderNotesView()
       ) : loading ? (
         <div className="py-10 text-center text-sm" style={{ color: 'rgba(14,14,14,0.38)' }}>
           Loading…
@@ -997,6 +1152,46 @@ export default function MyPlans() {
       ) : (
         renderTasksView()
       )}
+
+      <Modal open={showNoteForm} onClose={() => setShowNoteForm(false)} title={editingNoteId ? 'Edit Note' : 'Add Note'}>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Title</label>
+            <input
+              value={noteForm.title}
+              onChange={(e) => setNoteForm((f) => ({ ...f, title: e.target.value }))}
+              placeholder="Note title"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Text</label>
+            <textarea
+              value={noteForm.content}
+              onChange={(e) => setNoteForm((f) => ({ ...f, content: e.target.value }))}
+              rows={6}
+              placeholder="Write your note…"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700 resize-none"
+            />
+          </div>
+
+          {noteFormError && <p className="text-xs text-red-500">{noteFormError}</p>}
+
+          <div className="flex justify-end">
+            <button onClick={handleSubmitNote} disabled={noteSaving} className="btn-accent text-sm disabled:opacity-50">
+              {noteSaving ? 'Saving…' : editingNoteId ? 'Save' : 'Add Note'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDeleteNoteId}
+        message="Delete this note? This cannot be undone."
+        onConfirm={() => { if (confirmDeleteNoteId) handleDeleteNote(confirmDeleteNoteId); }}
+        onCancel={() => setConfirmDeleteNoteId(null)}
+      />
     </div>
   );
 }
