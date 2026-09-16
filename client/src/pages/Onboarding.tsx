@@ -118,9 +118,7 @@ export default function Onboarding() {
     setShowForm(true);
   };
 
-  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
+  const uploadFiles = async (files: File[]) => {
     if (files.length === 0) return;
     setUploadError('');
     for (const file of files) {
@@ -144,6 +142,22 @@ export default function Onboarding() {
         setUploadingCount((c) => c - 1);
       }
     }
+  };
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    await uploadFiles(files);
+  };
+
+  // Lets you Ctrl+V an image (or any file) straight from the clipboard as an
+  // attachment, alongside the "Attach file" button — e.g. a screenshot
+  // copied from Snipping Tool pastes in directly, no save-then-browse step.
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData?.files || []);
+    if (files.length === 0) return;
+    e.preventDefault();
+    await uploadFiles(files);
   };
 
   // Wraps the current textarea selection in "**...**" (or inserts a
@@ -426,14 +440,17 @@ export default function Onboarding() {
               ref={contentRef}
               value={form.content}
               onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
+              onPaste={handlePaste}
               rows={6}
-              placeholder="Write the instructions…"
+              placeholder="Write the instructions… (paste an image with Ctrl+V to attach it)"
               className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700 resize-none"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Files (optional)</label>
+            <label className="block text-xs text-slate-400 mb-1">
+              Files (optional) <span style={{ color: 'rgba(14,14,14,0.35)' }}>— attach a file, or paste one (Ctrl+V) into the content field above</span>
+            </label>
 
             {form.attachments.length > 0 && (
               <div className="space-y-1.5 mb-2">
