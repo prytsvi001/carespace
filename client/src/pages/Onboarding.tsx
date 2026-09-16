@@ -9,7 +9,7 @@
 // streamed through an <img>/<video> tag, while everything else falls back to
 // a clickable download link (AttachmentPreview below).
 import React, { useEffect, useRef, useState } from 'react';
-import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List, Bold, ChevronRight, ChevronDown, GripVertical } from 'lucide-react';
+import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List, Bold, ChevronRight, ChevronDown, GripVertical, Search } from 'lucide-react';
 import { uploadPresigned } from '@vercel/blob/client';
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors,
@@ -231,8 +231,8 @@ function BlockContent({ content, attachments, className, onResize }: {
 // A sub-block row within its parent's card — its own chevron/collapse (see
 // Onboarding()'s expandedIds) and, for admins, its own drag handle so
 // sub-blocks reorder independently of their siblings under other parents.
-function SubBlockRow({ block, isOpen, isAdmin, onToggle, onEdit, onDeleteRequest }: {
-  block: OnboardingBlockData; isOpen: boolean; isAdmin: boolean;
+function SubBlockRow({ block, isOpen, isAdmin, canDrag, onToggle, onEdit, onDeleteRequest }: {
+  block: OnboardingBlockData; isOpen: boolean; isAdmin: boolean; canDrag: boolean;
   onToggle: () => void; onEdit: () => void; onDeleteRequest: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id });
@@ -241,7 +241,7 @@ function SubBlockRow({ block, isOpen, isAdmin, onToggle, onEdit, onDeleteRequest
   return (
     <div ref={setNodeRef} id={blockAnchorId(block.id)} style={{ ...dragStyle, scrollMarginTop: '80px' }}>
       <div className="w-full flex items-center">
-        {isAdmin && (
+        {canDrag && (
           <button
             {...attributes}
             {...listeners}
@@ -298,7 +298,7 @@ function SubBlockRow({ block, isOpen, isAdmin, onToggle, onEdit, onDeleteRequest
 // draggable item from its own component — React hooks can't be called a
 // variable number of times inside a single component's render.
 function TopLevelBlockCard({
-  block, accent, isOpen, isAdmin, childBlocks, expandedIds, dndSensors,
+  block, accent, isOpen, isAdmin, canDrag, childBlocks, expandedIds, dndSensors,
   onToggle, onToggleChild, onEdit, onEditChild, onDeleteRequest, onDeleteChildRequest,
   onAddSubBlock, onReorderChildren,
 }: {
@@ -306,6 +306,7 @@ function TopLevelBlockCard({
   accent: { dot: string; bg: string; line: string };
   isOpen: boolean;
   isAdmin: boolean;
+  canDrag: boolean;
   childBlocks: OnboardingBlockData[];
   expandedIds: Set<string>;
   dndSensors: ReturnType<typeof useSensors>;
@@ -329,7 +330,7 @@ function TopLevelBlockCard({
       style={{ ...dragStyle, scrollMarginTop: '80px', borderLeft: `3px solid ${accent.dot}`, padding: 0 }}
     >
       <div className="w-full flex items-center" style={{ backgroundColor: isOpen ? accent.bg : undefined }}>
-        {isAdmin && (
+        {canDrag && (
           <button
             {...attributes}
             {...listeners}
@@ -395,6 +396,7 @@ function TopLevelBlockCard({
                       block={c}
                       isOpen={expandedIds.has(c.id)}
                       isAdmin={isAdmin}
+                      canDrag={canDrag}
                       onToggle={() => onToggleChild(c.id)}
                       onEdit={() => onEditChild(c)}
                       onDeleteRequest={() => onDeleteChildRequest(c.id)}
@@ -664,6 +666,45 @@ export default function Onboarding() {
   const topLevelBlocks = blocks.filter((b) => !b.parentId);
   const childrenOf = (id: string) => blocks.filter((b) => b.parentId === id);
 
+  // Title-only filter, shared by Quick Navigation and the main list below —
+  // a top-level block stays visible if its own title matches OR any of its
+  // sub-blocks' titles do (so a matching sub-block never loses its parent's
+  // context); when only sub-blocks match, only THOSE sub-blocks show (not
+  // the whole set) to keep the point of searching — less to scan, not more.
+  const [search, setSearch] = useState('');
+  const searchQuery = search.trim().toLowerCase();
+  const titleMatches = (title: string) => title.toLowerCase().includes(searchQuery);
+
+  const filteredTopLevelBlocks = searchQuery
+    ? topLevelBlocks.filter((b) => titleMatches(b.title) || childrenOf(b.id).some((c) => titleMatches(c.title)))
+    : topLevelBlocks;
+  const visibleChildrenOf = (b: OnboardingBlockData) => {
+    const kids = childrenOf(b.id);
+    if (!searchQuery || titleMatches(b.title)) return kids;
+    return kids.filter((c) => titleMatches(c.title));
+  };
+
+  // Auto-expand whatever currently matches as the query changes, so results
+  // are visible immediately instead of needing an extra click per match —
+  // never auto-collapses anything, so clearing the search just reveals
+  // whatever else was already open.
+  useEffect(() => {
+    if (!searchQuery) return;
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      for (const b of topLevelBlocks) {
+        const ownMatch = titleMatches(b.title);
+        const matchingKids = childrenOf(b.id).filter((c) => titleMatches(c.title));
+        if (ownMatch || matchingKids.length > 0) {
+          next.add(b.id);
+          if (!ownMatch) matchingKids.forEach((c) => next.add(c.id));
+        }
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, blocks]);
+
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   // Reorders the top-level blocks (drag handle on each TopLevelBlockCard).
@@ -718,13 +759,34 @@ export default function Onboarding() {
       </div>
 
       {!loading && blocks.length > 1 && (
+        <div className="relative">
+          <Search size={14} strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search blocks by title…"
+            className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-9 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              aria-label="Clear search"
+            >
+              <X size={14} strokeWidth={2} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && blocks.length > 1 && filteredTopLevelBlocks.length > 0 && (
         <div className="card p-3">
           <p className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
             <List size={12} strokeWidth={2} />
             Quick navigation
           </p>
           <div className="flex flex-col">
-            {topLevelBlocks.map((b, i) => (
+            {filteredTopLevelBlocks.map((b, i) => (
               <React.Fragment key={b.id}>
                 <button
                   onClick={() => scrollToBlock(b.id)}
@@ -734,7 +796,7 @@ export default function Onboarding() {
                   <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{i + 1}.</span>
                   <span className="truncate font-medium">{b.title}</span>
                 </button>
-                {childrenOf(b.id).map((c) => (
+                {visibleChildrenOf(b).map((c) => (
                   <button
                     key={c.id}
                     onClick={() => scrollToBlock(c.id, b.id)}
@@ -755,12 +817,14 @@ export default function Onboarding() {
         <CardListSkeleton />
       ) : topLevelBlocks.length === 0 ? (
         <EmptyState icon={<GraduationCap size={32} strokeWidth={1.2} />} message="Nothing here yet." />
+      ) : filteredTopLevelBlocks.length === 0 ? (
+        <EmptyState icon={<Search size={32} strokeWidth={1.2} />} message="No blocks match your search." />
       ) : (
         <DndContext sensors={dndSensors} onDragEnd={handleReorderTop}>
-          <SortableContext items={topLevelBlocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={filteredTopLevelBlocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-3">
-              {topLevelBlocks.map((b, i) => {
-                const children = childrenOf(b.id);
+              {filteredTopLevelBlocks.map((b, i) => {
+                const children = visibleChildrenOf(b);
                 const accent = ACCENT_PALETTE[i % ACCENT_PALETTE.length];
                 return (
                   <TopLevelBlockCard
@@ -769,6 +833,7 @@ export default function Onboarding() {
                     accent={accent}
                     isOpen={expandedIds.has(b.id)}
                     isAdmin={isAdmin}
+                    canDrag={isAdmin && !searchQuery}
                     childBlocks={children}
                     expandedIds={expandedIds}
                     dndSensors={dndSensors}
