@@ -4,7 +4,9 @@
 // full queue and can complete/edit/delete any request. Completing a request
 // is what drops it off the admin worklist (status: 'complete') — the
 // requester keeps seeing their own request (now green) regardless of status,
-// so there's no separate archived flag.
+// so there's no separate archived flag. Deleting is per-side (see DELETE
+// /:id): removing a request from the admin queue never removes it from the
+// requester's own list, and vice versa.
 import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
@@ -27,16 +29,17 @@ function isAdmin(user: Express.User): boolean {
 }
 
 // GET /api/boost-requests — admins see the full active queue (+ their own
-// completed history via ?includeCompleted=1); everyone else sees only their
-// own requests, at every status.
+// completed history via ?includeCompleted=1), minus anything an admin
+// deleted from the queue; everyone else sees only their own requests, at
+// every status.
 router.get('/', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     const admin = isAdmin(me);
 
     const where = admin
-      ? (req.query.includeCompleted ? {} : { status: 'in_progress' })
-      : { requesterId: me.id };
+      ? { deletedByAdmin: false, ...(req.query.includeCompleted ? {} : { status: 'in_progress' }) }
+      : { requesterId: me.id, deletedByRequester: false };
 
     const requests = await prisma.boostRequest.findMany({
       where,
@@ -51,12 +54,13 @@ router.get('/', async (req: Request, res: Response) => {
 
 // GET /api/boost-requests/sent — the caller's own boost requests at every
 // status, regardless of admin status (used by Inbox's "Boost Requests" view
-// so an admin creating one from Inbox sees their own, not the full queue).
+// so an admin creating one from Inbox sees their own, not the full queue),
+// minus anything the caller deleted from their own list.
 router.get('/sent', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     const requests = await prisma.boostRequest.findMany({
-      where: { requesterId: me.id },
+      where: { requesterId: me.id, deletedByRequester: false },
       orderBy: { createdAt: 'desc' },
     });
     res.json(requests);
@@ -212,13 +216,37 @@ router.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/boost-requests/:id — admin only
+// DELETE /api/boost-requests/:id — admins delete from the shared queue,
+// requesters delete their own copy; same per-side soft-delete pattern as
+// Inbox (see deletedByRequester/deletedByAdmin on the model) so removing it
+// from one side never removes it from the other. The row is only actually
+// deleted once both sides have removed their copy.
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    if (!isAdmin(me)) return res.status(403).json({ error: 'Not permitted' });
+    const existing = await prisma.boostRequest.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
 
-    await prisma.boostRequest.delete({ where: { id: req.params.id } }).catch(() => null);
+    const admin = isAdmin(me);
+    const isOwner = existing.requesterId === me.id;
+    if (!admin && !isOwner) return res.status(403).json({ error: 'Not permitted' });
+
+    // A non-admin can only ever be deleting their own copy. An admin who is
+    // also the requester (Sandra/Davis/Yana can request their own boosts)
+    // defaults to deleting from the shared queue, unless the client says
+    // this delete came from their own "sent" list (scope: 'requester').
+    const { scope } = req.body as { scope?: 'requester' | 'admin' };
+    const asRequester = !admin || (isOwner && scope === 'requester');
+
+    const deletedByRequester = asRequester ? true : existing.deletedByRequester;
+    const deletedByAdmin = asRequester ? existing.deletedByAdmin : true;
+
+    if (deletedByRequester && deletedByAdmin) {
+      await prisma.boostRequest.delete({ where: { id: existing.id } });
+    } else {
+      await prisma.boostRequest.update({ where: { id: existing.id }, data: { deletedByRequester, deletedByAdmin } });
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);

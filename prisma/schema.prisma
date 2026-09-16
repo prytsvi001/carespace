@@ -599,6 +599,13 @@ model BoostRequest {
   completedAt     DateTime?
   completedByName String?
   batchId         String?   // groups everything submitted together in one /bulk call — the "your batch is fully processed" Telegram notification waits until every row sharing this batchId is complete. Null for rows created before this field existed.
+  // Per-side soft delete, same pattern as InboxMessage.deletedBySender/
+  // deletedByReceiver — one row is shared between the requester's own list
+  // and the admin queue, so a hard delete used to remove it from both sides
+  // at once no matter who deleted it. The row is only actually deleted once
+  // both sides have removed their copy.
+  deletedByRequester Boolean @default(false)
+  deletedByAdmin     Boolean @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -740,6 +747,11 @@ model AccountRequest {
   comments       String   @default("[]")   // JSON: [{id, authorName, text, createdAt}]
   archived       Boolean  @default(false)
   inboxMessageId String?
+  // Per-side soft delete, same reasoning as BoostRequest — a row is shared
+  // between the requester's own sent list and Anna's/admins' queue, so a
+  // hard delete used to remove it from both sides no matter who deleted it.
+  deletedByRequester Boolean @default(false)
+  deletedByAdmin     Boolean @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

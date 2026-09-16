@@ -431,6 +431,8 @@ export interface BoostRequest {
   completedAt: string | null;
   completedByName: string | null;
   batchId: string | null;
+  deletedByRequester: boolean;
+  deletedByAdmin: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -450,8 +452,11 @@ export const completeBoostRequest = (id: string) =>
 export const updateBoostRequest = (id: string, data: { boostType?: string; link?: string; quantity?: number }) =>
   api.patch<BoostRequest>(`/boost-requests/${id}`, data).then((r) => r.data);
 
-export const deleteBoostRequest = (id: string) =>
-  api.delete(`/boost-requests/${id}`).then((r) => r.data);
+// scope: 'requester' forces this to be treated as "delete from my own sent
+// list" even for an admin who happens to be the requester (see server-side
+// DELETE /:id) — omit it for the normal admin-queue delete button.
+export const deleteBoostRequest = (id: string, scope?: 'requester' | 'admin') =>
+  api.delete(`/boost-requests/${id}`, scope ? { data: { scope } } : undefined).then((r) => r.data);
 
 // ─── Proxy pool (Peekviewer Team) ──────────────────────────────────────────
 export interface ProxyItem {
@@ -795,8 +800,11 @@ export const createAccountRequest = (content: string) =>
 export const updateAccountRequest = (id: string, data: { status?: AccountRequestStatus; comment?: string; archived?: boolean }) =>
   api.patch<AccountRequestData>(`/account-requests/${id}`, data).then((r) => r.data);
 
-export const deleteAccountRequest = (id: string) =>
-  api.delete(`/account-requests/${id}`).then((r) => r.data);
+// scope: 'requester' forces this to be treated as "delete from my own sent
+// list" even for a manager who happens to be the requester — omit it for
+// the normal managers'-queue delete button (see server-side DELETE /:id).
+export const deleteAccountRequest = (id: string, scope?: 'requester' | 'admin') =>
+  api.delete(`/account-requests/${id}`, scope ? { data: { scope } } : undefined).then((r) => r.data);
 
 // ─── Notes (My Space — both teams) ─────────────────────────────────────────
 export interface NoteData {

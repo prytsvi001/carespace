@@ -4,7 +4,7 @@
 // used by both BoostRequests.tsx (the Boost tab's own create modal) and
 // Inbox.tsx's "Boost Requests" create form.
 import React from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export type BoostType = 'likes' | 'followers' | 'comments';
@@ -145,7 +145,7 @@ const STATUS_STYLE = {
   complete: { bg: 'rgba(161,249,110,0.28)', text: '#166534', label: 'Complete' },
 };
 
-export function BoostRequestBatchCard<T extends BoostRequestLike>({ items }: { items: T[] }) {
+export function BoostRequestBatchCard<T extends BoostRequestLike>({ items, onDelete }: { items: T[]; onDelete?: (id: string) => void }) {
   const completedCount = items.filter((i) => i.status === 'complete').length;
   const allComplete = completedCount === items.length;
 
@@ -181,12 +181,24 @@ export function BoostRequestBatchCard<T extends BoostRequestLike>({ items }: { i
                   <p className="text-xs text-slate-400 mt-1">Completed by {item.completedByName}</p>
                 )}
               </div>
-              <span
-                className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
-                style={{ backgroundColor: s.bg, color: s.text }}
-              >
-                {s.label}
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span
+                  className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: s.bg, color: s.text }}
+                >
+                  {s.label}
+                </span>
+                {onDelete && (
+                  <button
+                    onClick={() => onDelete(item.id)}
+                    className="p-1 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                    style={{ color: 'rgba(14,14,14,0.35)' }}
+                    title="Delete"
+                  >
+                    <Trash2 size={13} strokeWidth={1.8} />
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

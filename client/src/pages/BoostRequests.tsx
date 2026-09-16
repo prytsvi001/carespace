@@ -129,6 +129,20 @@ export default function BoostRequests() {
     }
   };
 
+  // Non-admins deleting their own request — scoped so it only disappears
+  // from their own list, never from the admin queue (see server DELETE /:id).
+  const [confirmDeleteMineId, setConfirmDeleteMineId] = useState<string | null>(null);
+  const handleDeleteMine = async (id: string) => {
+    setConfirmDeleteMineId(null);
+    setRequests((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await deleteBoostRequest(id, 'requester');
+    } catch (e) {
+      console.error(e);
+      load();
+    }
+  };
+
   const renderCard = (r: BoostRequest) => {
     const isComplete = r.status === 'complete';
     const isEditing = editingId === r.id;
@@ -254,7 +268,7 @@ export default function BoostRequests() {
       ) : (
         <div className="space-y-3">
           {groupedByBatch.map(({ key, items }) => (
-            <BoostRequestBatchCard key={key} items={items} />
+            <BoostRequestBatchCard key={key} items={items} onDelete={(id) => setConfirmDeleteMineId(id)} />
           ))}
         </div>
       )}
@@ -276,6 +290,13 @@ export default function BoostRequests() {
         message="Delete this boost request? This cannot be undone."
         onConfirm={() => { if (confirmDeleteId) handleDelete(confirmDeleteId); }}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDeleteMineId}
+        message="Delete this boost request from your list? This cannot be undone."
+        onConfirm={() => { if (confirmDeleteMineId) handleDeleteMine(confirmDeleteMineId); }}
+        onCancel={() => setConfirmDeleteMineId(null)}
       />
     </div>
   );

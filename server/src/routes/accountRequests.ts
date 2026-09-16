@@ -7,6 +7,9 @@
 // same split QAAgentReport/SalaryRecord use elsewhere in this app. Anna and
 // Sandra Moore/Victoria Davis (role head/lead) can all set status and add
 // comments; everyone else with References visible sees it read-only.
+// Deleting is per-side (see DELETE /:id): removing a request from the
+// managers' queue never removes it from the requester's own list, and vice
+// versa.
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth, requirePeekviewerTeam } from '../middleware/auth';
@@ -55,7 +58,8 @@ function formatRequest(r: {
   };
 }
 
-// GET /api/account-requests — Anna's full queue. Anna or peekviewerAdmin only.
+// GET /api/account-requests — Anna's full queue. Anna or peekviewerAdmin
+// only. Excludes anything a manager deleted from this queue (see DELETE /:id).
 router.get('/', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
@@ -63,7 +67,7 @@ router.get('/', async (req: Request, res: Response) => {
     if (!anna) return res.status(500).json({ error: 'Anna Bilous account not found' });
     if (!isAnnaOrAdmin(me, anna.id)) return res.status(403).json({ error: 'Not permitted' });
 
-    const requests = await prisma.accountRequest.findMany({ orderBy: { createdAt: 'desc' } });
+    const requests = await prisma.accountRequest.findMany({ where: { deletedByAdmin: false }, orderBy: { createdAt: 'desc' } });
     res.json(requests.map(formatRequest));
   } catch (err) {
     console.error(err);
@@ -71,12 +75,13 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/account-requests/sent — requests the caller themselves sent to Anna
+// GET /api/account-requests/sent — requests the caller themselves sent to
+// Anna, minus anything the caller deleted from their own list.
 router.get('/sent', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     const requests = await prisma.accountRequest.findMany({
-      where: { requesterId: me.id },
+      where: { requesterId: me.id, deletedByRequester: false },
       orderBy: { createdAt: 'desc' },
     });
     res.json(requests.map(formatRequest));
@@ -177,14 +182,41 @@ router.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/account-requests/:id — Anna, or Sandra Moore/Victoria Davis
+// DELETE /api/account-requests/:id — Anna/Sandra Moore/Victoria Davis delete
+// from the managers' queue, the original requester deletes their own copy;
+// same per-side soft-delete pattern as Boost (see deletedByRequester/
+// deletedByAdmin on the model) so removing it from one side never removes
+// it from the other. The row is only actually deleted once both sides have
+// removed their copy.
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     const anna = await getAnna();
-    if (!anna || !canManage(me, anna.id)) return res.status(403).json({ error: 'Not permitted' });
+    if (!anna) return res.status(500).json({ error: 'Anna Bilous account not found' });
 
-    await prisma.accountRequest.delete({ where: { id: req.params.id } }).catch(() => null);
+    const existing = await prisma.accountRequest.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    const manager = canManage(me, anna.id);
+    const isOwner = existing.requesterId === me.id;
+    if (!manager && !isOwner) return res.status(403).json({ error: 'Not permitted' });
+
+    // A non-manager can only ever be deleting their own copy. A manager who
+    // is also the requester defaults to deleting from the shared queue,
+    // unless the client says this delete came from their own "sent" list
+    // (scope: 'requester').
+    const { scope } = req.body as { scope?: 'requester' | 'admin' };
+    const asRequester = !manager || (isOwner && scope === 'requester');
+
+    const deletedByRequester = asRequester ? true : existing.deletedByRequester;
+    const deletedByAdmin = asRequester ? existing.deletedByAdmin : true;
+
+    if (deletedByRequester && deletedByAdmin) {
+      await prisma.accountRequest.delete({ where: { id: existing.id } });
+    } else {
+      await prisma.accountRequest.update({ where: { id: existing.id }, data: { deletedByRequester, deletedByAdmin } });
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);

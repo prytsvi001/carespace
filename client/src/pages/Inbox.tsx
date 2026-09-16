@@ -6,8 +6,8 @@ import {
   getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage, deleteMessage,
   addQAAgentReportComment, addQAIssueComment,
   getUpdates, createUpdate, updateUpdate, deleteUpdate, markUpdateRead,
-  getMySentAccountRequests, createAccountRequest, AccountRequestData, AccountRequestStatus,
-  getMySentBoostRequests, createBoostRequestsBulk, BoostRequest,
+  getMySentAccountRequests, createAccountRequest, deleteAccountRequest, AccountRequestData, AccountRequestStatus,
+  getMySentBoostRequests, createBoostRequestsBulk, deleteBoostRequest, BoostRequest,
 } from '../api';
 import {
   BoostRequestRow, BoostRequestRowsEditor, emptyBoostRequestRow, cleanBoostRequestRows,
@@ -270,6 +270,33 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
     try {
       await deleteMessage(id);
       onRead?.();
+    } catch (e) {
+      console.error(e);
+      loadInbox();
+    }
+  };
+
+  // "Requests sent to Anna" / "Boost Requests" own lists — scoped so
+  // deleting here only removes it from the caller's own list, never from
+  // Anna's/the admin's queue (see server-side DELETE /:id on each).
+  const [confirmDeleteAccountReqId, setConfirmDeleteAccountReqId] = useState<string | null>(null);
+  const handleDeleteAccountRequest = async (id: string) => {
+    setConfirmDeleteAccountReqId(null);
+    setSentAccountRequests((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await deleteAccountRequest(id, 'requester');
+    } catch (e) {
+      console.error(e);
+      loadInbox();
+    }
+  };
+
+  const [confirmDeleteBoostReqId, setConfirmDeleteBoostReqId] = useState<string | null>(null);
+  const handleDeleteBoostRequest = async (id: string) => {
+    setConfirmDeleteBoostReqId(null);
+    setSentBoostRequests((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await deleteBoostRequest(id, 'requester');
     } catch (e) {
       console.error(e);
       loadInbox();
@@ -632,9 +659,19 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
                     <span className="text-xs text-slate-400">
                       {format(new Date(r.createdAt), 'dd MMM yyyy')}
                     </span>
-                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0" style={{ backgroundColor: statusMeta.bg, color: statusMeta.text }}>
-                      {statusMeta.label}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ backgroundColor: statusMeta.bg, color: statusMeta.text }}>
+                        {statusMeta.label}
+                      </span>
+                      <button
+                        onClick={() => setConfirmDeleteAccountReqId(r.id)}
+                        className="p-1 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                        style={{ color: 'rgba(14,14,14,0.35)' }}
+                        title="Delete"
+                      >
+                        <Trash2 size={13} strokeWidth={1.8} />
+                      </button>
+                    </div>
                   </div>
                   <RichText text={r.content} className="text-sm text-slate-600 leading-relaxed" />
                   {r.comments.length > 0 && (
@@ -663,7 +700,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
         ) : (
           <div className="space-y-3">
             {groupBoostRequestsByBatch(sentBoostRequests).map(({ key, items }) => (
-              <BoostRequestBatchCard key={key} items={items} />
+              <BoostRequestBatchCard key={key} items={items} onDelete={(id) => setConfirmDeleteBoostReqId(id)} />
             ))}
           </div>
         )
@@ -845,6 +882,20 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
         message="Delete this message? This only removes it from your own view."
         onConfirm={() => { if (confirmDeleteId) handleDelete(confirmDeleteId); setConfirmDeleteId(null); }}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDeleteAccountReqId}
+        message="Delete this account request from your list? This only removes it from your own view."
+        onConfirm={() => { if (confirmDeleteAccountReqId) handleDeleteAccountRequest(confirmDeleteAccountReqId); }}
+        onCancel={() => setConfirmDeleteAccountReqId(null)}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDeleteBoostReqId}
+        message="Delete this boost request from your list? This only removes it from your own view."
+        onConfirm={() => { if (confirmDeleteBoostReqId) handleDeleteBoostRequest(confirmDeleteBoostReqId); }}
+        onCancel={() => setConfirmDeleteBoostReqId(null)}
       />
     </div>
   );
