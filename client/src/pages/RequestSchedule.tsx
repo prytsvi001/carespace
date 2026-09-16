@@ -39,6 +39,20 @@ const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
 const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
 const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
 
+// "Розподіл неактивних профілів" — a separate, fixed historical reference
+// list (who owned inactive-profile redistribution during which period), not
+// a rotating formula like the two lists above it, so it's just hardcoded
+// here rather than computed server-side — same "no spreadsheet" approach,
+// just no periodic recurrence to derive.
+const INACTIVE_REDISTRIBUTION_DAY = '07.09.2026';
+const INACTIVE_REDISTRIBUTION_VALID_RANGE = '31.03.2026 - 30.09.2022';
+const INACTIVE_PROFILE_REDISTRIBUTION: { fullName: string; label: string; range: string }[] = [
+  { fullName: 'Tetyana Veremeyenko', label: 'Tanya', range: '31.03.2026 — 16.05.2025' },
+  { fullName: 'Yana Fedorova',       label: 'Yana',  range: '15.05.2025 — 30.06.2024' },
+  { fullName: 'Victoria Horopeka',   label: 'Vika',  range: '29.06.2024 — 15.08.2023' },
+  { fullName: 'Iryna Kolodienko',    label: 'Iryna', range: '14.08.2023 — 30.09.2022' },
+];
+
 function AssigneeChip({ day, canEdit, isActive, onClick }: {
   day: RequestScheduleDay; canEdit: boolean; isActive: boolean; onClick: () => void;
 }) {
@@ -286,6 +300,29 @@ export default function RequestSchedule() {
                 </span>
                 <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
                   {r.days.join(' · ')}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-ink">Розподіл неактивних профілів</h3>
+        <div className="text-xs space-y-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>
+          <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{INACTIVE_REDISTRIBUTION_DAY}</span></p>
+          <p>Актуально з {INACTIVE_REDISTRIBUTION_VALID_RANGE}</p>
+        </div>
+        <div className="space-y-2">
+          {INACTIVE_PROFILE_REDISTRIBUTION.map((r) => {
+            const s = styleForAssignee(r.fullName);
+            return (
+              <div key={r.fullName} className="flex items-center gap-2 flex-wrap">
+                <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${s.bg} ${s.text} ${s.border}`}>
+                  {r.label}
+                </span>
+                <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
+                  {r.range}
                 </span>
               </div>
             );
