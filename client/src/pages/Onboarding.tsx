@@ -422,9 +422,10 @@ export default function Onboarding() {
       } else {
         const created = await createOnboardingBlock(data);
         setBlocks((prev) => [...prev, created]);
-        if (!created.parentId) {
-          setExpandedIds((prev) => new Set(prev).add(created.id));
-        }
+        // Sub-blocks collapse independently now (see toggleExpanded below),
+        // so a freshly created one needs to be added here too — otherwise it
+        // would publish already collapsed and look like nothing happened.
+        setExpandedIds((prev) => new Set(prev).add(created.id));
       }
       setShowForm(false);
     } catch {
@@ -443,8 +444,19 @@ export default function Onboarding() {
   };
 
   const blockAnchorId = (id: string) => `onboarding-block-${id}`;
-  const scrollToBlock = (id: string) => {
-    document.getElementById(blockAnchorId(id))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Expands the target block (and its parent, for a sub-block) before
+  // scrolling to it — sub-blocks collapse independently now, so jumping to
+  // one from Quick Navigation would otherwise land on a closed, empty header.
+  const scrollToBlock = (id: string, parentId?: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      if (parentId) next.add(parentId);
+      return next;
+    });
+    requestAnimationFrame(() => {
+      document.getElementById(blockAnchorId(id))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   // Two-level tree: top-level blocks (e.g. "Мультилогін") each with their own
@@ -488,7 +500,7 @@ export default function Onboarding() {
                 {childrenOf(b.id).map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => scrollToBlock(c.id)}
+                    onClick={() => scrollToBlock(c.id, b.id)}
                     className="flex items-center gap-2 text-left text-sm pl-8 pr-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
                     style={{ color: 'rgba(14,14,14,0.55)' }}
                   >
@@ -565,36 +577,50 @@ export default function Onboarding() {
                     <BlockContent content={b.content} attachments={b.attachments} className="text-sm text-slate-600 leading-relaxed" />
 
                     {children.length > 0 && (
-                      <div className="pl-4 space-y-3" style={{ borderLeft: `2px solid ${accent.line}` }}>
-                        {children.map((c) => (
-                          <div key={c.id} id={blockAnchorId(c.id)} className="space-y-2" style={{ scrollMarginTop: '80px' }}>
-                            <div className="flex items-start justify-between gap-3">
-                              <h4 className="text-sm font-medium text-slate-700">{c.title}</h4>
-                              {isAdmin && (
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <button
-                                    onClick={() => openEdit(c)}
-                                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
-                                    style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
-                                  >
-                                    <Pencil size={12} strokeWidth={1.8} />
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => setConfirmDeleteId(c.id)}
-                                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
-                                    style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
-                                  >
-                                    <Trash2 size={12} strokeWidth={1.8} />
-                                    Delete
-                                  </button>
+                      <div className="pl-4 space-y-1" style={{ borderLeft: `2px solid ${accent.line}` }}>
+                        {children.map((c) => {
+                          const isChildOpen = expandedIds.has(c.id);
+                          return (
+                            <div key={c.id} id={blockAnchorId(c.id)} style={{ scrollMarginTop: '80px' }}>
+                              <button
+                                onClick={() => toggleExpanded(c.id)}
+                                className="w-full flex items-center gap-2 text-left py-1.5 rounded-lg transition-colors hover:bg-slate-50"
+                              >
+                                {isChildOpen
+                                  ? <ChevronDown size={13} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+                                  : <ChevronRight size={13} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />}
+                                <h4 className="text-sm font-medium text-slate-700 flex-1 min-w-0 truncate">{c.title}</h4>
+                              </button>
+
+                              {isChildOpen && (
+                                <div className="pl-5 pb-2 space-y-2">
+                                  {isAdmin && (
+                                    <div className="flex items-center justify-end gap-2">
+                                      <button
+                                        onClick={() => openEdit(c)}
+                                        className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+                                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+                                      >
+                                        <Pencil size={12} strokeWidth={1.8} />
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() => setConfirmDeleteId(c.id)}
+                                        className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+                                      >
+                                        <Trash2 size={12} strokeWidth={1.8} />
+                                        Delete
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  <BlockContent content={c.content} attachments={c.attachments} className="text-sm text-slate-600 leading-relaxed" />
                                 </div>
                               )}
                             </div>
-
-                            <BlockContent content={c.content} attachments={c.attachments} className="text-sm text-slate-600 leading-relaxed" />
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
 
