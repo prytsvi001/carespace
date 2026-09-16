@@ -764,6 +764,12 @@ export const updateOnboardingBlock = (id: string, data: { title: string; content
 export const deleteOnboardingBlock = (id: string) =>
   api.delete(`/onboarding/${id}`).then((r) => r.data);
 
+// ids is the full new order of one sibling group — every top-level block
+// (parentId: null) or one specific top-level block's own sub-blocks
+// (parentId: that block's id).
+export const reorderOnboardingBlocks = (parentId: string | null, ids: string[]) =>
+  api.patch('/onboarding/reorder', { parentId, ids }).then((r) => r.data);
+
 export const deleteOnboardingAttachment = (url: string) =>
   api.delete('/onboarding/attachments', { data: { url } }).then((r) => r.data);
 

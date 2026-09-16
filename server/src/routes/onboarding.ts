@@ -89,7 +89,7 @@ function formatBlock(b: {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    const blocks = await prisma.onboardingBlock.findMany({ orderBy: { createdAt: 'asc' } });
+    const blocks = await prisma.onboardingBlock.findMany({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] });
     res.json(blocks.map((b) => formatBlock(b, me.id)));
   } catch (err) {
     console.error(err);
@@ -118,6 +118,10 @@ router.post('/', async (req: Request, res: Response) => {
       if (parent.parentId) return res.status(400).json({ error: 'Only one level of sub-blocks is supported' });
     }
 
+    // New block appends after its current siblings (top-level blocks and a
+    // given parent's sub-blocks each form their own sibling group).
+    const siblingCount = await prisma.onboardingBlock.count({ where: { parentId: parentId || null } });
+
     const block = await prisma.onboardingBlock.create({
       data: {
         authorId: me.id,
@@ -126,6 +130,7 @@ router.post('/', async (req: Request, res: Response) => {
         content: content.trim(),
         attachments: JSON.stringify(sanitizeAttachments(attachments)),
         parentId: parentId || null,
+        sortOrder: siblingCount,
       },
     });
 
@@ -210,6 +215,39 @@ router.delete('/attachments', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to delete attachment' });
+  }
+});
+
+// PATCH /api/onboarding/reorder — admin only. Body: { parentId: string | null,
+// ids: string[] } — ids is the FULL new order of one sibling group (either
+// every top-level block, when parentId is null, or one specific top-level
+// block's sub-blocks, when parentId is its id). Sets sortOrder = array index
+// for each; the `parentId` filter in the update keeps a reorder call from
+// touching blocks outside that group even if a stale/tampered id sneaks in.
+// Registered before /:id so "reorder" is never captured as an :id param.
+router.patch('/reorder', async (req: Request, res: Response) => {
+  try {
+    const me = req.user as Express.User;
+    if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
+
+    const { parentId, ids } = req.body as { parentId?: string | null; ids?: string[] };
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be a non-empty array' });
+    }
+
+    await prisma.$transaction(
+      ids.map((id, index) =>
+        prisma.onboardingBlock.updateMany({
+          where: { id, parentId: parentId ?? null },
+          data: { sortOrder: index },
+        })
+      )
+    );
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to reorder blocks' });
   }
 });
 

@@ -9,15 +9,22 @@
 // streamed through an <img>/<video> tag, while everything else falls back to
 // a clickable download link (AttachmentPreview below).
 import React, { useEffect, useRef, useState } from 'react';
-import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List, Bold, ChevronRight, ChevronDown } from 'lucide-react';
+import { GraduationCap, Plus, Pencil, Trash2, X, Paperclip, FileText, List, Bold, ChevronRight, ChevronDown, GripVertical } from 'lucide-react';
 import { uploadPresigned } from '@vercel/blob/client';
+import {
+  DndContext, DragEndEvent, PointerSensor, useSensor, useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../context/AuthContext';
 import {
   getOnboardingBlocks, createOnboardingBlock, updateOnboardingBlock, deleteOnboardingBlock,
-  deleteOnboardingAttachment, getOnboardingAttachmentUrl,
+  deleteOnboardingAttachment, getOnboardingAttachmentUrl, reorderOnboardingBlocks,
   OnboardingBlockData, OnboardingAttachment,
 } from '../api';
 import { Modal, ConfirmDialog, EmptyState, CardListSkeleton, RichText } from '../components/ui';
+
+const blockAnchorId = (id: string) => `onboarding-block-${id}`;
 
 function formatFileSize(bytes: number): string {
   if (!bytes) return '';
@@ -217,6 +224,199 @@ function BlockContent({ content, attachments, className, onResize }: {
     <div className="space-y-2">
       {parts}
       {remaining.map((a) => <AttachmentPreview key={a.url} a={a} />)}
+    </div>
+  );
+}
+
+// A sub-block row within its parent's card — its own chevron/collapse (see
+// Onboarding()'s expandedIds) and, for admins, its own drag handle so
+// sub-blocks reorder independently of their siblings under other parents.
+function SubBlockRow({ block, isOpen, isAdmin, onToggle, onEdit, onDeleteRequest }: {
+  block: OnboardingBlockData; isOpen: boolean; isAdmin: boolean;
+  onToggle: () => void; onEdit: () => void; onDeleteRequest: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id });
+  const dragStyle: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+
+  return (
+    <div ref={setNodeRef} id={blockAnchorId(block.id)} style={{ ...dragStyle, scrollMarginTop: '80px' }}>
+      <div className="w-full flex items-center">
+        {isAdmin && (
+          <button
+            {...attributes}
+            {...listeners}
+            className="p-1.5 shrink-0 cursor-grab active:cursor-grabbing rounded-lg transition-colors hover:bg-slate-100"
+            style={{ color: 'rgba(14,14,14,0.3)' }}
+            aria-label="Drag to reorder"
+          >
+            <GripVertical size={12} strokeWidth={1.8} />
+          </button>
+        )}
+        <button
+          onClick={onToggle}
+          className="flex-1 min-w-0 flex items-center gap-2 text-left py-1.5 rounded-lg transition-colors hover:bg-slate-50"
+        >
+          {isOpen
+            ? <ChevronDown size={13} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+            : <ChevronRight size={13} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />}
+          <h4 className="text-sm font-medium text-slate-700 flex-1 min-w-0 truncate">{block.title}</h4>
+        </button>
+      </div>
+
+      {isOpen && (
+        <div className="pl-5 pb-2 space-y-2">
+          {isAdmin && (
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={onEdit}
+                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+              >
+                <Pencil size={12} strokeWidth={1.8} />
+                Edit
+              </button>
+              <button
+                onClick={onDeleteRequest}
+                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+              >
+                <Trash2 size={12} strokeWidth={1.8} />
+                Delete
+              </button>
+            </div>
+          )}
+
+          <BlockContent content={block.content} attachments={block.attachments} className="text-sm text-slate-600 leading-relaxed" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A top-level block's accordion card. Extracted (rather than rendered
+// inline in the .map() below) because useSortable must be called once per
+// draggable item from its own component — React hooks can't be called a
+// variable number of times inside a single component's render.
+function TopLevelBlockCard({
+  block, accent, isOpen, isAdmin, childBlocks, expandedIds, dndSensors,
+  onToggle, onToggleChild, onEdit, onEditChild, onDeleteRequest, onDeleteChildRequest,
+  onAddSubBlock, onReorderChildren,
+}: {
+  block: OnboardingBlockData;
+  accent: { dot: string; bg: string; line: string };
+  isOpen: boolean;
+  isAdmin: boolean;
+  childBlocks: OnboardingBlockData[];
+  expandedIds: Set<string>;
+  dndSensors: ReturnType<typeof useSensors>;
+  onToggle: () => void;
+  onToggleChild: (id: string) => void;
+  onEdit: () => void;
+  onEditChild: (c: OnboardingBlockData) => void;
+  onDeleteRequest: () => void;
+  onDeleteChildRequest: (id: string) => void;
+  onAddSubBlock: () => void;
+  onReorderChildren: (event: DragEndEvent) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id });
+  const dragStyle: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+
+  return (
+    <div
+      ref={setNodeRef}
+      id={blockAnchorId(block.id)}
+      className="card overflow-hidden"
+      style={{ ...dragStyle, scrollMarginTop: '80px', borderLeft: `3px solid ${accent.dot}`, padding: 0 }}
+    >
+      <div className="w-full flex items-center" style={{ backgroundColor: isOpen ? accent.bg : undefined }}>
+        {isAdmin && (
+          <button
+            {...attributes}
+            {...listeners}
+            className="p-2 shrink-0 cursor-grab active:cursor-grabbing rounded-lg transition-colors hover:bg-slate-100"
+            style={{ color: 'rgba(14,14,14,0.3)' }}
+            aria-label="Drag to reorder"
+          >
+            <GripVertical size={14} strokeWidth={1.8} />
+          </button>
+        )}
+        <button
+          onClick={onToggle}
+          className="flex-1 min-w-0 flex items-center gap-2.5 py-3 pr-4 text-left transition-colors"
+        >
+          {isOpen
+            ? <ChevronDown size={15} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
+            : <ChevronRight size={15} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />}
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accent.dot }} />
+          <h3 className="text-sm font-semibold text-slate-800 flex-1 min-w-0 truncate">{block.title}</h3>
+          {childBlocks.length > 0 && (
+            <span
+              className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
+              style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+            >
+              {childBlocks.length} sub-block{childBlocks.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {isOpen && (
+        <div className="px-4 pb-4 pt-1 space-y-3">
+          {isAdmin && (
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={onEdit}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+              >
+                <Pencil size={13} strokeWidth={1.8} />
+                Edit
+              </button>
+              <button
+                onClick={onDeleteRequest}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
+              >
+                <Trash2 size={13} strokeWidth={1.8} />
+                Delete
+              </button>
+            </div>
+          )}
+
+          <BlockContent content={block.content} attachments={block.attachments} className="text-sm text-slate-600 leading-relaxed" />
+
+          {childBlocks.length > 0 && (
+            <DndContext sensors={dndSensors} onDragEnd={onReorderChildren}>
+              <SortableContext items={childBlocks.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                <div className="pl-4 space-y-1" style={{ borderLeft: `2px solid ${accent.line}` }}>
+                  {childBlocks.map((c) => (
+                    <SubBlockRow
+                      key={c.id}
+                      block={c}
+                      isOpen={expandedIds.has(c.id)}
+                      isAdmin={isAdmin}
+                      onToggle={() => onToggleChild(c.id)}
+                      onEdit={() => onEditChild(c)}
+                      onDeleteRequest={() => onDeleteChildRequest(c.id)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+
+          {isAdmin && (
+            <button
+              onClick={onAddSubBlock}
+              className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
+              style={{ backgroundColor: 'rgba(161,249,110,0.14)', color: 'rgba(14,14,14,0.65)' }}
+            >
+              <Plus size={12} strokeWidth={2} />
+              Add sub-block
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -443,7 +643,6 @@ export default function Onboarding() {
     setConfirmDeleteId(null);
   };
 
-  const blockAnchorId = (id: string) => `onboarding-block-${id}`;
   // Expands the target block (and its parent, for a sub-block) before
   // scrolling to it — sub-blocks collapse independently now, so jumping to
   // one from Quick Navigation would otherwise land on a closed, empty header.
@@ -464,6 +663,44 @@ export default function Onboarding() {
   // navigation only lists top-level blocks.
   const topLevelBlocks = blocks.filter((b) => !b.parentId);
   const childrenOf = (id: string) => blocks.filter((b) => b.parentId === id);
+
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Reorders the top-level blocks (drag handle on each TopLevelBlockCard).
+  // Optimistic: rebuild `blocks` as [new top-level order, ...every sub-block
+  // untouched] — topLevelBlocks/childrenOf are plain filters, so only the
+  // relative order among matching items matters, not their absolute
+  // position in the flat array.
+  const handleReorderTop = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setBlocks((prev) => {
+      const top = prev.filter((b) => !b.parentId);
+      const rest = prev.filter((b) => b.parentId);
+      const oldIndex = top.findIndex((b) => b.id === active.id);
+      const newIndex = top.findIndex((b) => b.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      const reordered = arrayMove(top, oldIndex, newIndex);
+      reorderOnboardingBlocks(null, reordered.map((b) => b.id)).catch((e) => { console.error(e); load(); });
+      return [...reordered, ...rest];
+    });
+  };
+
+  // Same idea, scoped to one parent's own sub-blocks.
+  const handleReorderChildren = (parentId: string, event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setBlocks((prev) => {
+      const kids = prev.filter((b) => b.parentId === parentId);
+      const rest = prev.filter((b) => b.parentId !== parentId);
+      const oldIndex = kids.findIndex((b) => b.id === active.id);
+      const newIndex = kids.findIndex((b) => b.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      const reordered = arrayMove(kids, oldIndex, newIndex);
+      reorderOnboardingBlocks(parentId, reordered.map((b) => b.id)).catch((e) => { console.error(e); load(); });
+      return [...rest, ...reordered];
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -519,127 +756,36 @@ export default function Onboarding() {
       ) : topLevelBlocks.length === 0 ? (
         <EmptyState icon={<GraduationCap size={32} strokeWidth={1.2} />} message="Nothing here yet." />
       ) : (
-        <div className="space-y-3">
-          {topLevelBlocks.map((b, i) => {
-            const children = childrenOf(b.id);
-            const accent = ACCENT_PALETTE[i % ACCENT_PALETTE.length];
-            const isOpen = expandedIds.has(b.id);
-            return (
-              <div
-                key={b.id}
-                id={blockAnchorId(b.id)}
-                className="card overflow-hidden"
-                style={{ scrollMarginTop: '80px', borderLeft: `3px solid ${accent.dot}`, padding: 0 }}
-              >
-                <button
-                  onClick={() => toggleExpanded(b.id)}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-slate-50"
-                  style={{ backgroundColor: isOpen ? accent.bg : undefined }}
-                >
-                  {isOpen
-                    ? <ChevronDown size={15} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
-                    : <ChevronRight size={15} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />}
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accent.dot }} />
-                  <h3 className="text-sm font-semibold text-slate-800 flex-1 min-w-0 truncate">{b.title}</h3>
-                  {children.length > 0 && (
-                    <span
-                      className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
-                      style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
-                    >
-                      {children.length} sub-block{children.length === 1 ? '' : 's'}
-                    </span>
-                  )}
-                </button>
-
-                {isOpen && (
-                  <div className="px-4 pb-4 pt-1 space-y-3">
-                    {isAdmin && (
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openEdit(b)}
-                          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                          style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
-                        >
-                          <Pencil size={13} strokeWidth={1.8} />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setConfirmDeleteId(b.id)}
-                          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
-                          style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
-                        >
-                          <Trash2 size={13} strokeWidth={1.8} />
-                          Delete
-                        </button>
-                      </div>
-                    )}
-
-                    <BlockContent content={b.content} attachments={b.attachments} className="text-sm text-slate-600 leading-relaxed" />
-
-                    {children.length > 0 && (
-                      <div className="pl-4 space-y-1" style={{ borderLeft: `2px solid ${accent.line}` }}>
-                        {children.map((c) => {
-                          const isChildOpen = expandedIds.has(c.id);
-                          return (
-                            <div key={c.id} id={blockAnchorId(c.id)} style={{ scrollMarginTop: '80px' }}>
-                              <button
-                                onClick={() => toggleExpanded(c.id)}
-                                className="w-full flex items-center gap-2 text-left py-1.5 rounded-lg transition-colors hover:bg-slate-50"
-                              >
-                                {isChildOpen
-                                  ? <ChevronDown size={13} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />
-                                  : <ChevronRight size={13} strokeWidth={2} className="shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }} />}
-                                <h4 className="text-sm font-medium text-slate-700 flex-1 min-w-0 truncate">{c.title}</h4>
-                              </button>
-
-                              {isChildOpen && (
-                                <div className="pl-5 pb-2 space-y-2">
-                                  {isAdmin && (
-                                    <div className="flex items-center justify-end gap-2">
-                                      <button
-                                        onClick={() => openEdit(c)}
-                                        className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
-                                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
-                                      >
-                                        <Pencil size={12} strokeWidth={1.8} />
-                                        Edit
-                                      </button>
-                                      <button
-                                        onClick={() => setConfirmDeleteId(c.id)}
-                                        className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
-                                        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.5)' }}
-                                      >
-                                        <Trash2 size={12} strokeWidth={1.8} />
-                                        Delete
-                                      </button>
-                                    </div>
-                                  )}
-
-                                  <BlockContent content={c.content} attachments={c.attachments} className="text-sm text-slate-600 leading-relaxed" />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {isAdmin && (
-                      <button
-                        onClick={() => openCreate(b.id)}
-                        className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
-                        style={{ backgroundColor: 'rgba(161,249,110,0.14)', color: 'rgba(14,14,14,0.65)' }}
-                      >
-                        <Plus size={12} strokeWidth={2} />
-                        Add sub-block
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <DndContext sensors={dndSensors} onDragEnd={handleReorderTop}>
+          <SortableContext items={topLevelBlocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-3">
+              {topLevelBlocks.map((b, i) => {
+                const children = childrenOf(b.id);
+                const accent = ACCENT_PALETTE[i % ACCENT_PALETTE.length];
+                return (
+                  <TopLevelBlockCard
+                    key={b.id}
+                    block={b}
+                    accent={accent}
+                    isOpen={expandedIds.has(b.id)}
+                    isAdmin={isAdmin}
+                    childBlocks={children}
+                    expandedIds={expandedIds}
+                    dndSensors={dndSensors}
+                    onToggle={() => toggleExpanded(b.id)}
+                    onToggleChild={(id) => toggleExpanded(id)}
+                    onEdit={() => openEdit(b)}
+                    onEditChild={(c) => openEdit(c)}
+                    onDeleteRequest={() => setConfirmDeleteId(b.id)}
+                    onDeleteChildRequest={(id) => setConfirmDeleteId(id)}
+                    onAddSubBlock={() => openCreate(b.id)}
+                    onReorderChildren={(e) => handleReorderChildren(b.id, e)}
+                  />
+                );
+              })}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       <Modal

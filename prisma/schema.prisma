@@ -720,12 +720,14 @@ model OnboardingBlock {
   parentId    String?   // set on a sub-block — the top-level block it's nested under. One level of nesting only: a block that has a parentId may not itself be used as a parent (enforced in onboarding.ts, not here).
   parent      OnboardingBlock?  @relation("OnboardingBlockChildren", fields: [parentId], references: [id], onDelete: Cascade)
   children    OnboardingBlock[] @relation("OnboardingBlockChildren")
+  sortOrder   Int       @default(0) // manual drag-to-reorder position among siblings sharing the same parentId (top-level blocks and each block's own sub-blocks reorder independently) — set to the sibling count on create (appends at the end), rewritten wholesale by PATCH /reorder
   editedAt    DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([authorId])
   @@index([parentId])
+  @@index([parentId, sortOrder])
 }
 
 // Peekviewer Team — "New account request" (sent via Inbox's New Message
