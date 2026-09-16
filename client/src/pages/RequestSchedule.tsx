@@ -39,9 +39,10 @@ const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
 const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
 const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
 
-// "Перерозподіл профілів" — a plain fixed date/validity note, no per-person
-// breakdown. Same "no spreadsheet, just hardcode it" approach as the two
-// lists around it.
+// Fixed redistribution-day/validity note shown at the top of the
+// "Перерозподіл активних профілів" card, above its per-agent day list —
+// same "no spreadsheet, just hardcode it" approach as the reference list
+// below it.
 const PROFILE_REDISTRIBUTION_DAY = '07.09.2026';
 const PROFILE_REDISTRIBUTION_VALID_RANGE = '04.09.2026 - 01.04.2026';
 
@@ -296,6 +297,10 @@ export default function RequestSchedule() {
 
       <div className="card p-4 space-y-3">
         <h3 className="text-sm font-semibold text-ink">Перерозподіл активних профілів</h3>
+        <div className="text-xs space-y-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>
+          <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{PROFILE_REDISTRIBUTION_DAY}</span></p>
+          <p>Актуально з {PROFILE_REDISTRIBUTION_VALID_RANGE}</p>
+        </div>
         <div className="space-y-2">
           {data.redistribution.map((r) => {
             const s = styleForAssignee(r.userName);
@@ -310,14 +315,6 @@ export default function RequestSchedule() {
               </div>
             );
           })}
-        </div>
-      </div>
-
-      <div className="card p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-ink">Перерозподіл профілів</h3>
-        <div className="text-xs space-y-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>
-          <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{PROFILE_REDISTRIBUTION_DAY}</span></p>
-          <p>Актуально з {PROFILE_REDISTRIBUTION_VALID_RANGE}</p>
         </div>
       </div>
 
