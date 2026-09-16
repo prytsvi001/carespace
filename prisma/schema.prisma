@@ -659,6 +659,26 @@ model RowAccount {
   @@index([archived])
 }
 
+// Peekviewer Team — "Row Accounts" tab, "Reserve email" view. Spare email
+// inboxes admins stock up (separate from the per-account email/emailPassword
+// already stored on RowAccount) that any team member can tie a claimed
+// account's nickname to via a "+" button, so everyone can see how many
+// accounts are already registered against a given reserve email before
+// reusing it. linkedAccounts is append/remove-able by any team member; the
+// email/password row itself is admin-managed, same as Proxy/RowAccount.
+model ReserveEmail {
+  id             String   @id @default(cuid())
+  email          String
+  emailPassword  String?
+  linkedAccounts String   @default("[]") // JSON: [{id, nickname, addedById, addedByName, createdAt}]
+  addedById      String
+  addedByName    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([addedById])
+}
+
 // Peekviewer Team — "Request Schedule" tab. The base day-to-agent assignment
 // is a pure rotation formula computed in code (server/src/routes/requestSchedule.ts),
 // not stored anywhere — no external spreadsheet dependency. This table only

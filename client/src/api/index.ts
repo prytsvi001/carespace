@@ -521,6 +521,42 @@ export const updateRowAccount = (id: string, data: Partial<Pick<RowAccountItem, 
 export const deleteRowAccount = (id: string) =>
   api.delete(`/row-accounts/${id}`).then((r) => r.data);
 
+// ─── Reserve email pool (Peekviewer Team, part of Row Accounts) ────────────
+export interface ReserveEmailLinkedAccount {
+  id: string;
+  nickname: string;
+  addedById: string;
+  addedByName: string;
+  createdAt: string;
+}
+
+export interface ReserveEmailItem {
+  id: string;
+  email: string;
+  emailPassword: string | null;
+  linkedAccounts: ReserveEmailLinkedAccount[];
+  addedById: string;
+  addedByName: string;
+  createdAt: string;
+}
+
+export const getReserveEmails = () => api.get<ReserveEmailItem[]>('/reserve-emails').then((r) => r.data);
+
+export const addReserveEmailsBulk = (text: string) =>
+  api.post<ReserveEmailItem[]>('/reserve-emails/bulk', { text }).then((r) => r.data);
+
+export const addReserveEmailAccount = (id: string, nickname: string) =>
+  api.patch<ReserveEmailItem>(`/reserve-emails/${id}/accounts`, { nickname }).then((r) => r.data);
+
+export const removeReserveEmailAccount = (id: string, accountId: string) =>
+  api.delete<ReserveEmailItem>(`/reserve-emails/${id}/accounts/${accountId}`).then((r) => r.data);
+
+export const updateReserveEmail = (id: string, data: { email?: string; emailPassword?: string | null }) =>
+  api.patch<ReserveEmailItem>(`/reserve-emails/${id}`, data).then((r) => r.data);
+
+export const deleteReserveEmail = (id: string) =>
+  api.delete(`/reserve-emails/${id}`).then((r) => r.data);
+
 // ─── Quick Links ───────────────────────────────────────────────────────────────
 export const getQuickLinks = () =>
   api.get('/quick-links').then((r) => r.data);

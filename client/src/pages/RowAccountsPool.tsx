@@ -5,10 +5,19 @@
 // credential set, shown as one row of copyable fields (nickname → password →
 // [2FA] → email → email password), and batches are grouped into named
 // blocks by an optional Header.
+//
+// A third view, "Reserve email", lives alongside Available/Archive: a flat
+// table of spare email inboxes (admin-managed add/edit/delete) where any
+// team member can tag the nickname of an account they registered against
+// that email via "+", so everyone can see at a glance how many accounts are
+// already tied to a given reserve email before reusing it.
 import React, { useEffect, useState } from 'react';
-import { KeyRound, Plus, Copy, Check, Trash2, List, Archive } from 'lucide-react';
+import { KeyRound, Mail, Plus, Copy, Check, Trash2, List, Archive, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getRowAccounts, addRowAccountsBulk, takeRowAccount, archiveRowAccount, deleteRowAccount, RowAccountItem, RowAccountMode } from '../api';
+import {
+  getRowAccounts, addRowAccountsBulk, takeRowAccount, archiveRowAccount, deleteRowAccount, RowAccountItem, RowAccountMode,
+  getReserveEmails, addReserveEmailsBulk, addReserveEmailAccount, removeReserveEmailAccount, deleteReserveEmail, ReserveEmailItem,
+} from '../api';
 import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
 
 const FIELDS: { key: keyof RowAccountItem; label: string }[] = [
@@ -38,19 +47,94 @@ function CopyField({ label, value, onCopy, isCopied }: {
   );
 }
 
+// A copyable value with no label — used in the Reserve email table where the
+// column header already says what the value is.
+function CopyValue({ value, onCopy, isCopied }: { value: string | null; onCopy: () => void; isCopied: boolean }) {
+  if (!value) return <span className="text-sm" style={{ color: 'rgba(14,14,14,0.3)' }}>—</span>;
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="font-mono text-sm text-slate-700">{value}</span>
+      <button
+        onClick={onCopy}
+        className="shrink-0 flex items-center p-1 rounded-lg transition-colors"
+        style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.7)' }}
+      >
+        {isCopied ? <Check size={11} strokeWidth={2} /> : <Copy size={11} strokeWidth={1.8} />}
+      </button>
+    </div>
+  );
+}
+
 export default function RowAccountsPool() {
   const { user } = useAuth();
   const isAdmin = !!user?.peekviewerAdmin;
 
   const [accounts, setAccounts] = useState<RowAccountItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'available' | 'archive'>('available');
+  const [view, setView] = useState<'available' | 'archive' | 'reserve'>('available');
 
   const load = async () => {
     try { setAccounts(await getRowAccounts()); } catch (e) { console.error(e); }
   };
 
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); }, []);
+
+  // ── Reserve email ────────────────────────────────────────────────────────
+  const [reserveEmails, setReserveEmails] = useState<ReserveEmailItem[]>([]);
+  const [reserveLoading, setReserveLoading] = useState(true);
+  const loadReserve = async () => {
+    try { setReserveEmails(await getReserveEmails()); } catch (e) { console.error(e); }
+  };
+  useEffect(() => { loadReserve().finally(() => setReserveLoading(false)); }, []);
+
+  const [showAddReserve, setShowAddReserve] = useState(false);
+  const [reserveBulkText, setReserveBulkText] = useState('');
+  const [addingReserve, setAddingReserve] = useState(false);
+  const [addReserveError, setAddReserveError] = useState('');
+
+  const handleAddReserve = async () => {
+    if (!reserveBulkText.trim()) return;
+    setAddingReserve(true);
+    setAddReserveError('');
+    try {
+      const created = await addReserveEmailsBulk(reserveBulkText);
+      setReserveEmails((prev) => [...created, ...prev]);
+      setReserveBulkText('');
+      setShowAddReserve(false);
+    } catch (e: any) {
+      setAddReserveError(e?.response?.data?.error ?? 'Failed to add reserve emails.');
+    } finally {
+      setAddingReserve(false);
+    }
+  };
+
+  const [newAccountFor, setNewAccountFor] = useState<string | null>(null);
+  const [newAccountNickname, setNewAccountNickname] = useState('');
+
+  const handleAddAccount = async (id: string) => {
+    const nickname = newAccountNickname.trim();
+    if (!nickname) return;
+    try {
+      const updated = await addReserveEmailAccount(id, nickname);
+      setReserveEmails((prev) => prev.map((r) => (r.id === id ? updated : r)));
+      setNewAccountFor(null);
+      setNewAccountNickname('');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRemoveAccount = async (id: string, accountId: string) => {
+    setReserveEmails((prev) => prev.map((r) => (r.id === id ? { ...r, linkedAccounts: r.linkedAccounts.filter((a) => a.id !== accountId) } : r)));
+    try { await removeReserveEmailAccount(id, accountId); } catch (e) { console.error(e); loadReserve(); }
+  };
+
+  const [confirmDeleteReserveId, setConfirmDeleteReserveId] = useState<string | null>(null);
+  const handleDeleteReserve = async (id: string) => {
+    setConfirmDeleteReserveId(null);
+    setReserveEmails((prev) => prev.filter((r) => r.id !== id));
+    try { await deleteReserveEmail(id); } catch (e) { console.error(e); loadReserve(); }
+  };
 
   const available = accounts.filter((a) => !a.archived);
   const archived = accounts.filter((a) => a.archived);
@@ -145,32 +229,137 @@ export default function RowAccountsPool() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-800">Row Accounts</h2>
-          <p className="text-sm text-slate-400">{available.length} available · {archived.length} archived</p>
+          <p className="text-sm text-slate-400">{available.length} available · {archived.length} archived · {reserveEmails.length} reserve emails</p>
         </div>
         {isAdmin && (
-          <button onClick={() => setShowAdd(true)} className="btn-accent text-sm flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={() => (view === 'reserve' ? setShowAddReserve(true) : setShowAdd(true))}
+            className="btn-accent text-sm flex items-center gap-1.5 shrink-0"
+          >
             <Plus size={14} strokeWidth={2} />
-            Add new row accounts
+            {view === 'reserve' ? 'Add reserve emails' : 'Add new row accounts'}
           </button>
         )}
       </div>
 
       <div className="flex gap-1">
-        {(['available', 'archive'] as const).map((v) => (
+        {(['available', 'archive', 'reserve'] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
-            className="px-3 py-1 rounded-lg text-sm font-medium transition-all capitalize"
+            className="px-3 py-1 rounded-lg text-sm font-medium transition-all"
             style={view === v
               ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
               : { color: 'rgba(14,14,14,0.45)' }}
           >
-            {v === 'available' ? 'Available' : 'Archive'}
+            {v === 'available' ? 'Available' : v === 'archive' ? 'Archive' : 'Reserve email'}
           </button>
         ))}
       </div>
 
-      {!loading && groups.length > 1 && (
+      {view === 'reserve' ? (
+        reserveLoading ? (
+          <CardListSkeleton />
+        ) : reserveEmails.length === 0 ? (
+          <EmptyState icon={<Mail size={32} strokeWidth={1.2} />} message="No reserve emails yet." />
+        ) : (
+          <div className="card p-0 overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'rgba(14,14,14,0.45)' }}>
+                  <th className="px-4 py-2.5">Email</th>
+                  <th className="px-4 py-2.5">Email password</th>
+                  <th className="px-4 py-2.5">Accounts added</th>
+                  {isAdmin && <th className="px-4 py-2.5 w-8" />}
+                </tr>
+              </thead>
+              <tbody>
+                {reserveEmails.map((r) => (
+                  <tr key={r.id} className="border-t align-top" style={{ borderColor: 'rgba(14,14,14,0.07)' }}>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <CopyValue value={r.email} isCopied={copiedKey === `${r.id}:email`} onCopy={() => handleCopy(`${r.id}:email`, r.email)} />
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <CopyValue value={r.emailPassword} isCopied={copiedKey === `${r.id}:pw`} onCopy={() => handleCopy(`${r.id}:pw`, r.emailPassword || '')} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {r.linkedAccounts.map((a) => (
+                          <span
+                            key={a.id}
+                            className="inline-flex items-center gap-1 text-xs font-medium pl-2 pr-1 py-1 rounded-full"
+                            style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.75)' }}
+                            title={`Added by ${a.addedByName}`}
+                          >
+                            {a.nickname}
+                            {(isAdmin || a.addedById === user?.id) && (
+                              <button
+                                onClick={() => handleRemoveAccount(r.id, a.id)}
+                                className="p-0.5 rounded-full transition-colors hover:bg-red-100 hover:text-red-600"
+                                style={{ color: 'rgba(14,14,14,0.4)' }}
+                                title="Remove"
+                              >
+                                <X size={10} strokeWidth={2.5} />
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                        {newAccountFor === r.id ? (
+                          <span className="inline-flex items-center gap-1">
+                            <input
+                              autoFocus
+                              className="input text-xs py-1 px-2 w-28"
+                              placeholder="Nickname"
+                              value={newAccountNickname}
+                              onChange={(e) => setNewAccountNickname(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleAddAccount(r.id);
+                                if (e.key === 'Escape') { setNewAccountFor(null); setNewAccountNickname(''); }
+                              }}
+                              onBlur={() => { if (!newAccountNickname.trim()) setNewAccountFor(null); }}
+                            />
+                            <button
+                              onClick={() => handleAddAccount(r.id)}
+                              disabled={!newAccountNickname.trim()}
+                              className="p-1 rounded-full transition-colors"
+                              style={{ backgroundColor: 'rgba(161,249,110,0.35)', color: '#0E0E0E' }}
+                            >
+                              <Check size={11} strokeWidth={2.5} />
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => { setNewAccountFor(r.id); setNewAccountNickname(''); }}
+                            className="p-1 rounded-full transition-colors"
+                            style={{ backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.55)' }}
+                            title="Add account"
+                          >
+                            <Plus size={11} strokeWidth={2.5} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    {isAdmin && (
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => setConfirmDeleteReserveId(r.id)}
+                          className="p-1.5 rounded-lg transition-colors hover:bg-red-50 hover:text-red-600"
+                          style={{ color: 'rgba(14,14,14,0.35)' }}
+                          title="Delete"
+                        >
+                          <Trash2 size={14} strokeWidth={1.8} />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : null}
+
+      {view !== 'reserve' && !loading && groups.length > 1 && (
         <div className="card p-3">
           <p className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: 'rgba(14,14,14,0.45)' }}>
             <List size={12} strokeWidth={2} />
@@ -192,7 +381,7 @@ export default function RowAccountsPool() {
         </div>
       )}
 
-      {loading ? (
+      {view !== 'reserve' && (loading ? (
         <CardListSkeleton />
       ) : displayed.length === 0 ? (
         <EmptyState icon={<KeyRound size={32} strokeWidth={1.2} />} message={view === 'available' ? 'No row accounts available.' : 'Nothing archived yet.'} />
@@ -268,7 +457,7 @@ export default function RowAccountsPool() {
             </div>
           ))}
         </div>
-      )}
+      ))}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add new row accounts">
         <div className="space-y-3">
@@ -333,6 +522,34 @@ export default function RowAccountsPool() {
         message="Delete this account? This cannot be undone."
         onConfirm={() => { if (confirmDeleteId) handleDelete(confirmDeleteId); }}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <Modal open={showAddReserve} onClose={() => setShowAddReserve(false)} title="Add reserve emails">
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">One email per line: <code>email password</code> (password optional)</label>
+            <textarea
+              className="input text-sm w-full font-mono"
+              rows={8}
+              value={reserveBulkText}
+              onChange={(e) => setReserveBulkText(e.target.value)}
+              placeholder={'reserve1@x.com pass1\nreserve2@x.com pass2'}
+            />
+          </div>
+          {addReserveError && <p className="text-xs text-red-500">{addReserveError}</p>}
+          <div className="flex justify-end">
+            <button className="btn-accent text-sm" onClick={handleAddReserve} disabled={!reserveBulkText.trim() || addingReserve}>
+              {addingReserve ? 'Adding…' : 'Add emails'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDeleteReserveId}
+        message="Delete this reserve email? This cannot be undone."
+        onConfirm={() => { if (confirmDeleteReserveId) handleDeleteReserve(confirmDeleteReserveId); }}
+        onCancel={() => setConfirmDeleteReserveId(null)}
       />
     </div>
   );
