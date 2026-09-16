@@ -63,6 +63,59 @@ function AttachmentPreview({ a }: { a: OnboardingAttachment }) {
   );
 }
 
+function inlineAttachmentTypeAllowed(contentType: string): boolean {
+  return contentType.startsWith('image/') || contentType.startsWith('video/');
+}
+
+// A pasted image/video is inserted into the content text as this marker, at
+// the cursor position, so it renders right where it was pasted instead of
+// only in the attachments list at the end of the block. "att" identifies
+// the attachment by url, looked up from the block's own attachments array.
+const INLINE_ATTACHMENT_PATTERN = /\[\[att:([^\]]+)\]\]/;
+
+function inlineAttachmentMarker(url: string): string {
+  return `[[att:${url}]]`;
+}
+
+// Renders a block's content, splicing in an inline image/video wherever a
+// marker appears, then appends any attachments the content doesn't
+// reference (e.g. added via the "Attach file" button, or non-inline types
+// like PDFs) below, same as before.
+function BlockContent({ content, attachments, className }: {
+  content: string; attachments: OnboardingAttachment[]; className?: string;
+}) {
+  const byUrl = new Map(attachments.map((a) => [a.url, a]));
+  const usedUrls = new Set<string>();
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  const re = new RegExp(INLINE_ATTACHMENT_PATTERN.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      const chunk = content.slice(lastIndex, match.index);
+      if (chunk.trim()) parts.push(<RichText key={key++} text={chunk} className={className} />);
+    }
+    const attachment = byUrl.get(match[1]);
+    if (attachment) {
+      usedUrls.add(attachment.url);
+      parts.push(<AttachmentPreview key={key++} a={attachment} />);
+    }
+    lastIndex = re.lastIndex;
+  }
+  const tail = content.slice(lastIndex);
+  if (tail.trim()) parts.push(<RichText key={key++} text={tail} className={className} />);
+
+  const remaining = attachments.filter((a) => !usedUrls.has(a.url));
+
+  return (
+    <div className="space-y-2">
+      {parts}
+      {remaining.map((a) => <AttachmentPreview key={a.url} a={a} />)}
+    </div>
+  );
+}
+
 export default function Onboarding() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'head' || user?.role === 'lead';
@@ -150,14 +203,61 @@ export default function Onboarding() {
     await uploadFiles(files);
   };
 
-  // Lets you Ctrl+V an image (or any file) straight from the clipboard as an
-  // attachment, alongside the "Attach file" button — e.g. a screenshot
-  // copied from Snipping Tool pastes in directly, no save-then-browse step.
+  // Lets you Ctrl+V an image/video straight from the clipboard, alongside
+  // the "Attach file" button — e.g. a screenshot copied from Snipping Tool
+  // pastes in directly, no save-then-browse step. Unlike the button (which
+  // only appends to the attachments list), a pasted image/video also gets a
+  // marker inserted at the cursor so it renders right where it was pasted
+  // (see BlockContent/INLINE_ATTACHMENT_PATTERN above). Other file types
+  // pasted this way still just append to the attachments list, same as the
+  // button.
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const files = Array.from(e.clipboardData?.files || []);
     if (files.length === 0) return;
     e.preventDefault();
-    await uploadFiles(files);
+
+    const el = e.currentTarget;
+    let cursor = el.selectionStart ?? el.value.length;
+
+    setUploadError('');
+    for (const file of files) {
+      setUploadingCount((c) => c + 1);
+      try {
+        const result = await uploadPresigned(`onboarding/${file.name}`, file, {
+          access: 'private',
+          handleUploadUrl: '/api/onboarding/attachments/upload-url',
+        });
+        const attachment: OnboardingAttachment = {
+          url: result.url, pathname: result.pathname, name: file.name,
+          contentType: result.contentType, size: file.size,
+        };
+
+        setForm((f) => {
+          const attachments = [...f.attachments, attachment];
+          if (!inlineAttachmentTypeAllowed(attachment.contentType)) {
+            return { ...f, attachments };
+          }
+          const marker = inlineAttachmentMarker(attachment.url);
+          const before = f.content.slice(0, cursor);
+          const after = f.content.slice(cursor);
+          const lead = before && !before.endsWith('\n') ? '\n' : '';
+          const trail = after && !after.startsWith('\n') ? '\n' : '';
+          const insert = `${lead}${marker}${trail}`;
+          cursor = (before + insert).length; // next pasted file (if any) inserts after this one
+          return { ...f, attachments, content: before + insert + after };
+        });
+      } catch (err) {
+        console.error(err);
+        setUploadError(`Failed to upload "${file.name}".`);
+      } finally {
+        setUploadingCount((c) => c - 1);
+      }
+    }
+
+    requestAnimationFrame(() => {
+      contentRef.current?.focus();
+      contentRef.current?.setSelectionRange(cursor, cursor);
+    });
   };
 
   // Wraps the current textarea selection in "**...**" (or inserts a
@@ -180,7 +280,13 @@ export default function Onboarding() {
   };
 
   const handleRemoveAttachment = (url: string) => {
-    setForm((f) => ({ ...f, attachments: f.attachments.filter((a) => a.url !== url) }));
+    setForm((f) => ({
+      ...f,
+      attachments: f.attachments.filter((a) => a.url !== url),
+      // Drop the inline marker too, if this attachment was pasted inline —
+      // otherwise a dangling "[[att:...]]" is left behind as literal text.
+      content: f.content.split(inlineAttachmentMarker(url)).join(''),
+    }));
     deleteOnboardingAttachment(url).catch((err) => console.error(err));
   };
 
@@ -339,13 +445,7 @@ export default function Onboarding() {
                       </div>
                     )}
 
-                    <RichText text={b.content} className="text-sm text-slate-600 leading-relaxed" />
-
-                    {b.attachments.length > 0 && (
-                      <div className="space-y-2">
-                        {b.attachments.map((a) => <AttachmentPreview key={a.url} a={a} />)}
-                      </div>
-                    )}
+                    <BlockContent content={b.content} attachments={b.attachments} className="text-sm text-slate-600 leading-relaxed" />
 
                     {children.length > 0 && (
                       <div className="pl-4 space-y-3" style={{ borderLeft: `2px solid ${accent.line}` }}>
@@ -375,13 +475,7 @@ export default function Onboarding() {
                               )}
                             </div>
 
-                            <RichText text={c.content} className="text-sm text-slate-600 leading-relaxed" />
-
-                            {c.attachments.length > 0 && (
-                              <div className="space-y-2">
-                                {c.attachments.map((a) => <AttachmentPreview key={a.url} a={a} />)}
-                              </div>
-                            )}
+                            <BlockContent content={c.content} attachments={c.attachments} className="text-sm text-slate-600 leading-relaxed" />
                           </div>
                         ))}
                       </div>
