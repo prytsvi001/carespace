@@ -228,7 +228,7 @@ export default function RowAccountsPool() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Row Accounts</h2>
+          <h2 className="text-xl font-bold text-slate-800">Raw Accounts</h2>
           <p className="text-sm text-slate-400">{available.length} available · {archived.length} archived · {reserveEmails.length} reserve emails</p>
         </div>
         {isAdmin && (

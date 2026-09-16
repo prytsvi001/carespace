@@ -132,7 +132,7 @@ const PEEKVIEWER_CORE_TABS: { id: PeekviewerSharedTab; label: string; shortLabel
   { id: 'schedule',      label: 'Request Schedule', shortLabel: 'Schedule', Icon: CalendarClock },
   { id: 'boost',         label: 'Boost',            shortLabel: 'Boost',    Icon: Rocket },
   { id: 'proxy',         label: 'Proxy',             shortLabel: 'Proxy',    Icon: Wifi },
-  { id: 'row-accounts',  label: 'Row Accounts',      shortLabel: 'Accounts', Icon: KeyRound },
+  { id: 'row-accounts',  label: 'Raw Accounts',      shortLabel: 'Accounts', Icon: KeyRound },
   { id: 'references',    label: 'New Accounts',       shortLabel: 'New Accts', Icon: BookOpen },
 ];
 const PEEKVIEWER_LEGACY_TABS: { id: PeekviewerSharedTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
