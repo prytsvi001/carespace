@@ -66,6 +66,72 @@ function AttachmentPreview({ a, widthPct }: { a: OnboardingAttachment; widthPct?
   );
 }
 
+// Groups a block's plain-text content into visually distinct chunks —
+// consecutive "- "/"• "/"* " lines become a real bulleted list, a line that
+// is ENTIRELY "**...**" (nothing else on it) becomes a spaced-out label
+// (the "Обов'язки" style mini-header agents already write, just given room
+// to breathe instead of running straight into the paragraph after it), and
+// everything else is grouped into paragraphs. Works whether or not the
+// original text has blank lines between sections — a run of same-type
+// lines merges into one group either way, so already-published content
+// gets the new spacing automatically with zero edits needed. Purely a
+// render-time grouping — never changes the stored content string itself.
+function FormattedText({ text, className }: { text: string; className?: string }) {
+  type Group = { type: 'list'; lines: string[] } | { type: 'label'; line: string } | { type: 'para'; lines: string[] };
+  const groups: Group[] = [];
+  let breakNext = true;
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) { breakNext = true; continue; }
+
+    const bulletMatch = line.match(/^[-•*]\s+(.*)$/);
+    const labelMatch = line.match(/^\*\*(.+)\*\*$/);
+    const last = groups[groups.length - 1];
+
+    if (labelMatch) {
+      groups.push({ type: 'label', line });
+      breakNext = true;
+    } else if (bulletMatch) {
+      if (!breakNext && last?.type === 'list') last.lines.push(bulletMatch[1]);
+      else groups.push({ type: 'list', lines: [bulletMatch[1]] });
+      breakNext = false;
+    } else {
+      if (!breakNext && last?.type === 'para') last.lines.push(line);
+      else groups.push({ type: 'para', lines: [line] });
+      breakNext = false;
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {groups.map((g, i) => {
+        if (g.type === 'label') {
+          return (
+            <div key={i} className="font-semibold text-slate-700">
+              <RichText text={g.line} className={className} />
+            </div>
+          );
+        }
+        if (g.type === 'list') {
+          return (
+            <ul key={i} className="list-disc pl-5 space-y-1">
+              {g.lines.map((l, j) => (
+                <li key={j}><RichText text={l} className={className} /></li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <div key={i}>
+            <RichText text={g.lines.join('\n')} className={className} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function inlineAttachmentTypeAllowed(contentType: string): boolean {
   return contentType.startsWith('image/') || contentType.startsWith('video/');
 }
@@ -108,7 +174,7 @@ function BlockContent({ content, attachments, className, onResize }: {
   while ((match = re.exec(content)) !== null) {
     if (match.index > lastIndex) {
       const chunk = content.slice(lastIndex, match.index);
-      if (chunk.trim()) parts.push(<RichText key={key++} text={chunk} className={className} />);
+      if (chunk.trim()) parts.push(<FormattedText key={key++} text={chunk} className={className} />);
     }
     const attachment = byUrl.get(match[1]);
     const widthPct = match[2] ? Number(match[2]) : 100;
@@ -143,7 +209,7 @@ function BlockContent({ content, attachments, className, onResize }: {
     lastIndex = re.lastIndex;
   }
   const tail = content.slice(lastIndex);
-  if (tail.trim()) parts.push(<RichText key={key++} text={tail} className={className} />);
+  if (tail.trim()) parts.push(<FormattedText key={key++} text={tail} className={className} />);
 
   const remaining = attachments.filter((a) => !usedUrls.has(a.url));
 
