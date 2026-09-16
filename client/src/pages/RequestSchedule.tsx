@@ -39,6 +39,12 @@ const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
 const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
 const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
 
+// "Перерозподіл профілів" — a plain fixed date/validity note, no per-person
+// breakdown. Same "no spreadsheet, just hardcode it" approach as the two
+// lists around it.
+const PROFILE_REDISTRIBUTION_DAY = '07.09.2026';
+const PROFILE_REDISTRIBUTION_VALID_RANGE = '04.09.2026 - 01.04.2026';
+
 // "Розподіл неактивних профілів" — a separate, fixed historical reference
 // list (who owned inactive-profile redistribution during which period), not
 // a rotating formula like the two lists above it, so it's just hardcoded
@@ -304,6 +310,14 @@ export default function RequestSchedule() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      <div className="card p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-ink">Перерозподіл профілів</h3>
+        <div className="text-xs space-y-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>
+          <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{PROFILE_REDISTRIBUTION_DAY}</span></p>
+          <p>Актуально з {PROFILE_REDISTRIBUTION_VALID_RANGE}</p>
         </div>
       </div>
 
