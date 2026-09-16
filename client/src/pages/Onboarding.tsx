@@ -451,6 +451,19 @@ export default function Onboarding() {
     });
   };
 
+  // Separate from expandedIds (which opens the actual block card below) —
+  // this only controls whether a top-level entry's sub-blocks are listed
+  // out in Quick Navigation itself. Collapsed by default so the nav stays a
+  // short list of topics instead of a full copy of the page's structure.
+  const [navExpandedIds, setNavExpandedIds] = useState<Set<string>>(new Set());
+  const toggleNavExpanded = (id: string) => {
+    setNavExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormData>({ title: '', content: '', attachments: [], parentId: null });
@@ -786,29 +799,54 @@ export default function Onboarding() {
             Quick navigation
           </p>
           <div className="flex flex-col">
-            {filteredTopLevelBlocks.map((b, i) => (
-              <React.Fragment key={b.id}>
-                <button
-                  onClick={() => scrollToBlock(b.id)}
-                  className="flex items-center gap-2 text-left text-sm px-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
-                  style={{ color: 'rgba(14,14,14,0.7)' }}
-                >
-                  <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{i + 1}.</span>
-                  <span className="truncate font-medium">{b.title}</span>
-                </button>
-                {visibleChildrenOf(b).map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => scrollToBlock(c.id, b.id)}
-                    className="flex items-center gap-2 text-left text-sm pl-8 pr-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
-                    style={{ color: 'rgba(14,14,14,0.55)' }}
-                  >
-                    <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.3)' }}>–</span>
-                    <span className="truncate">{c.title}</span>
-                  </button>
-                ))}
-              </React.Fragment>
-            ))}
+            {filteredTopLevelBlocks.map((b, i) => {
+              const kids = visibleChildrenOf(b);
+              // While searching, always show the (already-filtered, already
+              // short) matching sub-blocks — no need to also click a chevron.
+              const navOpen = !!searchQuery || navExpandedIds.has(b.id);
+              return (
+                <React.Fragment key={b.id}>
+                  <div className="flex items-center gap-0.5">
+                    {kids.length > 0 ? (
+                      <button
+                        onClick={() => toggleNavExpanded(b.id)}
+                        className="p-1 rounded-lg shrink-0 transition-colors hover:bg-slate-100"
+                        style={{ color: 'rgba(14,14,14,0.35)' }}
+                        aria-label={navOpen ? 'Collapse' : 'Expand'}
+                      >
+                        {navOpen
+                          ? <ChevronDown size={13} strokeWidth={2} />
+                          : <ChevronRight size={13} strokeWidth={2} />}
+                      </button>
+                    ) : (
+                      <span className="w-[26px] shrink-0" />
+                    )}
+                    <button
+                      onClick={() => scrollToBlock(b.id)}
+                      className="flex-1 min-w-0 flex items-center gap-2 text-left text-sm px-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
+                      style={{ color: 'rgba(14,14,14,0.7)' }}
+                    >
+                      <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{i + 1}.</span>
+                      <span className="truncate font-medium flex-1 min-w-0">{b.title}</span>
+                      {kids.length > 0 && !navOpen && (
+                        <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.35)' }}>{kids.length}</span>
+                      )}
+                    </button>
+                  </div>
+                  {navOpen && kids.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => scrollToBlock(c.id, b.id)}
+                      className="flex items-center gap-2 text-left text-sm pl-8 pr-2 py-1.5 rounded-lg transition-colors hover:bg-slate-50"
+                      style={{ color: 'rgba(14,14,14,0.55)' }}
+                    >
+                      <span className="text-xs shrink-0" style={{ color: 'rgba(14,14,14,0.3)' }}>–</span>
+                      <span className="truncate">{c.title}</span>
+                    </button>
+                  ))}
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
       )}
