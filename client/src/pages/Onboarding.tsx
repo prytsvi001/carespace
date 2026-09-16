@@ -304,7 +304,7 @@ export default function Onboarding() {
 
                 {isOpen && (
                   <div className="px-4 pb-4 pt-1 space-y-3">
-                    {b.isAuthor && (
+                    {isAdmin && (
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => openEdit(b)}
@@ -339,7 +339,7 @@ export default function Onboarding() {
                           <div key={c.id} id={blockAnchorId(c.id)} className="space-y-2" style={{ scrollMarginTop: '80px' }}>
                             <div className="flex items-start justify-between gap-3">
                               <h4 className="text-sm font-medium text-slate-700">{c.title}</h4>
-                              {c.isAuthor && (
+                              {isAdmin && (
                                 <div className="flex items-center gap-2 shrink-0">
                                   <button
                                     onClick={() => openEdit(c)}

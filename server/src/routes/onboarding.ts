@@ -3,7 +3,10 @@
 // how-to material. Authored only by Sandra Moore / Victoria Davis — role
 // head/lead, which within the Peekviewer team (this router is gated by
 // requirePeekviewerTeam) is exactly those two, no separate flag needed.
-// Everyone on the team can read. Attachments use the same Vercel Blob
+// Either of them can edit/delete ANY block, not just ones they personally
+// authored — authorId/authorName is just attribution ("written by"), not
+// an ownership restriction. Everyone on the team can read. Attachments use
+// the same Vercel Blob
 // private-store + presigned-URL pattern as Update.attachments (see
 // updates.ts), but the client renders images/videos inline rather than as a
 // download link — the view route below is a plain authenticated stream, so
@@ -210,10 +213,11 @@ router.delete('/attachments', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/onboarding/:id — author only. parentId is optional; when present
-// it's validated the same way as on create (target must be a top-level
-// block), and a block that already has children can't be given a parent
-// itself (still just one level of nesting).
+// PUT /api/onboarding/:id — either admin (Sandra/Victoria Davis) can edit
+// any block, not just ones they personally authored. parentId is optional;
+// when present it's validated the same way as on create (target must be a
+// top-level block), and a block that already has children can't be given a
+// parent itself (still just one level of nesting).
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
@@ -236,7 +240,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
 
     const result = await prisma.onboardingBlock.updateMany({
-      where: { id: req.params.id, authorId: me.id },
+      where: { id: req.params.id },
       data: {
         title: title.trim(),
         content: content.trim(),
@@ -255,11 +259,13 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/onboarding/:id — author only
+// DELETE /api/onboarding/:id — either admin (Sandra/Victoria Davis), same as edit
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
-    const result = await prisma.onboardingBlock.deleteMany({ where: { id: req.params.id, authorId: me.id } });
+    if (!isAdmin(me)) return res.status(403).json({ error: 'Not allowed' });
+
+    const result = await prisma.onboardingBlock.deleteMany({ where: { id: req.params.id } });
     if (result.count === 0) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
   } catch (err) {
