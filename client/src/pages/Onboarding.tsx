@@ -42,13 +42,16 @@ const ACCENT_PALETTE = [
   { dot: '#14b8a6', bg: 'rgba(20,184,166,0.07)', line: 'rgba(20,184,166,0.35)' },
 ];
 
-function AttachmentPreview({ a }: { a: OnboardingAttachment }) {
+// widthPct only applies to images/videos — undefined means full-width (the
+// original, pre-resize behavior).
+function AttachmentPreview({ a, widthPct }: { a: OnboardingAttachment; widthPct?: number }) {
   const src = getOnboardingAttachmentUrl(a.url);
+  const sizeStyle = widthPct ? { width: `${widthPct}%` } : undefined;
   if (a.contentType.startsWith('image/')) {
-    return <img src={src} alt={a.name} className="rounded-lg w-full max-h-[420px] object-contain bg-slate-50" />;
+    return <img src={src} alt={a.name} className="rounded-lg max-w-full max-h-[420px] object-contain bg-slate-50" style={sizeStyle ?? { width: '100%' }} />;
   }
   if (a.contentType.startsWith('video/')) {
-    return <video src={src} controls className="rounded-lg w-full max-h-[420px] bg-black" />;
+    return <video src={src} controls className="rounded-lg max-w-full max-h-[420px] bg-black" style={sizeStyle ?? { width: '100%' }} />;
   }
   return (
     <a
@@ -67,22 +70,33 @@ function inlineAttachmentTypeAllowed(contentType: string): boolean {
   return contentType.startsWith('image/') || contentType.startsWith('video/');
 }
 
+const RESIZE_PRESETS = [25, 50, 75, 100];
+
 // A pasted image/video is inserted into the content text as this marker, at
 // the cursor position, so it renders right where it was pasted instead of
 // only in the attachments list at the end of the block. "att" identifies
-// the attachment by url, looked up from the block's own attachments array.
-const INLINE_ATTACHMENT_PATTERN = /\[\[att:([^\]]+)\]\]/;
+// the attachment by url, looked up from the block's own attachments array;
+// the optional "|w=NN" suffix is its display width as a percentage (see the
+// resize buttons in the edit-form preview below) — no suffix means 100%.
+const INLINE_ATTACHMENT_PATTERN = /\[\[att:([^|\]]+)(?:\|w=(\d{1,3}))?\]\]/;
 
-function inlineAttachmentMarker(url: string): string {
-  return `[[att:${url}]]`;
+function inlineAttachmentMarker(url: string, widthPct?: number): string {
+  return widthPct && widthPct !== 100 ? `[[att:${url}|w=${widthPct}]]` : `[[att:${url}]]`;
 }
 
-// Renders a block's content, splicing in an inline image/video wherever a
-// marker appears, then appends any attachments the content doesn't
-// reference (e.g. added via the "Attach file" button, or non-inline types
-// like PDFs) below, same as before.
-function BlockContent({ content, attachments, className }: {
+// Renders a block's content, splicing in an inline image/video (at its
+// stored width) wherever a marker appears, then appends any attachments the
+// content doesn't reference (e.g. added via the "Attach file" button, or
+// non-inline types like PDFs) below, same as before.
+//
+// In the edit form, the same renderer doubles as a live "what this will
+// look like" preview: pass onResize and each inline image/video gets a row
+// of size-preset buttons under it that rewrite that exact marker occurrence
+// in the content string (by character offset, so pasting the same image
+// twice resizes only the one you clicked).
+function BlockContent({ content, attachments, className, onResize }: {
   content: string; attachments: OnboardingAttachment[]; className?: string;
+  onResize?: (matchStart: number, matchEnd: number, url: string, widthPct: number) => void;
 }) {
   const byUrl = new Map(attachments.map((a) => [a.url, a]));
   const usedUrls = new Set<string>();
@@ -97,9 +111,34 @@ function BlockContent({ content, attachments, className }: {
       if (chunk.trim()) parts.push(<RichText key={key++} text={chunk} className={className} />);
     }
     const attachment = byUrl.get(match[1]);
+    const widthPct = match[2] ? Number(match[2]) : 100;
     if (attachment) {
       usedUrls.add(attachment.url);
-      parts.push(<AttachmentPreview key={key++} a={attachment} />);
+      const matchStart = match.index;
+      const matchEnd = re.lastIndex;
+      parts.push(
+        <div key={key++}>
+          <AttachmentPreview a={attachment} widthPct={widthPct} />
+          {onResize && (
+            <div className="flex items-center gap-1 mt-1">
+              <span className="text-[10px]" style={{ color: 'rgba(14,14,14,0.35)' }}>Size:</span>
+              {RESIZE_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => onResize(matchStart, matchEnd, attachment.url, preset)}
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors"
+                  style={preset === widthPct
+                    ? { backgroundColor: 'rgba(161,249,110,0.35)', color: '#0E0E0E' }
+                    : { backgroundColor: 'rgba(14,14,14,0.06)', color: 'rgba(14,14,14,0.55)' }}
+                >
+                  {preset}%
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
     }
     lastIndex = re.lastIndex;
   }
@@ -280,14 +319,26 @@ export default function Onboarding() {
   };
 
   const handleRemoveAttachment = (url: string) => {
+    // Drop the inline marker too, if this attachment was pasted inline —
+    // otherwise a dangling "[[att:...]]" (with or without a "|w=NN" size
+    // suffix) is left behind as literal text.
+    const markerForUrl = new RegExp(`\\[\\[att:${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\|w=\\d{1,3})?\\]\\]`, 'g');
     setForm((f) => ({
       ...f,
       attachments: f.attachments.filter((a) => a.url !== url),
-      // Drop the inline marker too, if this attachment was pasted inline —
-      // otherwise a dangling "[[att:...]]" is left behind as literal text.
-      content: f.content.split(inlineAttachmentMarker(url)).join(''),
+      content: f.content.replace(markerForUrl, ''),
     }));
     deleteOnboardingAttachment(url).catch((err) => console.error(err));
+  };
+
+  // Rewrites one specific marker occurrence's width, by character offset —
+  // targets exactly the image the resize buttons were clicked under, even
+  // if the same file was pasted more than once.
+  const handleResizeInline = (matchStart: number, matchEnd: number, url: string, widthPct: number) => {
+    setForm((f) => ({
+      ...f,
+      content: f.content.slice(0, matchStart) + inlineAttachmentMarker(url, widthPct) + f.content.slice(matchEnd),
+    }));
   };
 
   const handleSubmit = async () => {
@@ -540,6 +591,20 @@ export default function Onboarding() {
               className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-slate-300 text-slate-700 resize-none"
             />
           </div>
+
+          {new RegExp(INLINE_ATTACHMENT_PATTERN.source).test(form.content) && (
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Preview — click a size to resize an image</label>
+              <div className="rounded-lg p-3" style={{ backgroundColor: 'rgba(14,14,14,0.02)', border: '1px solid rgba(14,14,14,0.07)' }}>
+                <BlockContent
+                  content={form.content}
+                  attachments={form.attachments}
+                  className="text-sm text-slate-600 leading-relaxed"
+                  onResize={handleResizeInline}
+                />
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs text-slate-400 mb-1">
