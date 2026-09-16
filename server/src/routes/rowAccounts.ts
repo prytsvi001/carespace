@@ -62,7 +62,7 @@ router.get('/', async (_req: Request, res: Response) => {
     res.json(accounts);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to fetch row accounts' });
+    res.status(500).json({ error: 'Failed to fetch raw accounts' });
   }
 });
 
@@ -98,7 +98,7 @@ router.post('/bulk', async (req: Request, res: Response) => {
     return res.status(201).json(created);
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Failed to add row accounts' });
+    return res.status(500).json({ error: 'Failed to add raw accounts' });
   }
 });
 
@@ -117,7 +117,7 @@ router.patch('/:id/take', async (req: Request, res: Response) => {
     return res.json(updated);
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Failed to take row account' });
+    return res.status(500).json({ error: 'Failed to take raw account' });
   }
 });
 
@@ -135,7 +135,7 @@ router.patch('/:id/archive', async (req: Request, res: Response) => {
     return res.json(updated);
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Failed to archive row account' });
+    return res.status(500).json({ error: 'Failed to archive raw account' });
   }
 });
 
@@ -166,7 +166,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
     return res.json(updated);
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Failed to update row account' });
+    return res.status(500).json({ error: 'Failed to update raw account' });
   }
 });
 
@@ -180,7 +180,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to delete row account' });
+    res.status(500).json({ error: 'Failed to delete raw account' });
   }
 });
 

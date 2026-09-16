@@ -237,7 +237,7 @@ export default function RowAccountsPool() {
             className="btn-accent text-sm flex items-center gap-1.5 shrink-0"
           >
             <Plus size={14} strokeWidth={2} />
-            {view === 'reserve' ? 'Add reserve emails' : 'Add new row accounts'}
+            {view === 'reserve' ? 'Add reserve emails' : 'Add new raw accounts'}
           </button>
         )}
       </div>
@@ -384,7 +384,7 @@ export default function RowAccountsPool() {
       {view !== 'reserve' && (loading ? (
         <CardListSkeleton />
       ) : displayed.length === 0 ? (
-        <EmptyState icon={<KeyRound size={32} strokeWidth={1.2} />} message={view === 'available' ? 'No row accounts available.' : 'Nothing archived yet.'} />
+        <EmptyState icon={<KeyRound size={32} strokeWidth={1.2} />} message={view === 'available' ? 'No raw accounts available.' : 'Nothing archived yet.'} />
       ) : (
         <div className="space-y-5">
           {groups.map(({ header, items }) => (
@@ -459,7 +459,7 @@ export default function RowAccountsPool() {
         </div>
       ))}
 
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add new row accounts">
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add new raw accounts">
         <div className="space-y-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Header (e.g. Instagram, TikTok)</label>
