@@ -54,10 +54,10 @@ const PROFILE_REDISTRIBUTION_VALID_RANGE = '04.09.2026 - 01.04.2026';
 const INACTIVE_REDISTRIBUTION_DAY = '07.09.2026';
 const INACTIVE_REDISTRIBUTION_VALID_RANGE = '31.03.2026 - 30.09.2022';
 const INACTIVE_PROFILE_REDISTRIBUTION: { fullName: string; label: string; range: string }[] = [
-  { fullName: 'Tetyana Veremeyenko', label: 'Tanya', range: '31.03.2026 — 16.05.2025' },
-  { fullName: 'Yana Fedorova',       label: 'Yana',  range: '15.05.2025 — 30.06.2024' },
-  { fullName: 'Victoria Horopeka',   label: 'Vika',  range: '29.06.2024 — 15.08.2023' },
-  { fullName: 'Iryna Kolodienko',    label: 'Iryna', range: '14.08.2023 — 30.09.2022' },
+  { fullName: 'Iryna Kolodienko',    label: 'Iryna', range: '31.03.2026 — 16.05.2025' },
+  { fullName: 'Tetyana Veremeyenko', label: 'Tanya', range: '15.05.2025 — 30.06.2024' },
+  { fullName: 'Yana Fedorova',       label: 'Yana',  range: '29.06.2024 — 15.08.2023' },
+  { fullName: 'Victoria Horopeka',   label: 'Vika',  range: '14.08.2023 — 30.09.2022' },
 ];
 
 function AssigneeChip({ day, canEdit, isActive, onClick }: {
