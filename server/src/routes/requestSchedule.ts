@@ -12,8 +12,10 @@
 //     2026 onward falls back to.
 //   - "Перерозподіл активних профілів": a separate reference list of which
 //     day-numbers each agent owns, still keyed by day-of-month (resets each
-//     month). Order: Tetyana - Yana - Victoria Horopeka - Iryna (matches the
-//     original tool's static lists). Not derived from the calendar above.
+//     month). Order: Iryna - Tetyana - Yana - Victoria Horopeka (changed
+//     2026-09-20, effective from the "День перерозподілу" shown on the tab —
+//     was Tetyana - Yana - Victoria Horopeka - Iryna before that). Not
+//     derived from the calendar above.
 // Only the calendar has persisted overrides — swaps (drag-and-drop) or
 // direct reassignment (click a day's chip) layer on top of the calendar
 // formula for that one date.
@@ -33,10 +35,10 @@ export const CALENDAR_ROTATION_EMAILS = [
 ];
 
 const REDISTRIBUTION_ROTATION_EMAILS = [
+  'iryna_kolodienko@struktura.io',
   'tetiana_veremeenko@struktura.io',
   'yana_fedorova@struktura.io',
   'victoria_horopeka@struktura.io',
-  'iryna_kolodienko@struktura.io',
 ];
 
 // Month-relative remainder formula — used only by the redistribution list.
