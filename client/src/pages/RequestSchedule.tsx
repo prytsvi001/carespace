@@ -43,7 +43,7 @@ const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYL
 // "Перерозподіл активних профілів" card, above its per-agent day list —
 // same "no spreadsheet, just hardcode it" approach as the reference list
 // below it.
-const PROFILE_REDISTRIBUTION_DAY = '07.09.2026';
+const PROFILE_REDISTRIBUTION_DAY = '21.09.2026';
 const PROFILE_REDISTRIBUTION_VALID_RANGE = '04.09.2026 - 01.04.2026';
 
 // "Розподіл неактивних профілів" — a separate, fixed historical reference
@@ -51,7 +51,7 @@ const PROFILE_REDISTRIBUTION_VALID_RANGE = '04.09.2026 - 01.04.2026';
 // a rotating formula like the two lists above it, so it's just hardcoded
 // here rather than computed server-side — same "no spreadsheet" approach,
 // just no periodic recurrence to derive.
-const INACTIVE_REDISTRIBUTION_DAY = '07.09.2026';
+const INACTIVE_REDISTRIBUTION_DAY = '21.09.2026';
 const INACTIVE_REDISTRIBUTION_VALID_RANGE = '31.03.2026 - 30.09.2022';
 const INACTIVE_PROFILE_REDISTRIBUTION: { fullName: string; label: string; range: string }[] = [
   { fullName: 'Iryna Kolodienko',    label: 'Iryna', range: '31.03.2026 — 16.05.2025' },
