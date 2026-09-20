@@ -44,7 +44,7 @@ const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYL
 // same "no spreadsheet, just hardcode it" approach as the reference list
 // below it.
 const PROFILE_REDISTRIBUTION_DAY = '21.09.2026';
-const PROFILE_REDISTRIBUTION_VALID_RANGE = '04.09.2026 - 01.04.2026';
+const PROFILE_REDISTRIBUTION_VALID_RANGE = '18.09.2026 - 01.04.2026';
 
 // "Розподіл неактивних профілів" — a separate, fixed historical reference
 // list (who owned inactive-profile redistribution during which period), not
