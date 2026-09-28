@@ -44,6 +44,15 @@ const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
 const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
 const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
 
+// Calendar chips show only the first word of userName by default — fine
+// until two agents share one (Tetyana Veremeyenko and Tetyana Fomyuk both
+// start with "Tetyana"), so Fomyuk gets an explicit short label here to stay
+// distinguishable on the calendar.
+const ASSIGNEE_SHORT_LABELS: Record<string, string> = {
+  'Tetyana Fomyuk': 'Tanya F',
+};
+const shortLabelForAssignee = (name: string) => ASSIGNEE_SHORT_LABELS[name] ?? name.split(' ')[0];
+
 // Fixed redistribution-day/validity note shown at the top of the
 // "Перерозподіл активних профілів" card, above its per-agent day list —
 // same "no spreadsheet, just hardcode it" approach as the reference list
@@ -84,7 +93,7 @@ function AssigneeChip({ day, canEdit, isActive, onClick }: {
         ${!isActive ? 'opacity-60' : ''}
         ${canEdit ? 'cursor-pointer active:cursor-grabbing' : ''} ${isDragging ? 'opacity-50' : ''}`}
     >
-      {day.userName.split(' ')[0]}{!isActive && <span className="opacity-70"> · inactive</span>}
+      {shortLabelForAssignee(day.userName)}{!isActive && <span className="opacity-70"> · inactive</span>}
     </div>
   );
 }
@@ -292,7 +301,7 @@ export default function RequestSchedule() {
               const s = styleForAssignee(activeDay.userName);
               return (
                 <div className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium shadow-lg border ${s.bg} ${s.text} ${s.border}`}>
-                  {activeDay.userName.split(' ')[0]}
+                  {shortLabelForAssignee(activeDay.userName)}
                 </div>
               );
             })()}
