@@ -3,19 +3,21 @@
 // rotations (no spreadsheet, confirmed with the user) that happen to share
 // the same 4 agents but are NOT the same schedule:
 //   - The calendar: who's on duty to submit ("throw") new-profile requests
-//     each day. Order: Tetyana - Iryna - Victoria Horopeka - Yana, cycling
+//     each day. Order: Tetyana - Iryna - Tetyana Fomyuk - Yana, cycling
 //     continuously day-to-day (NOT reset at the start of each month) — e.g.
-//     30 Sept is Tetyana, so 1 Oct is Iryna, 2 Oct is Victoria Horopeka, etc.
+//     30 Sept is Tetyana, so 1 Oct is Iryna, 2 Oct is Tetyana Fomyuk, etc.
 //     September 2026 itself is pinned via explicit historical overrides (it
 //     doesn't follow this formula — see prisma seed history), which take
 //     precedence; the continuous formula is what every month from October
-//     2026 onward falls back to.
+//     2026 onward falls back to. Victoria Horopeka was replaced by Tetyana
+//     Fomyuk in this rotation on 2026-09-28.
 //   - "Перерозподіл активних профілів": a separate reference list of which
 //     day-numbers each agent owns, still keyed by day-of-month (resets each
-//     month). Order: Iryna - Tetyana - Yana - Victoria Horopeka (changed
-//     2026-09-20, effective from the "День перерозподілу" shown on the tab —
-//     was Tetyana - Yana - Victoria Horopeka - Iryna before that). Not
-//     derived from the calendar above.
+//     month). Order: Iryna - Tetyana - Yana - Tetyana Fomyuk (changed
+//     2026-09-28, replacing Victoria Horopeka; before that it was Iryna -
+//     Tetyana - Yana - Victoria Horopeka since 2026-09-20, and Tetyana - Yana
+//     - Victoria Horopeka - Iryna before that). Not derived from the
+//     calendar above.
 // Only the calendar has persisted overrides — swaps (drag-and-drop) or
 // direct reassignment (click a day's chip) layer on top of the calendar
 // formula for that one date.
@@ -30,7 +32,7 @@ router.use(requirePeekviewerTeam);
 export const CALENDAR_ROTATION_EMAILS = [
   'tetiana_veremeenko@struktura.io',
   'iryna_kolodienko@struktura.io',
-  'victoria_horopeka@struktura.io',
+  'tetyana_fomyuk@struktura.io',
   'yana_fedorova@struktura.io',
 ];
 
@@ -38,7 +40,7 @@ const REDISTRIBUTION_ROTATION_EMAILS = [
   'iryna_kolodienko@struktura.io',
   'tetiana_veremeenko@struktura.io',
   'yana_fedorova@struktura.io',
-  'victoria_horopeka@struktura.io',
+  'tetyana_fomyuk@struktura.io',
 ];
 
 // Month-relative remainder formula — used only by the redistribution list.

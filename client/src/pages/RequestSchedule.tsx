@@ -1,10 +1,11 @@
 // client/src/pages/RequestSchedule.tsx
 // Peekviewer Team — "Request Schedule" tab: who's on duty to submit new-profile
 // requests each day, among the 4 rotating agents (order: Tetyana - Iryna -
-// Victoria Horopeka - Yana). This calendar is independent of the "Перерозподіл
+// Tetyana Fomyuk - Yana). This calendar is independent of the "Перерозподіл
 // активних профілів" reference list below it — same 4 people, different
 // rotation order, not derived from one another. Both are fixed day-of-month
-// formulas computed server-side — no spreadsheet involved.
+// formulas computed server-side — no spreadsheet involved. Victoria Horopeka
+// was replaced by Tetyana Fomyuk in both rotations on 2026-09-28.
 // Agents drag their own day onto another to swap, or click a day's chip to
 // reassign it directly; peekviewerAdmin can do either for anyone. Same
 // @dnd-kit pattern as PeekRequestsCalendar.tsx.
@@ -28,13 +29,17 @@ interface AssigneeStyle { bg: string; text: string; border: string; dot: string 
 // already uses for them, for visual consistency across the app. Zlata
 // Alekseenko worked the rotation briefly at the start of Sept 2026 before
 // leaving — kept here purely so her historical days render with a color
-// instead of falling back to the generic gray "inactive" look.
+// instead of falling back to the generic gray "inactive" look. Victoria
+// Horopeka's entry is kept the same way — replaced by Tetyana Fomyuk
+// everywhere in this tab on 2026-09-28, but her past calendar days (already
+// pinned as overrides) still need a color to render.
 const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
   'Iryna Kolodienko':     { bg: 'bg-indigo-100',  text: 'text-indigo-700',  border: 'border-indigo-200',  dot: 'bg-indigo-400' },
   'Victoria Horopeka':    { bg: 'bg-red-100',     text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-400' },
   'Tetyana Veremeyenko':  { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
   'Yana Fedorova':        { bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400' },
   'Zlata Alekseenko':     { bg: 'bg-violet-100',  text: 'text-violet-700',  border: 'border-violet-200',  dot: 'bg-violet-400' },
+  'Tetyana Fomyuk':       { bg: 'bg-sky-100',     text: 'text-sky-700',     border: 'border-sky-200',     dot: 'bg-sky-400' },
 };
 const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
 const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
@@ -57,7 +62,7 @@ const INACTIVE_PROFILE_REDISTRIBUTION: { fullName: string; label: string; range:
   { fullName: 'Iryna Kolodienko',    label: 'Iryna', range: '31.03.2026 — 16.05.2025' },
   { fullName: 'Tetyana Veremeyenko', label: 'Tanya', range: '15.05.2025 — 30.06.2024' },
   { fullName: 'Yana Fedorova',       label: 'Yana',  range: '29.06.2024 — 15.08.2023' },
-  { fullName: 'Victoria Horopeka',   label: 'Vika',  range: '14.08.2023 — 30.09.2022' },
+  { fullName: 'Tetyana Fomyuk',      label: 'Tanya F.', range: '14.08.2023 — 30.09.2022' },
 ];
 
 function AssigneeChip({ day, canEdit, isActive, onClick }: {
