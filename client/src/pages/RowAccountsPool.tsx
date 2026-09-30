@@ -11,14 +11,31 @@
 // team member can tag the nickname of an account they registered against
 // that email via "+", so everyone can see at a glance how many accounts are
 // already tied to a given reserve email before reusing it.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { KeyRound, Mail, Plus, Copy, Check, Trash2, List, Archive, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
-  getRowAccounts, addRowAccountsBulk, takeRowAccount, archiveRowAccount, deleteRowAccount, RowAccountItem, RowAccountMode,
+  getRowAccounts, addRowAccountsBulk, takeRowAccount, archiveRowAccount, deleteRowAccount, RowAccountItem,
   getReserveEmails, addReserveEmailsBulk, addReserveEmailAccount, removeReserveEmailAccount, deleteReserveEmail, ReserveEmailItem,
 } from '../api';
 import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
+import {
+  RowAccountColumn, COLUMN_LABELS, ORDER_PRESETS, splitLines, detectOrder, applyOrder, rowWarnings, orderError, sameOrder,
+} from '../utils/rowAccountParse';
+
+// The Add modal's column order is remembered per browser, so a team that
+// always pastes the same export format only sets it once.
+const ORDER_STORAGE_KEY = 'rowAccounts.columnOrder';
+const COLUMN_OPTIONS: RowAccountColumn[] = ['login', 'password', 'twoFaCode', 'email', 'emailPassword', 'skip'];
+const PREVIEW_LIMIT = 5;
+
+function loadSavedOrder(): RowAccountColumn[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ORDER_STORAGE_KEY) || 'null');
+    if (Array.isArray(saved) && saved.length > 0 && saved.every((k) => COLUMN_OPTIONS.includes(k))) return saved;
+  } catch { /* fall through to default */ }
+  return ORDER_PRESETS[0].order;
+}
 
 const FIELDS: { key: keyof RowAccountItem; label: string }[] = [
   { key: 'login', label: 'Nickname' },
@@ -164,18 +181,36 @@ export default function RowAccountsPool() {
 
   // ── Bulk add ──────────────────────────────────────────────────────────────
   const [showAdd, setShowAdd] = useState(false);
-  const [mode, setMode] = useState<RowAccountMode>('with2fa');
+  const [order, setOrder] = useState<RowAccountColumn[]>(loadSavedOrder);
   const [bulkHeader, setBulkHeader] = useState('');
   const [bulkText, setBulkText] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
 
+  const updateOrder = (next: RowAccountColumn[]) => {
+    setOrder(next);
+    try { localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  };
+
+  const parsedLines = useMemo(() => splitLines(bulkText), [bulkText]);
+  const columnCount = Math.max(order.length, ...parsedLines.map((r) => r.length));
+  // Pad the order with 'skip' when the paste has more columns than it covers.
+  const effectiveOrder: RowAccountColumn[] = [...order, ...Array(columnCount - order.length).fill('skip')];
+  const detectedOrder = useMemo(() => detectOrder(parsedLines), [parsedLines]);
+  const showSuggestion = !!detectedOrder && !sameOrder(detectedOrder, effectiveOrder.slice(0, detectedOrder.length));
+  const currentOrderError = orderError(effectiveOrder);
+  const previewRows = parsedLines.map((tokens) => {
+    const row = applyOrder(tokens, effectiveOrder);
+    return { row, warnings: rowWarnings(row) };
+  });
+  const warningCount = previewRows.filter((r) => r.warnings.length > 0).length;
+
   const handleAdd = async () => {
-    if (!bulkText.trim()) return;
+    if (!bulkText.trim() || currentOrderError) return;
     setAdding(true);
     setAddError('');
     try {
-      const created = await addRowAccountsBulk(bulkText, mode, bulkHeader);
+      const created = await addRowAccountsBulk(bulkText, effectiveOrder, bulkHeader);
       setAccounts((prev) => [...created, ...prev]);
       setBulkText('');
       setBulkHeader('');
@@ -476,41 +511,112 @@ export default function RowAccountsPool() {
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Format</label>
-            <div className="flex gap-1">
-              {(['with2fa', 'without2fa'] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
-                  style={mode === m
-                    ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
-                    : { backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.5)' }}
-                >
-                  {m === 'with2fa' ? 'With 2FA' : 'Without 2FA'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
             <label className="block text-xs text-slate-400 mb-1">
-              One account per line, separated by spaces or colons:{' '}
-              <code>{mode === 'with2fa' ? 'nickname password 2FA email emailPassword' : 'nickname password email emailPassword'}</code>
+              One account per line, columns separated by tabs, colons or spaces
             </label>
             <textarea
               className="input text-sm w-full font-mono"
-              rows={8}
+              rows={6}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
-              placeholder={mode === 'with2fa'
-                ? 'nick1 password1 123456 email1@x.com emailpass1\nnick2 password2'
-                : 'nick1 password1 email1@x.com emailpass1\nnick2 password2'}
+              placeholder={'nick1 password1 JBSWY3DPEHPK3PXP email1@x.com emailpass1\nnick2 password2'}
             />
           </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+              <label className="text-xs text-slate-400">Column order</label>
+              <div className="flex gap-1 flex-wrap">
+                {ORDER_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    onClick={() => updateOrder(p.order)}
+                    className="px-2 py-1 rounded-lg text-xs font-medium transition-all"
+                    style={sameOrder(order, p.order)
+                      ? { backgroundColor: 'rgba(161,249,110,0.22)', color: '#0E0E0E' }
+                      : { backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.5)' }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {effectiveOrder.map((key, i) => (
+                <div key={i} className="flex flex-col">
+                  <span className="text-[10px] text-slate-400 mb-0.5">Column {i + 1}</span>
+                  <select
+                    className="input text-xs py-1"
+                    value={key}
+                    onChange={(e) => {
+                      const next = [...effectiveOrder];
+                      next[i] = e.target.value as RowAccountColumn;
+                      updateOrder(next);
+                    }}
+                  >
+                    {COLUMN_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>{COLUMN_LABELS[opt]}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            {currentOrderError && <p className="text-xs text-red-500 mt-1">{currentOrderError}</p>}
+          </div>
+
+          {showSuggestion && detectedOrder && (
+            <div
+              className="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs"
+              style={{ backgroundColor: 'rgba(161,249,110,0.14)', color: '#0E0E0E' }}
+            >
+              <span>
+                Looks like: <span className="font-medium">{detectedOrder.map((k) => COLUMN_LABELS[k]).join(' → ')}</span>
+              </span>
+              <button className="btn-accent text-xs shrink-0" onClick={() => updateOrder(detectedOrder)}>Apply</button>
+            </div>
+          )}
+
+          {previewRows.length > 0 && (
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">
+                Preview ({Math.min(PREVIEW_LIMIT, previewRows.length)} of {previewRows.length})
+                {warningCount > 0 && <span className="text-amber-600"> · {warningCount} row(s) look wrong</span>}
+              </label>
+              <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid rgba(14,14,14,0.08)' }}>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr style={{ backgroundColor: 'rgba(14,14,14,0.03)' }}>
+                      {FIELDS.map((f) => (
+                        <th key={f.key} className="text-left font-medium text-slate-500 px-2 py-1 whitespace-nowrap">{f.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.slice(0, PREVIEW_LIMIT).map(({ row, warnings }, i) => (
+                      <React.Fragment key={i}>
+                        <tr style={warnings.length ? { backgroundColor: 'rgba(245,158,11,0.08)' } : undefined}>
+                          {FIELDS.map((f) => (
+                            <td key={f.key} className="px-2 py-1 font-mono text-slate-700 whitespace-nowrap">
+                              {row[f.key as keyof typeof row] || <span style={{ color: 'rgba(14,14,14,0.25)' }}>—</span>}
+                            </td>
+                          ))}
+                        </tr>
+                        {warnings.length > 0 && (
+                          <tr style={{ backgroundColor: 'rgba(245,158,11,0.08)' }}>
+                            <td colSpan={FIELDS.length} className="px-2 pb-1 text-amber-700">{warnings.join('; ')}</td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {addError && <p className="text-xs text-red-500">{addError}</p>}
           <div className="flex justify-end">
-            <button className="btn-accent text-sm" onClick={handleAdd} disabled={!bulkText.trim() || adding}>
+            <button className="btn-accent text-sm" onClick={handleAdd} disabled={!bulkText.trim() || adding || !!currentOrderError}>
               {adding ? 'Adding…' : 'Add accounts'}
             </button>
           </div>

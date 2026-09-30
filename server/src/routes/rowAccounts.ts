@@ -17,6 +17,32 @@ function isAdmin(user: Express.User): boolean {
 const MODES = ['with2fa', 'without2fa'] as const;
 type Mode = (typeof MODES)[number];
 
+// A column in the pasted text maps to one credential field, or 'skip' to
+// ignore it (e.g. an extra column the source export happens to include).
+const FIELD_KEYS = ['login', 'password', 'twoFaCode', 'email', 'emailPassword'] as const;
+type FieldKey = (typeof FIELD_KEYS)[number];
+type ColumnKey = FieldKey | 'skip';
+
+// Legacy fixed orders, still accepted from a client that sends `mode`.
+const MODE_ORDERS: Record<Mode, ColumnKey[]> = {
+  with2fa: ['login', 'password', 'twoFaCode', 'email', 'emailPassword'],
+  without2fa: ['login', 'password', 'email', 'emailPassword'],
+};
+
+// Validates a client-chosen column order: known keys only, each field at most
+// once, and login + password must be present.
+function parseOrder(raw: unknown): ColumnKey[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 20) return null;
+  const seen = new Set<string>();
+  for (const k of raw) {
+    if (k === 'skip') continue;
+    if (!FIELD_KEYS.includes(k) || seen.has(k)) return null;
+    seen.add(k);
+  }
+  if (!seen.has('login') || !seen.has('password')) return null;
+  return raw as ColumnKey[];
+}
+
 // Splits a pasted line into columns. A 2FA value itself can contain single
 // spaces (e.g. a backup-code block like "RYPR ZYF4 JIZ2 ..."), so a generic
 // "split on any whitespace" would shred it into extra tokens and misalign
@@ -35,11 +61,9 @@ function splitColumns(line: string): string[] {
   return line.split(/\s+/).map((s) => s.trim());
 }
 
-// Splits one pasted line into a credential row by a fixed column order that
-// depends on the chosen mode:
-//   with2fa:    nickname password 2FA email emailPassword
-//   without2fa: nickname password email emailPassword
-function parseAccountLine(line: string, mode: Mode): {
+// Splits one pasted line into a credential row, assigning the i-th column to
+// order[i] (the column order chosen in the Add modal).
+function parseAccountLine(line: string, order: ColumnKey[]): {
   login: string; password: string; twoFaCode: string | null; email: string | null; emailPassword: string | null;
 } | null {
   // Not filtered for blanks — a middle column left empty (e.g. no 2FA between
@@ -47,12 +71,19 @@ function parseAccountLine(line: string, mode: Mode): {
   const tokens = splitColumns(line);
   if (tokens.length === 0 || !tokens.some(Boolean)) return null;
 
-  const [login, password, third, fourth, fifth] = tokens;
-  if (!login || !password) return null;
+  const row: Partial<Record<FieldKey, string>> = {};
+  order.forEach((key, i) => {
+    if (key !== 'skip' && tokens[i]) row[key] = tokens[i];
+  });
+  if (!row.login || !row.password) return null;
 
-  return mode === 'with2fa'
-    ? { login, password, twoFaCode: third || null, email: fourth || null, emailPassword: fifth || null }
-    : { login, password, twoFaCode: null, email: third || null, emailPassword: fourth || null };
+  return {
+    login: row.login,
+    password: row.password,
+    twoFaCode: row.twoFaCode || null,
+    email: row.email || null,
+    emailPassword: row.emailPassword || null,
+  };
 }
 
 // GET /api/row-accounts — everyone; split into available/archive client-side by takenById
@@ -66,25 +97,30 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/row-accounts/bulk — admin only. Body: { text: string, mode:
-// 'with2fa' | 'without2fa', header?: string }, one account per non-blank
-// line, columns in a fixed order per mode (see parseAccountLine); header
+// POST /api/row-accounts/bulk — admin only. Body: { text: string, order:
+// ColumnKey[], header?: string } (or the legacy `mode` instead of `order`),
+// one account per non-blank line, columns mapped by order; header
 // classifies the whole batch into a named block, same as Proxy.header.
 router.post('/bulk', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not permitted' });
 
-    const { text, mode, header } = req.body as { text?: string; mode?: string; header?: string };
-    if (!MODES.includes(mode as Mode)) {
-      return res.status(400).json({ error: 'mode must be "with2fa" or "without2fa"' });
+    const { text, mode, order: rawOrder, header } = req.body as {
+      text?: string; mode?: string; order?: unknown; header?: string;
+    };
+    const order = rawOrder !== undefined
+      ? parseOrder(rawOrder)
+      : MODES.includes(mode as Mode) ? MODE_ORDERS[mode as Mode] : null;
+    if (!order) {
+      return res.status(400).json({ error: 'Invalid column order: each field at most once, Nickname and Password required' });
     }
 
     const lines = (text || '').split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) return res.status(400).json({ error: 'No accounts found in the pasted text' });
 
     const rows = lines
-      .map((line) => parseAccountLine(line, mode as Mode))
+      .map((line) => parseAccountLine(line, order))
       .filter((r): r is NonNullable<typeof r> => !!r)
       .map((r) => ({ ...r, header: header?.trim() || '', addedById: me.id, addedByName: me.name }));
 

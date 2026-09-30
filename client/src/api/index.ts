@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { cached, invalidateCache } from './cache';
 import type { UpdateAttachment } from '../types';
+import type { RowAccountColumn } from '../utils/rowAccountParse';
 
 const api = axios.create({
   baseURL: '/api',
@@ -490,8 +491,6 @@ export const deleteProxy = (id: string) =>
   api.delete(`/proxies/${id}`).then((r) => r.data);
 
 // ─── Row Accounts pool (Peekviewer Team) ───────────────────────────────────
-export type RowAccountMode = 'with2fa' | 'without2fa';
-
 export interface RowAccountItem {
   id: string;
   login: string;
@@ -511,8 +510,9 @@ export interface RowAccountItem {
 
 export const getRowAccounts = () => api.get<RowAccountItem[]>('/row-accounts').then((r) => r.data);
 
-export const addRowAccountsBulk = (text: string, mode: RowAccountMode, header?: string) =>
-  api.post<RowAccountItem[]>('/row-accounts/bulk', { text, mode, header }).then((r) => r.data);
+// order[i] = which field the i-th pasted column holds ('skip' to ignore it).
+export const addRowAccountsBulk = (text: string, order: RowAccountColumn[], header?: string) =>
+  api.post<RowAccountItem[]>('/row-accounts/bulk', { text, order, header }).then((r) => r.data);
 
 export const takeRowAccount = (id: string) =>
   api.patch<RowAccountItem>(`/row-accounts/${id}/take`).then((r) => r.data);
