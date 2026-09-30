@@ -5,11 +5,10 @@ import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
   updatePeakRequestCardStatus, togglePeakRequestCardStar, checkPeakRequestCard, archivePeakRequestCard, deletePeakRequestCard,
-  patchPeakRequestFields, addPeakRequestComment, editPeakRequestComment, deletePeakRequestComment, getDutyStatus, DutyStatus,
-  getTodayLogs,
+  patchPeakRequestFields, addPeakRequestComment, editPeakRequestComment, deletePeakRequestComment,
 } from '../api';
-import { ClientCardView, PeakRequestComment, RequestStatus, ShiftLog } from '../types';
-import { Modal, EmptyState, ConfirmDialog, StatusStrip, CardListSkeleton } from '../components/ui';
+import { ClientCardView, PeakRequestComment, RequestStatus } from '../types';
+import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
 import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
 
@@ -840,9 +839,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   // filterStatus: selecting it clears filterStatus (so the fetch below pulls
   // every status), and selecting any status tab clears this back off.
   const [showTaggedView, setShowTaggedView] = useState(false);
-  const [dutyInfo, setDutyInfo] = useState<DutyStatus | null>(null);
   const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
-  const [activeShiftLogs, setActiveShiftLogs] = useState<ShiftLog[]>([]);
 
   // ── Global search (all statuses + archived, at once) ───────────────────────
   // Separate from the Kanban board's own data: on mount we pull every card
@@ -903,22 +900,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   // "the button didn't work," so the poll below skips overwriting any card
   // still listed here.
   const pendingMutations = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    const loadDuty = () => getDutyStatus().then(setDutyInfo).catch(() => {});
-    loadDuty();
-    const id = setInterval(loadDuty, 20_000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Same "active shift" data source as the Daily Log tab's Online now strip —
-  // agents who've started a shift but not yet clicked End Shift.
-  useEffect(() => {
-    const loadActiveShifts = () => getTodayLogs().then(setActiveShiftLogs).catch(() => {});
-    loadActiveShifts();
-    const id = setInterval(loadActiveShifts, 20_000);
-    return () => clearInterval(id);
-  }, []);
 
   const [form, setForm] = useState({
     agentId: '',
@@ -1197,24 +1178,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
           <button className="btn-accent whitespace-nowrap" onClick={openNewForm}>+ New Request</button>
         </div>
       </div>
-
-      {/* Support agents currently on an active shift (Daily Log data, not the Shift Calendar schedule) */}
-      <StatusStrip
-        active={activeShiftLogs.length > 0}
-        label="Support agent online"
-        value={activeShiftLogs.map((log) => log.agent.name).join(', ')}
-        offlineText="No support agents currently online"
-      />
-
-      {/* Peek Team on-duty toggle status */}
-      {dutyInfo && (
-        <StatusStrip
-          active={dutyInfo.peekTeamOnline.length > 0}
-          label="Peek Team Agent online"
-          value={dutyInfo.peekTeamOnline.join(', ')}
-          offlineText="No Peek agents currently online"
-        />
-      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
