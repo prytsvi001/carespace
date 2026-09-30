@@ -2,7 +2,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { sendTelegramMessage } from '../telegram';
-import { CALENDAR_ROTATION_EMAILS, getRotationUsers, resolveCurrentAssignee, todayKyivDateStr } from './requestSchedule';
+import { loadRosters, resolveCurrentAssignee, todayKyivDateStr } from './requestSchedule';
 
 const router = Router();
 
@@ -290,10 +290,10 @@ router.get('/request-schedule-reminder', async (_req: Request, res: Response) =>
     if (!inWindow) return res.json({ ok: true, sent: [], reason: 'out of window' });
 
     const dateStr = todayKyivDateStr();
-    const calendarRotation = await getRotationUsers(CALENDAR_ROTATION_EMAILS);
-    if (calendarRotation.length === 0) return res.json({ ok: true, sent: [] });
+    const rosters = await loadRosters();
+    if (!rosters) return res.json({ ok: true, sent: [] });
 
-    const assignee = await resolveCurrentAssignee(dateStr, calendarRotation);
+    const assignee = await resolveCurrentAssignee(dateStr, rosters);
     const user = await prisma.user.findUnique({ where: { id: assignee.userId } });
     if (!user?.telegramChatId) return res.json({ ok: true, sent: [] });
 

@@ -1,11 +1,10 @@
 // client/src/pages/RequestSchedule.tsx
 // Peekviewer Team — "Request Schedule" tab: who's on duty to submit new-profile
-// requests each day, among the 4 rotating agents (order: Tetyana - Iryna -
-// Tetyana Fomyuk - Yana). This calendar is independent of the "Перерозподіл
-// активних профілів" reference list below it — same 4 people, different
-// rotation order, not derived from one another. Both are fixed day-of-month
-// formulas computed server-side — no spreadsheet involved. Victoria Horopeka
-// was replaced by Tetyana Fomyuk in both rotations on 2026-09-28.
+// requests each day, among the 5 rotating agents. From 01.10.2026 the
+// calendar, "Перерозподіл активних профілів" and "Розподіл неактивних
+// профілів" all share one day-number ownership (each agent owns e.g.
+// 1 · 6 · 11 · …) that rotates automatically every 14 days — computed
+// server-side (see server/src/routes/requestSchedule.ts), no spreadsheet.
 // Agents drag their own day onto another to swap, or click a day's chip to
 // reassign it directly; peekviewerAdmin can do either for anyone. Same
 // @dnd-kit pattern as PeekRequestsCalendar.tsx.
@@ -40,6 +39,7 @@ const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
   'Yana Fedorova':        { bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400' },
   'Zlata Alekseenko':     { bg: 'bg-violet-100',  text: 'text-violet-700',  border: 'border-violet-200',  dot: 'bg-violet-400' },
   'Tetyana Fomyuk':       { bg: 'bg-sky-100',     text: 'text-sky-700',     border: 'border-sky-200',     dot: 'bg-sky-400' },
+  'Diana Semeniuk':       { bg: 'bg-pink-100',    text: 'text-pink-700',    border: 'border-pink-200',    dot: 'bg-pink-400' },
 };
 const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
 const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
@@ -53,26 +53,48 @@ const ASSIGNEE_SHORT_LABELS: Record<string, string> = {
 };
 const shortLabelForAssignee = (name: string) => ASSIGNEE_SHORT_LABELS[name] ?? name.split(' ')[0];
 
-// Fixed redistribution-day/validity note shown at the top of the
-// "Перерозподіл активних профілів" card, above its per-agent day list —
-// same "no spreadsheet, just hardcode it" approach as the reference list
-// below it.
-const PROFILE_REDISTRIBUTION_DAY = '21.09.2026';
-const PROFILE_REDISTRIBUTION_VALID_RANGE = '18.09.2026 - 01.04.2026';
+// Profile-creation date range both profile lists apply to — the day numbers
+// below are matched against each profile's date within this range.
+const PROFILE_REDISTRIBUTION_VALID_RANGE = '01.10.2026 - 30.09.2022';
 
-// "Розподіл неактивних профілів" — a separate, fixed historical reference
-// list (who owned inactive-profile redistribution during which period), not
-// a rotating formula like the two lists above it, so it's just hardcoded
-// here rather than computed server-side — same "no spreadsheet" approach,
-// just no periodic recurrence to derive.
-const INACTIVE_REDISTRIBUTION_DAY = '21.09.2026';
-const INACTIVE_REDISTRIBUTION_VALID_RANGE = '31.03.2026 - 30.09.2022';
-const INACTIVE_PROFILE_REDISTRIBUTION: { fullName: string; label: string; range: string }[] = [
-  { fullName: 'Iryna Kolodienko',    label: 'Iryna', range: '31.03.2026 — 16.05.2025' },
-  { fullName: 'Tetyana Veremeyenko', label: 'Tanya', range: '15.05.2025 — 30.06.2024' },
-  { fullName: 'Yana Fedorova',       label: 'Yana',  range: '29.06.2024 — 15.08.2023' },
-  { fullName: 'Tetyana Fomyuk',      label: 'Tanya F.', range: '14.08.2023 — 30.09.2022' },
-];
+// "YYYY-MM-DD" → "DD.MM.YYYY"
+const formatDotDate = (d: string) => d.split('-').reverse().join('.');
+
+// "Перерозподіл активних профілів" / "Розподіл неактивних профілів" — same
+// per-agent day numbers for the current 14-day period, just two cards.
+function RedistributionCard({ title, rows, period }: {
+  title: string;
+  rows: RequestScheduleData['redistribution'];
+  period: RequestScheduleData['redistributionPeriod'];
+}) {
+  return (
+    <div className="card p-4 space-y-3">
+      <h3 className="text-sm font-semibold text-ink">{title}</h3>
+      {period && (
+        <div className="text-xs space-y-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>
+          <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{formatDotDate(period.start)}</span></p>
+          <p>Наступний перерозподіл: {formatDotDate(period.next)}</p>
+          <p>Поширюється на {PROFILE_REDISTRIBUTION_VALID_RANGE}</p>
+        </div>
+      )}
+      <div className="space-y-2">
+        {rows.map((r) => {
+          const s = styleForAssignee(r.userName);
+          return (
+            <div key={r.userId} className="flex items-center gap-2 flex-wrap">
+              <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${s.bg} ${s.text} ${s.border}`}>
+                {r.userName}
+              </span>
+              <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
+                {r.days.join(' · ')}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function AssigneeChip({ day, canEdit, isActive, onClick }: {
   day: RequestScheduleDay; canEdit: boolean; isActive: boolean; onClick: () => void;
@@ -132,7 +154,7 @@ export default function RequestSchedule() {
   const isAdmin = !!user?.peekviewerAdmin;
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [data, setData] = useState<RequestScheduleData>({ days: [], redistribution: [], calendarAgents: [] });
+  const [data, setData] = useState<RequestScheduleData>({ days: [], redistribution: [], redistributionPeriod: null, calendarAgents: [] });
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState<RequestScheduleDay | null>(null);
   const [editingDate, setEditingDate] = useState<string | null>(null);
@@ -309,51 +331,8 @@ export default function RequestSchedule() {
         </DndContext>
       )}
 
-      <div className="card p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-ink">Перерозподіл активних профілів</h3>
-        <div className="text-xs space-y-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>
-          <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{PROFILE_REDISTRIBUTION_DAY}</span></p>
-          <p>Актуально з {PROFILE_REDISTRIBUTION_VALID_RANGE}</p>
-        </div>
-        <div className="space-y-2">
-          {data.redistribution.map((r) => {
-            const s = styleForAssignee(r.userName);
-            return (
-              <div key={r.userId} className="flex items-center gap-2 flex-wrap">
-                <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${s.bg} ${s.text} ${s.border}`}>
-                  {r.userName}
-                </span>
-                <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
-                  {r.days.join(' · ')}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="card p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-ink">Розподіл неактивних профілів</h3>
-        <div className="text-xs space-y-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>
-          <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{INACTIVE_REDISTRIBUTION_DAY}</span></p>
-          <p>Актуально з {INACTIVE_REDISTRIBUTION_VALID_RANGE}</p>
-        </div>
-        <div className="space-y-2">
-          {INACTIVE_PROFILE_REDISTRIBUTION.map((r) => {
-            const s = styleForAssignee(r.fullName);
-            return (
-              <div key={r.fullName} className="flex items-center gap-2 flex-wrap">
-                <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${s.bg} ${s.text} ${s.border}`}>
-                  {r.label}
-                </span>
-                <span className="text-xs" style={{ color: 'rgba(14,14,14,0.55)' }}>
-                  {r.range}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <RedistributionCard title="Перерозподіл активних профілів" rows={data.redistribution} period={data.redistributionPeriod} />
+      <RedistributionCard title="Розподіл неактивних профілів" rows={data.redistribution} period={data.redistributionPeriod} />
 
       <Modal open={!!editingDate} onClose={() => setEditingDate(null)} title={editingDate ? `Reassign — ${format(new Date(editingDate), 'dd MMM yyyy')}` : ''}>
         <div className="grid grid-cols-1 gap-2">
