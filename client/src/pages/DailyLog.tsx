@@ -5,7 +5,6 @@ import { format } from 'date-fns';
 import { getAgents, createShiftLog, getShiftLogs, updateShiftLog, archiveShiftLog, deleteShiftLog } from '../api';
 import { Agent, ShiftLog, ShiftType } from '../types';
 import { Modal, EmptyState, StatusBadge, ConfirmDialog, OnlineNowStrip, CardListSkeleton } from '../components/ui';
-import { PeekDutyToggle } from '../components/PeekDutyToggle';
 
 const SHIFT_HOURS: Record<ShiftType, number> = { MORNING: 11, NIGHT: 8 };
 
@@ -362,7 +361,6 @@ export default function DailyLog({ onSyncStats, onDataChanged }: { onSyncStats?:
           <p className="text-sm text-slate-400">{showArchived ? 'Archived shifts' : 'Today\'s shifts'}</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <PeekDutyToggle />
           <button className="btn-secondary" onClick={() => setShowArchived(v => !v)}>{showArchived ? 'Hide Archive' : 'Show Archive'}</button>
           {!showArchived && (
             <button className="btn-accent whitespace-nowrap" onClick={() => setShowForm(true)}>+ Log Shift</button>

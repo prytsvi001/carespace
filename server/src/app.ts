@@ -27,7 +27,6 @@ import personalShortcutsRouter from './routes/personalShortcuts';
 import peekCalendarRouter from './routes/peekCalendar';
 import updatesRouter from './routes/updates';
 import kpiRouter from './routes/kpi';
-import dutyRouter from './routes/duty';
 import telegramRouter from './routes/telegram';
 import cronRouter from './routes/cron';
 import backupRouter from './routes/backup';
@@ -140,7 +139,6 @@ app.use('/api/personal-shortcuts', personalShortcutsRouter); // requireAuth + us
 app.use('/api/peek-calendar', peekCalendarRouter); // requireAuth + per-user access check applied inside router
 app.use('/api/updates', updatesRouter); // requireAuth + head/lead-only writes, peek_handler excluded entirely
 app.use('/api/kpi',         kpiRouter);        // requireAuth applied inside router
-app.use('/api/duty',        dutyRouter);       // requireAuth applied inside router
 app.use('/api/telegram',    telegramRouter);   // requireAuth applied per-route (webhook has none)
 app.use('/api/cron',        cronRouter);       // secret-header check applied inside router, not requireAuth
 app.use('/api/backup',      requireAuth, backupRouter); // requireAuth + head/lead-only check applied inside router

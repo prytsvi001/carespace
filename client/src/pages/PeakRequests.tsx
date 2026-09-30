@@ -9,7 +9,6 @@ import {
 } from '../api';
 import { ClientCardView, PeakRequestComment, RequestStatus } from '../types';
 import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
-import { PeekDutyToggle } from '../components/PeekDutyToggle';
 import { useAuth } from '../context/AuthContext';
 
 // ── Tag definitions ───────────────────────────────────────────────────────────
@@ -1167,7 +1166,6 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
           <p className="text-sm text-slate-400">Peekviewer Client Requests</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <PeekDutyToggle />
           {/* Moot while on the Blocked/Lost access tab — that view always
               includes archived cards regardless of this toggle's state. */}
           {!showTaggedView && (

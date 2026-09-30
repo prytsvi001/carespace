@@ -259,19 +259,6 @@ router.post('/', async (req: Request, res: Response) => {
       data: { clientCardId: card.id, agentId, contactEmail: email, profileNickname: nickname, requestText, status: 'NEW' },
     });
 
-    // Only notify users currently toggled "on duty" via the dedicated Peek Duty status
-    // (User.peekOnDuty, set through PATCH /api/duty/me) — a separate concept from the
-    // Daily Log shift system. Fires for every new request, whether it created a fresh
-    // card or added to an existing one — a fresh inbound issue deserves the same nudge.
-    const onlinePeekHandlers = await prisma.user.findMany({
-      where: { peekOnDuty: true, telegramChatId: { not: null } },
-    });
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
-    const notifyText = `New Peak Request from ${agent?.name ?? 'an agent'}: ${requestText.trim().slice(0, 120)} ${CARESPACE_URL}`;
-    await Promise.allSettled(
-      onlinePeekHandlers.map((u) => sendTelegramMessage(u.telegramChatId as string, notifyText)),
-    );
-
     const withRequests = await prisma.clientCard.findUnique({ where: { id: card.id }, include: CARD_INCLUDE });
     return res.status(201).json(formatCard(withRequests!));
   } catch (error) {

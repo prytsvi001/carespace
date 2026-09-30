@@ -667,20 +667,6 @@ export const bulkImportVictoriaTemplates = () =>
     return r.data as { success: boolean; created: number; skipped: number; total: number };
   });
 
-// ─── Duty status (Peek Requests) ────────────────────────────────────────────
-export interface DutyStatus {
-  myOnDuty: boolean;
-  eligible: boolean;
-  peekTeamOnline: string[];
-  supportShift: { morning: string | null; night: string | null };
-}
-
-export const getDutyStatus = () =>
-  api.get('/duty').then((r) => r.data as DutyStatus);
-
-export const setDutyStatus = (onDuty: boolean) =>
-  api.patch('/duty/me', { onDuty }).then((r) => r.data);
-
 export const downloadBackup = () =>
   api.get('/backup', { responseType: 'blob' }).then((r) => r.data as Blob);
 
