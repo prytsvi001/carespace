@@ -1,8 +1,8 @@
 // client/src/pages/RequestSchedule.tsx
 // Peekviewer Team — "Request Schedule" tab: who's on duty to submit new-profile
 // requests each day, among the 5 rotating agents. From 01.10.2026 the
-// calendar, "Перерозподіл активних профілів" and "Розподіл неактивних
-// профілів" all share one day-number ownership (each agent owns e.g.
+// calendar and the "Перерозподіл активних і неактивних профілів" card
+// share one day-number ownership (each agent owns e.g.
 // 1 · 6 · 11 · …) that rotates automatically every 14 days — computed
 // server-side (see server/src/routes/requestSchedule.ts), no spreadsheet.
 // Agents drag their own day onto another to swap, or click a day's chip to
@@ -53,15 +53,15 @@ const ASSIGNEE_SHORT_LABELS: Record<string, string> = {
 };
 const shortLabelForAssignee = (name: string) => ASSIGNEE_SHORT_LABELS[name] ?? name.split(' ')[0];
 
-// Profile-creation date range both profile lists apply to — the day numbers
+// Profile-creation date range the redistribution applies to — the day numbers
 // below are matched against each profile's date within this range.
 const PROFILE_REDISTRIBUTION_VALID_RANGE = '01.10.2026 - 30.09.2022';
 
 // "YYYY-MM-DD" → "DD.MM.YYYY"
 const formatDotDate = (d: string) => d.split('-').reverse().join('.');
 
-// "Перерозподіл активних профілів" / "Розподіл неактивних профілів" — same
-// per-agent day numbers for the current 14-day period, just two cards.
+// "Перерозподіл активних і неактивних профілів" — one card for both, since
+// they share the same per-agent day numbers for the current 14-day period.
 function RedistributionCard({ title, rows, period }: {
   title: string;
   rows: RequestScheduleData['redistribution'];
@@ -331,8 +331,7 @@ export default function RequestSchedule() {
         </DndContext>
       )}
 
-      <RedistributionCard title="Перерозподіл активних профілів" rows={data.redistribution} period={data.redistributionPeriod} />
-      <RedistributionCard title="Розподіл неактивних профілів" rows={data.redistribution} period={data.redistributionPeriod} />
+      <RedistributionCard title="Перерозподіл активних і неактивних профілів" rows={data.redistribution} period={data.redistributionPeriod} />
 
       <Modal open={!!editingDate} onClose={() => setEditingDate(null)} title={editingDate ? `Reassign — ${format(new Date(editingDate), 'dd MMM yyyy')}` : ''}>
         <div className="grid grid-cols-1 gap-2">
