@@ -137,7 +137,7 @@ function CardMenu({ onArchive, onDelete }: { onArchive: () => void; onDelete: ()
 
 // ── EyeCheckButton ───────────────────────────────────────────────────────────
 // "I verified this account still works" stamp, shown on In Progress cards only.
-// Clickable for the peek team (canCheck); everyone else sees the same icon
+// Clickable for support agents and the peek team (canCheck); everyone else sees the same icon
 // and hover tooltip but with no click affordance (cursor: default).
 
 function EyeCheckButton({ card, canCheck, onCheck }: {

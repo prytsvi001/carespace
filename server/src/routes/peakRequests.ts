@@ -39,6 +39,14 @@ function isTrackedAgent(u: { role: string; peekCalendarAccess: boolean }): boole
   return u.role === 'peek_handler' || u.peekCalendarAccess;
 }
 
+// Who may set the "Last checked" stamp on In Progress cards: the whole
+// support team (they now process these requests — Oct 2026), plus the peek
+// team as before. Deliberately separate from isTrackedAgent, which still
+// gates resolution credit.
+function canCheckAccounts(u: { role: string; team: string; peekCalendarAccess: boolean }): boolean {
+  return u.team === 'support' || isTrackedAgent(u);
+}
+
 // UTC-midnight day marker, same convention as peekCalendar.ts's parseDayMarker
 // / PeekCalendarEntry.eventDate.
 function todayDayMarker(): Date {
@@ -200,7 +208,7 @@ router.get('/', async (req: Request, res: Response) => {
     res.json({
       cards: cards.map(formatCard),
       total,
-      canCheckAccounts: !!me && isTrackedAgent(me),
+      canCheckAccounts: !!me && canCheckAccounts(me),
     });
   } catch (error) {
     console.error(error);
@@ -488,12 +496,12 @@ router.patch('/cards/:id/status', async (req: Request, res: Response) => {
 });
 
 // PATCH /api/peak-requests/cards/:id/checked — "I verified this account still
-// works" stamp, settable only by the peek team (isTrackedAgent).
+// works" stamp, settable by support agents and the peek team (canCheckAccounts).
 router.patch('/cards/:id/checked', async (req: Request, res: Response) => {
   try {
     const sessionUser = req.user as Express.User;
     const me = await prisma.user.findUnique({ where: { id: sessionUser.id } });
-    if (!me || !isTrackedAgent(me)) return res.status(403).json({ error: 'Not allowed' });
+    if (!me || !canCheckAccounts(me)) return res.status(403).json({ error: 'Not allowed' });
 
     const card = await prisma.clientCard.update({
       where: { id: req.params.id },
