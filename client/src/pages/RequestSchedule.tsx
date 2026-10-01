@@ -25,19 +25,15 @@ import { Spinner, Modal } from '../components/ui';
 interface AssigneeStyle { bg: string; text: string; border: string; dot: string }
 
 // Iryna/Victoria Horopeka reuse the exact colors PeekRequestsCalendar.tsx
-// already uses for them, for visual consistency across the app. Zlata
-// Alekseenko worked the rotation briefly at the start of Sept 2026 before
-// leaving — kept here purely so her historical days render with a color
-// instead of falling back to the generic gray "inactive" look. Victoria
-// Horopeka's entry is kept the same way — replaced by Tetyana Fomyuk
-// everywhere in this tab on 2026-09-28, but her past calendar days (already
+// already uses for them, for visual consistency across the app. Victoria
+// Horopeka's entry is kept even though she was replaced by Tetyana Fomyuk
+// everywhere in this tab on 2026-09-28, since her past calendar days (already
 // pinned as overrides) still need a color to render.
 const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
   'Iryna Kolodienko':     { bg: 'bg-indigo-100',  text: 'text-indigo-700',  border: 'border-indigo-200',  dot: 'bg-indigo-400' },
   'Victoria Horopeka':    { bg: 'bg-red-100',     text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-400' },
   'Tetyana Veremeyenko':  { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
   'Yana Fedorova':        { bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400' },
-  'Zlata Alekseenko':     { bg: 'bg-violet-100',  text: 'text-violet-700',  border: 'border-violet-200',  dot: 'bg-violet-400' },
   'Tetyana Fomyuk':       { bg: 'bg-sky-100',     text: 'text-sky-700',     border: 'border-sky-200',     dot: 'bg-sky-400' },
   'Diana Semeniuk':       { bg: 'bg-pink-100',    text: 'text-pink-700',    border: 'border-pink-200',    dot: 'bg-pink-400' },
 };
