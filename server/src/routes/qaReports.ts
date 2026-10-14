@@ -91,7 +91,7 @@ async function notifyReturnedForReview(agentReport: { sentByUserId: string | nul
     if (reviewer) recipients = [reviewer];
   }
   if (recipients.length === 0) {
-    recipients = await prisma.user.findMany({ where: { role: { in: ['head', 'lead'] } } });
+    recipients = await prisma.user.findMany({ where: { role: { in: ['head', 'lead'] }, active: true } });
   }
 
   const text = `${agentName} returned their QA report for re-review. ${CARESPACE_URL}`;

@@ -30,6 +30,7 @@ model User {
   email     String   @unique
   name      String
   role      String   // "head" | "lead" | "agent" | "peek_handler"
+  active    Boolean  @default(true) // false = no longer works here: can't sign in, and is left out of every picker/roster/notification; their historical records stay untouched
   team            String  @default("support") // "support" | "peekviewer" — home team, drives default landing space + which team's tabs render
   secondaryTeam   String? // "peekviewer" for Victoria Davis & Sandra Moore only — grants the header team switcher; null for everyone else
   peekviewerAdmin Boolean @default(false) // Sandra Moore, Victoria Davis, Yana Fedorova — elevated actions across every Peekviewer-team feature (Boost queue, Proxy/Row Accounts management, Peekviewer KPI + Updates authoring); not derived from role since Yana is role "agent"

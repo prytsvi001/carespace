@@ -38,7 +38,8 @@ passport.use(
         if (!email) return done(new Error('No email returned from Google'));
 
         const user = await prisma.user.findUnique({ where: { email } });
-        if (!user) return done(null, false);
+        // Former employees (active = false) can't sign in.
+        if (!user || !user.active) return done(null, false);
 
         // Persist googleId on first login
         if (!user.googleId) {
@@ -70,7 +71,8 @@ passport.serializeUser((user, done) => done(null, (user as Express.User).id));
 passport.deserializeUser(async (id: string, done) => {
   try {
     const user = await prisma.user.findUnique({ where: { id } });
-    if (!user) return done(null, false);
+    // Deactivating someone also ends any session they already had open.
+    if (!user || !user.active) return done(null, false);
     done(null, {
       id: user.id,
       email: user.email,

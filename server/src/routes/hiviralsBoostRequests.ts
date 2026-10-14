@@ -307,7 +307,7 @@ router.post('/:id/end', async (req: Request, res: Response) => {
     // picks up the client's chat next needs to know the boost is done.
     const label = existing.accountName || existing.email;
     const supportUsers = await prisma.user.findMany({
-      where: { OR: [{ team: 'support' }, { secondaryTeam: 'support' }], id: { not: me.id } },
+      where: { OR: [{ team: 'support' }, { secondaryTeam: 'support' }], id: { not: me.id }, active: true },
     });
     await prisma.inboxMessage.createMany({
       data: supportUsers.map((u) => ({

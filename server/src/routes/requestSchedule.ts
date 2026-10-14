@@ -5,20 +5,21 @@
 // From 2026-10-01 there is ONE schedule for everything: the calendar (who's
 // on duty to submit ("throw") new-profile requests each day), "Перерозподіл
 // активних профілів" and "Розподіл неактивних профілів" all use the same
-// day-number ownership. Each of the 5 agents owns one day-of-month class
-// mod 5 (e.g. 1 · 6 · 11 · 16 · 21 · 26 · 31) for a 14-day period, applied to
+// day-number ownership. Each rotation agent owns one day-of-month class
+// (mod roster size, e.g. 1 · 6 · 11 · … with 5 agents) for a 14-day period, applied to
 // every month (for the profile lists: every month back to 30.09.2022; for the
 // calendar: the date's own day-of-month). Every 14 days the classes rotate —
 // each agent moves one class down (1 → 5 → 4 → 3 → 2 → 1) — so nobody keeps
 // the same numbers for more than one period and each class comes back only
-// every 5 periods (70 days). Shifting down (not up) also means the agent on
+// every N periods. Shifting down (not up) also means the agent on
 // the last day of a period is never on the first day of the next one.
 //
 // The first period's classes were picked to overlap as little as possible
 // with September 2026's "Перерозподіл активних профілів" (mod-4 order Iryna -
 // Tetyana - Yana - Tetyana Fomyuk): each existing agent keeps exactly one day
 // number from September, which is the minimum possible. Diana Semeniuk joined
-// the rotation on 2026-10-01.
+// the rotation on 2026-10-01; Iryna left in October 2026, so from 2026-11-01
+// a 4-agent era takes over (see ERAS below).
 //
 // Dates before 2026-10-01 keep the legacy 4-agent continuous calendar formula
 // (and September itself is pinned via explicit historical overrides).
@@ -32,18 +33,42 @@ const router = Router();
 router.use(requireAuth);
 router.use(requirePeekviewerTeam);
 
-// Index i owns day class i+1 (mod 5) in period 0 (01.10.2026 – 14.10.2026):
+// Rotation eras. Each era has its own roster and its own 14-day period
+// anchor; index i owns day class i+1 (mod roster size) in the era's period 0.
+//
+// October 2026 (5 agents, period 0 = 01.10–14.10):
 //   Tetyana Fomyuk 1 · 6 · 11…, Diana 2 · 7…, Iryna 3 · 8…, Tetyana 4 · 9…,
 //   Yana 5 · 10…
-export const ROTATION_EMAILS = [
-  'tetyana_fomyuk@struktura.io',
-  'diana_semenuk@struktura.io',
-  'iryna_kolodienko@struktura.io',
-  'tetiana_veremeenko@struktura.io',
-  'yana_fedorova@struktura.io',
+// Iryna Kolodienko left the company in October 2026 — she stays on her
+// October days (requested), and from 01.11.2026 the rotation runs with the
+// remaining 4 (period 0 = 01.11–14.11): Tetyana Fomyuk 1 · 5 · 9…,
+// Diana 2 · 6…, Tetyana 3 · 7…, Yana 4 · 8…
+type Era = { start: string; startMs: number; emails: string[] };
+const ERAS: Era[] = [
+  {
+    start: '2026-10-01',
+    startMs: Date.UTC(2026, 9, 1),
+    emails: [
+      'tetyana_fomyuk@struktura.io',
+      'diana_semenuk@struktura.io',
+      'iryna_kolodienko@struktura.io',
+      'tetiana_veremeenko@struktura.io',
+      'yana_fedorova@struktura.io',
+    ],
+  },
+  {
+    start: '2026-11-01',
+    startMs: Date.UTC(2026, 10, 1),
+    emails: [
+      'tetyana_fomyuk@struktura.io',
+      'diana_semenuk@struktura.io',
+      'tetiana_veremeenko@struktura.io',
+      'yana_fedorova@struktura.io',
+    ],
+  },
 ];
 
-// Pre-October calendar order, only for dates before ROTATION_START.
+// Pre-October calendar order, only for dates before the first era.
 const LEGACY_CALENDAR_EMAILS = [
   'tetiana_veremeenko@struktura.io',
   'iryna_kolodienko@struktura.io',
@@ -52,8 +77,7 @@ const LEGACY_CALENDAR_EMAILS = [
 ];
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const ROTATION_START_UTC_MS = Date.UTC(2026, 9, 1); // 1 Oct 2026, period 0
-const ROTATION_START = '2026-10-01';
+const ROTATION_START = ERAS[0].start;
 const PERIOD_DAYS = 14;
 // Legacy continuous formula anchor: 30 Sept 2026 is index 0 (Tetyana).
 const LEGACY_ANCHOR_UTC_MS = Date.UTC(2026, 8, 30);
@@ -65,13 +89,20 @@ function utcMsForDate(dateStr: string): number {
   return Date.UTC(year, month - 1, day);
 }
 
-function periodIndexForDate(dateStr: string): number {
-  return Math.floor((utcMsForDate(dateStr) - ROTATION_START_UTC_MS) / MS_PER_DAY / PERIOD_DAYS);
+// Index into ERAS for a date on/after the first era (latest era started by then).
+function eraIndexForDate(dateStr: string): number {
+  let idx = 0;
+  ERAS.forEach((e, i) => { if (dateStr >= e.start) idx = i; });
+  return idx;
 }
 
-// Which ROTATION_EMAILS index owns `dayOfMonth` during `period`.
-function ownerIndex(dayOfMonth: number, period: number): number {
-  return mod(dayOfMonth - 1 + period, ROTATION_EMAILS.length);
+function periodIndexForDate(dateStr: string, era: Era): number {
+  return Math.floor((utcMsForDate(dateStr) - era.startMs) / MS_PER_DAY / PERIOD_DAYS);
+}
+
+// Which roster index owns `dayOfMonth` during `period` of a `size`-agent era.
+function ownerIndex(dayOfMonth: number, period: number, size: number): number {
+  return mod(dayOfMonth - 1 + period, size);
 }
 
 function legacyCalendarIndexForDate(dateStr: string): number {
@@ -97,7 +128,8 @@ function daysInMonth(year: number, month: number): number {
 }
 
 type RosterUser = { id: string; name: string; email: string };
-export type Rosters = { current: RosterUser[]; legacy: RosterUser[] };
+// eras[i] is ERAS[i]'s roster; current is the latest era's (today's team).
+export type Rosters = { eras: RosterUser[][]; current: RosterUser[]; legacy: RosterUser[] };
 
 async function getRotationUsers(emails: string[]): Promise<RosterUser[]> {
   const users = await prisma.user.findMany({
@@ -110,26 +142,36 @@ async function getRotationUsers(emails: string[]): Promise<RosterUser[]> {
   );
 }
 
-// Loads both rosters; returns null (with the missing emails logged) if any
+// Loads every roster; returns null (with the missing emails logged) if any
 // agent account is missing, since a gap would shift every index after it.
 export async function loadRosters(): Promise<Rosters | null> {
-  const [current, legacy] = await Promise.all([
-    getRotationUsers(ROTATION_EMAILS),
-    getRotationUsers(LEGACY_CALENDAR_EMAILS),
-  ]);
-  if (current.length !== ROTATION_EMAILS.length || legacy.length !== LEGACY_CALENDAR_EMAILS.length) {
-    const found = new Set([...current, ...legacy].map((u) => u.email));
-    console.error('Request schedule roster incomplete, missing:',
-      [...ROTATION_EMAILS, ...LEGACY_CALENDAR_EMAILS].filter((e) => !found.has(e)));
+  const lists = [...ERAS.map((e) => e.emails), LEGACY_CALENDAR_EMAILS];
+  const loaded = await Promise.all(lists.map(getRotationUsers));
+  if (loaded.some((users, i) => users.length !== lists[i].length)) {
+    const found = new Set(loaded.flat().map((u) => u.email));
+    console.error('Request schedule roster incomplete, missing:', lists.flat().filter((e) => !found.has(e)));
     return null;
   }
-  return { current, legacy };
+  const eras = loaded.slice(0, ERAS.length);
+  return { eras, current: eras[eras.length - 1], legacy: loaded[ERAS.length] };
 }
 
 function baseAssigneeForDate(dateStr: string, rosters: Rosters): RosterUser {
   if (dateStr < ROTATION_START) return rosters.legacy[legacyCalendarIndexForDate(dateStr)];
+  const eraIdx = eraIndexForDate(dateStr);
+  const roster = rosters.eras[eraIdx];
   const day = Number(dateStr.slice(8, 10));
-  return rosters.current[ownerIndex(day, periodIndexForDate(dateStr))];
+  return roster[ownerIndex(day, periodIndexForDate(dateStr, ERAS[eraIdx]), roster.length)];
+}
+
+// Agents who can be put on `dateStr` — that date's era roster.
+function rosterForDate(dateStr: string, rosters: Rosters): RosterUser[] {
+  return dateStr < ROTATION_START ? rosters.legacy : rosters.eras[eraIndexForDate(dateStr)];
+}
+
+// Anyone in any era roster may swap/reassign days (admins always may).
+function isRotationMember(userId: string, rosters: Rosters): boolean {
+  return rosters.eras.some((roster) => roster.some((u) => u.id === userId));
 }
 
 function isAdmin(user: Express.User): boolean {
@@ -147,7 +189,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     const rosters = await loadRosters();
     if (!rosters) {
-      return res.status(500).json({ error: 'Rotation roster not found — check that all 5 agent accounts exist' });
+      return res.status(500).json({ error: 'Rotation roster not found — check that every rotation agent account exists' });
     }
 
     const total = daysInMonth(year, month);
@@ -174,23 +216,38 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Day-number ownership for the period containing today (Kyiv), shared by
     // both profile lists. Before the rotation starts, show its first period.
-    const period = Math.max(0, periodIndexForDate(todayKyivDateStr()));
-    const periodStartMs = ROTATION_START_UTC_MS + period * PERIOD_DAYS * MS_PER_DAY;
-    const redistribution = rosters.current.map((u, idx) => ({
+    // A period never runs past the start of the next era (e.g. the last
+    // October period ends 31.10 and the 4-agent rotation takes over 01.11).
+    const today = todayKyivDateStr();
+    const eraIdx = today < ROTATION_START ? 0 : eraIndexForDate(today);
+    const era = ERAS[eraIdx];
+    const eraRoster = rosters.eras[eraIdx];
+    const period = Math.max(0, periodIndexForDate(today, era));
+    const periodStartMs = era.startMs + period * PERIOD_DAYS * MS_PER_DAY;
+    const nextEraMs = ERAS[eraIdx + 1]?.startMs ?? Infinity;
+    const nextPeriodMs = Math.min(periodStartMs + PERIOD_DAYS * MS_PER_DAY, nextEraMs);
+    const redistribution = eraRoster.map((u, idx) => ({
       userId: u.id,
       userName: u.name,
-      days: Array.from({ length: 31 }, (_, i) => i + 1).filter((d) => ownerIndex(d, period) === idx),
+      days: Array.from({ length: 31 }, (_, i) => i + 1).filter((d) => ownerIndex(d, period, eraRoster.length) === idx),
     }));
+
+    // Agents shown/assignable for the viewed month — every roster in effect
+    // on any of its days (October 2026 still includes Iryna, later months don't).
+    const calendarAgents = new Map<string, RosterUser>();
+    for (let day = 1; day <= total; day++) {
+      for (const u of rosterForDate(dateKey(year, month, day), rosters)) calendarAgents.set(u.id, u);
+    }
 
     res.json({
       days,
       redistribution,
       redistributionPeriod: {
         start: dateKeyFromUtcMs(periodStartMs),
-        end: dateKeyFromUtcMs(periodStartMs + (PERIOD_DAYS - 1) * MS_PER_DAY),
-        next: dateKeyFromUtcMs(periodStartMs + PERIOD_DAYS * MS_PER_DAY),
+        end: dateKeyFromUtcMs(nextPeriodMs - MS_PER_DAY),
+        next: dateKeyFromUtcMs(nextPeriodMs),
       },
-      calendarAgents: rosters.current.map((u) => ({ userId: u.id, userName: u.name })),
+      calendarAgents: [...calendarAgents.values()].map((u) => ({ userId: u.id, userName: u.name })),
     });
   } catch (err) {
     console.error(err);
@@ -253,8 +310,8 @@ router.post('/swap', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Rotation roster not found' });
     }
 
-    const isRotationMember = rosters.current.some((u) => u.id === me.id);
-    if (!isAdmin(me) && !isRotationMember) {
+    const isMember = isRotationMember(me.id, rosters);
+    if (!isAdmin(me) && !isMember) {
       return res.status(403).json({ error: 'Not permitted' });
     }
 
@@ -300,14 +357,14 @@ router.patch('/assign', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Rotation roster not found' });
     }
 
-    const isRotationMember = rosters.current.some((u) => u.id === me.id);
-    if (!isAdmin(me) && !isRotationMember) {
+    const isMember = isRotationMember(me.id, rosters);
+    if (!isAdmin(me) && !isMember) {
       return res.status(403).json({ error: 'Not permitted' });
     }
 
-    const target = rosters.current.find((u) => u.id === userId);
+    const target = rosterForDate(date, rosters).find((u) => u.id === userId);
     if (!target) {
-      return res.status(400).json({ error: 'userId must be one of the rotation agents' });
+      return res.status(400).json({ error: 'userId must be one of the rotation agents for that date' });
     }
 
     await prisma.requestScheduleOverride.upsert({

@@ -168,7 +168,7 @@ router.post('/', async (req: Request, res: Response) => {
     });
 
     const eligible = await prisma.user.findMany({
-      where: { OR: [{ team }, { secondaryTeam: team }], id: { not: me.id } },
+      where: { OR: [{ team }, { secondaryTeam: team }], id: { not: me.id }, active: true },
       select: { id: true, name: true, telegramChatId: true },
     });
 

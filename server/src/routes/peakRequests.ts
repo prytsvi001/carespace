@@ -30,8 +30,8 @@ function normalizeMatchKey(email: string | null | undefined, nickname: string | 
   return `${e}|${n}`;
 }
 
-// The peek team: Iryna Kolodienko, Victoria Horopeka (both peek_handler role),
-// and Julia Manson (peekCalendarAccess flag) — same shape as peekCalendar.ts's
+// The peek team: peek_handler-role users (Iryna Kolodienko, Victoria Horopeka —
+// both left in Oct 2026) and Julia Manson (peekCalendarAccess flag) — same shape as peekCalendar.ts's
 // isAssignable, duplicated locally rather than cross-imported (matches
 // normalizeMatchKey's precedent above). Gates both the "checked" stamp and
 // self-crediting on Done.

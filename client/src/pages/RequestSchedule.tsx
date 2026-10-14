@@ -1,6 +1,6 @@
 // client/src/pages/RequestSchedule.tsx
 // Peekviewer Team — "Request Schedule" tab: who's on duty to submit new-profile
-// requests each day, among the 5 rotating agents. From 01.10.2026 the
+// requests each day, among the rotating agents (5 in October 2026, 4 from 01.11.2026). From 01.10.2026 the
 // calendar and the "Перерозподіл активних і неактивних профілів" card
 // share one day-number ownership (each agent owns e.g.
 // 1 · 6 · 11 · …) that rotates automatically every 14 days — computed

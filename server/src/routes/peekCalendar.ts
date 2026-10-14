@@ -45,7 +45,7 @@ router.get('/assignees', async (req: Request, res: Response) => {
   if (!me || !canEdit(me)) return res.status(403).json({ error: 'Not allowed' });
 
   const users = await prisma.user.findMany({
-    where: { OR: [{ role: 'peek_handler' }, { peekCalendarAccess: true }] },
+    where: { OR: [{ role: 'peek_handler' }, { peekCalendarAccess: true }], active: true },
     select: { id: true, name: true },
     orderBy: { name: 'asc' },
   });
@@ -88,7 +88,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const assignee = await prisma.user.findUnique({ where: { id: userId } });
-    if (!assignee || !isAssignable(assignee)) {
+    if (!assignee || !assignee.active || !isAssignable(assignee)) {
       return res.status(400).json({ error: 'This user cannot be scheduled on the Peek Requests Calendar' });
     }
 

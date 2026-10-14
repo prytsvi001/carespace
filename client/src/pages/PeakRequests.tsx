@@ -840,9 +840,9 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
   const canSendToPeekviewer = user?.team === 'support' || user?.secondaryTeam === 'support';
   const isPeekHandler = user?.role === 'peek_handler';
   const [cards, setCards] = useState<ClientCardView[]>([]);
-  // Whether the current viewer is one of the 3 peek team members (Iryna,
-  // Victoria Horopeka, Julia Manson) allowed to stamp the "account checked" eye
-  // icon — computed server-side (peekCalendarAccess isn't in the session).
+  // Whether the current viewer may stamp the "account checked" eye icon
+  // (support team + peek team, see canCheckAccounts in peakRequests.ts) —
+  // computed server-side (peekCalendarAccess isn't in the session).
   const [canCheckAccounts, setCanCheckAccounts] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);

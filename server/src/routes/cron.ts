@@ -163,7 +163,7 @@ router.get('/task-reminders', async (_req: Request, res: Response) => {
     // Batch-resolve every candidate's owner in one query instead of one findUnique
     // per plan — the per-row work below is now a Map lookup, not a DB round-trip.
     const users = await prisma.user.findMany({
-      where: { id: { in: [...new Set(candidates.map((p) => p.userId))] } },
+      where: { id: { in: [...new Set(candidates.map((p) => p.userId))] }, active: true },
     });
     const userById = new Map(users.map((u) => [u.id, u]));
 
@@ -240,7 +240,7 @@ router.get('/shift-reminders', async (_req: Request, res: Response) => {
       // Batch-resolve all scheduled agents' users in one query instead of one
       // findFirst per calendar event.
       const eventAgentUsers = await prisma.user.findMany({
-        where: { agentId: { in: [...new Set(events.map((e) => e.agentId))] } },
+        where: { agentId: { in: [...new Set(events.map((e) => e.agentId))] }, active: true },
       });
       const eventUserByAgentId = new Map(eventAgentUsers.map((u) => [u.agentId as string, u]));
 
@@ -295,7 +295,7 @@ router.get('/request-schedule-reminder', async (_req: Request, res: Response) =>
 
     const assignee = await resolveCurrentAssignee(dateStr, rosters);
     const user = await prisma.user.findUnique({ where: { id: assignee.userId } });
-    if (!user?.telegramChatId) return res.json({ ok: true, sent: [] });
+    if (!user?.active || !user.telegramChatId) return res.json({ ok: true, sent: [] });
 
     try {
       await prisma.requestScheduleReminderLog.create({ data: { userId: user.id, date: dateStr } });

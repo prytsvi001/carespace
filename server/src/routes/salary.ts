@@ -154,7 +154,7 @@ router.get('/', async (req: Request, res: Response) => {
     const team = req.query.team === 'peekviewer' ? 'peekviewer' : 'support';
     if (!year || !month) return res.status(400).json({ error: 'year and month are required' });
 
-    const roster = rosterForTeam(team);
+    const roster = rosterForTeam(team, year, month);
     const start = new Date(Date.UTC(year, month - 1, 1));
     const end = new Date(Date.UTC(year, month, 1));
 
@@ -206,7 +206,7 @@ router.get('/', async (req: Request, res: Response) => {
     // team) whose notifyUserNameFor() name resolves to a real User row.
     const notifyNames = roster.map(p => notifyUserNameFor(p)).filter(Boolean) as string[];
     const notifyUsers = notifyNames.length
-      ? await prisma.user.findMany({ where: { name: { in: notifyNames } } })
+      ? await prisma.user.findMany({ where: { name: { in: notifyNames }, active: true } })
       : [];
     const notifyableNames = new Set(notifyUsers.map(u => u.name));
     const notifyUserByName = new Map(notifyUsers.map(u => [u.name, u]));
@@ -302,7 +302,7 @@ router.patch('/:personKey', async (req: Request, res: Response) => {
     };
     if (!year || !month || !team) return res.status(400).json({ error: 'year, month and team are required' });
 
-    const roster = rosterForTeam(team);
+    const roster = rosterForTeam(team, year, month);
     if (!roster.some(p => p.personKey === personKey)) {
       return res.status(400).json({ error: 'Unknown personKey for this team' });
     }
@@ -354,7 +354,7 @@ router.post('/:personKey/notify', async (req: Request, res: Response) => {
     if (!year || !month || !team) return res.status(400).json({ error: 'year, month and team are required' });
     if (!message?.trim()) return res.status(400).json({ error: 'message is required' });
 
-    const roster = rosterForTeam(team);
+    const roster = rosterForTeam(team, year, month);
     const person = roster.find(p => p.personKey === personKey);
     if (!person) return res.status(400).json({ error: 'Unknown personKey for this team' });
 

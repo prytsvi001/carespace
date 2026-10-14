@@ -23,6 +23,7 @@ export interface SalaryPerson {
   agentName?: string;     // matches Agent.name, for support-team auto-pull; absent for peekviewer
   userName?: string;      // matches User.name exactly, for notifications — only set when it differs from (or isn't covered by) agentName
   hasResolvedRequestCount?: boolean; // Viktoria Horopeka / Iryna Kolodiyenko — reference-only count of Peek Requests they personally resolved that month (PeekResolutionCredit), no bonus math attached (their existing Update bonus toggle already covers that)
+  lastMonth?: string;     // "YYYY-MM" — left the company; shown up to and including this month, gone from later months (past months keep their rows)
 }
 
 export const REVIEW_TIERS = [
@@ -50,14 +51,16 @@ export const SUPPORT_ROSTER: SalaryPerson[] = [
 
 export const PEEKVIEWER_ROSTER: SalaryPerson[] = [
   { personKey: 'yana_fedorova',       displayName: 'Yana Fedorova',       team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 600, userName: 'Yana Fedorova' },
-  { personKey: 'viktoria_horopeka',   displayName: 'Viktoria Horopeka',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }, { key: 'smmDutyOn', label: 'SMM duty', amount: 150 }], userName: 'Victoria Horopeka', hasResolvedRequestCount: true },
+  { personKey: 'viktoria_horopeka',   displayName: 'Viktoria Horopeka',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }, { key: 'smmDutyOn', label: 'SMM duty', amount: 150 }], userName: 'Victoria Horopeka', hasResolvedRequestCount: true, lastMonth: '2026-09' },
   { personKey: 'tetyana_veremeyenko', displayName: 'Tetyana Veremeyenko', team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'strukturaOn', label: 'Struktura boost', amount: 10 }], userName: 'Tetyana Veremeyenko' },
-  { personKey: 'iryna_kolodiyenko',   displayName: 'Iryna Kolodiyenko',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Iryna Kolodienko', hasResolvedRequestCount: true },
+  { personKey: 'iryna_kolodiyenko',   displayName: 'Iryna Kolodiyenko',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Iryna Kolodienko', hasResolvedRequestCount: true, lastMonth: '2026-09' },
   { personKey: 'anna_bilous',         displayName: 'Anna Bilous',         team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 300, userName: 'Anna Bilous' },
 ];
 
-export function rosterForTeam(team: 'support' | 'peekviewer'): SalaryPerson[] {
-  return team === 'support' ? SUPPORT_ROSTER : PEEKVIEWER_ROSTER;
+// Roster for one salary month — people who left drop out after their lastMonth.
+export function rosterForTeam(team: 'support' | 'peekviewer', year: number, month: number): SalaryPerson[] {
+  const ym = `${year}-${String(month).padStart(2, '0')}`;
+  return (team === 'support' ? SUPPORT_ROSTER : PEEKVIEWER_ROSTER).filter((p) => !p.lastMonth || ym <= p.lastMonth);
 }
 
 // The exact User.name to resolve for salary notifications — undefined means

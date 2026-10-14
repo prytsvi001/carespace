@@ -72,7 +72,7 @@ router.get('/users', async (req: Request, res: Response) => {
   try {
     const userId = (req.user as Express.User).id;
     const users = await prisma.user.findMany({
-      where: { id: { not: userId } },
+      where: { id: { not: userId }, active: true },
       select: { id: true, name: true, role: true },
       orderBy: { name: 'asc' },
     });
@@ -152,7 +152,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Message type not permitted for your role' });
     }
 
-    const recipients = await prisma.user.findMany({ where: { id: { in: ids } } });
+    const recipients = await prisma.user.findMany({ where: { id: { in: ids }, active: true } });
     if (recipients.length === 0) {
       return res.status(404).json({ error: 'Recipient not found' });
     }

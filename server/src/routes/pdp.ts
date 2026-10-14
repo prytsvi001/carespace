@@ -81,7 +81,7 @@ router.get('/summary', async (req: Request, res: Response) => {
     }
 
     const agentUsers = await prisma.user.findMany({
-      where: { role: { in: ['agent', 'lead'] } },
+      where: { role: { in: ['agent', 'lead'] }, active: true },
       include: {
         pdpPlan: {
           include: { goals: { select: { status: true } } },

@@ -127,7 +127,7 @@ const ALL_SPACE_TABS: { id: SpaceTab; label: string; shortLabel: string; Icon: R
 ];
 
 // Peekviewer Team's main nav row — same for every team member (order matters:
-// Request Schedule lands first). Iryna Kolodienko/Victoria Horopeka additionally
+// Request Schedule lands first). peek_handler-role users additionally
 // keep their legacy peek_handler tabs ('requests'/'calendar', appended below).
 const PEEKVIEWER_CORE_TABS: { id: PeekviewerSharedTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
   { id: 'schedule',      label: 'Request Schedule', shortLabel: 'Schedule', Icon: CalendarClock },
@@ -149,13 +149,11 @@ const PEEKVIEWER_SPACE_TABS: { id: PeekviewerSpaceTab; label: string; shortLabel
   { id: 'onboarding',  label: 'Onboarding', shortLabel: 'Onboarding', Icon: GraduationCap },
 ];
 
-// These five Peekviewer-only agents don't get the floating "Quick Actions"
+// These Peekviewer-only agents don't get the floating "Quick Actions"
 // button/drawer — Sandra Moore and Victoria Davis (dual-team heads/leads)
 // keep it, everyone else on the team doesn't.
 const QUICK_ACTIONS_HIDDEN_EMAILS = new Set([
   'anna_bilous@struktura.io',
-  'iryna_kolodienko@struktura.io',
-  'victoria_horopeka@struktura.io',
   'yana_fedorova@struktura.io',
   'tetiana_veremeenko@struktura.io',
 ]);

@@ -23,7 +23,8 @@ import { PeekCalendarEntry, PeekResolutionStats } from '../types';
 import { Modal, Spinner, ConfirmDialog } from '../components/ui';
 
 // Each agent's color is pinned to an existing Support Calendar event color, per
-// request — Iryna = Night Shift, Victoria H. = Sick leave without note, Julia =
+// request — Iryna = Night Shift, Victoria H. = Sick leave without note (both left
+// in Oct 2026; kept so their past entries keep their colors), Julia =
 // Birthday off (see LEAVE_COLORS / getEventColor in ShiftCalendar.tsx) — so these
 // reuse the exact same Tailwind classes rather than approximating with hex values.
 interface AssigneeStyle { bg: string; text: string; border: string; dot: string }
@@ -301,7 +302,9 @@ export default function PeekRequestsCalendar() {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-2">
-        {(['Iryna Kolodienko', 'Victoria Horopeka', 'Julia Manson']).map((name) => {
+        {/* Current assignees plus anyone scheduled in the viewed month — so
+            people who've left still show on their past months only. */}
+        {[...new Set([...assignees.map((a) => a.name), ...entries.map((e) => e.user.name)])].map((name) => {
           const s = styleForAssignee(name);
           return (
             <span

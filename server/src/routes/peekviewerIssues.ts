@@ -52,7 +52,7 @@ async function commentOnCard(clientCardId: string, author: Express.User, text: s
 router.get('/recipients', async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
-      where: { team: 'peekviewer' },
+      where: { team: 'peekviewer', active: true },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
@@ -100,7 +100,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const [card, recipients] = await Promise.all([
       prisma.clientCard.findUnique({ where: { id: clientCardId }, select: { id: true } }),
-      prisma.user.findMany({ where: { id: { in: ids }, team: 'peekviewer' } }),
+      prisma.user.findMany({ where: { id: { in: ids }, team: 'peekviewer', active: true } }),
     ]);
     if (!card) return res.status(404).json({ error: 'Card not found' });
     if (recipients.length === 0) return res.status(400).json({ error: 'Pick at least one Peekviewer team member' });

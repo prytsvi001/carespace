@@ -16,14 +16,15 @@ const AGENTS = [
 const USERS: {
   name: string; email: string; role: string; peekDutyEligible?: boolean;
   team?: string; secondaryTeam?: string; peekviewerAdmin?: boolean; hiddenPeekviewerTabs?: string;
+  active?: boolean; // false = left the company (kept so their history still links up)
 }[] = [
   { name: 'Victoria Davis',    email: 'victoria_pryts@struktura.io',        role: 'lead', secondaryTeam: 'peekviewer', peekviewerAdmin: true },
   { name: 'Sandra Moore',      email: 'oleksandra_kraichynska@struktura.io', role: 'head', secondaryTeam: 'peekviewer', peekviewerAdmin: true },
   { name: 'Jonathan Lewis',    email: 'yan_horlatyi@struktura.io',           role: 'agent' },
   { name: 'Julia Manson',      email: 'tetiana_blazhievska@struktura.io',    role: 'agent', peekDutyEligible: true },
   { name: 'Nicky Brown',       email: 'myroslava_horshchar@struktura.io',    role: 'agent' },
-  { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost' },
-  { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost' },
+  { name: 'Iryna Kolodienko',  email: 'iryna_kolodienko@struktura.io',       role: 'peek_handler', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost', active: false },
+  { name: 'Victoria Horopeka', email: 'victoria_horopeka@struktura.io',      role: 'peek_handler', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost', active: false },
   { name: 'Tetyana Veremeyenko', email: 'tetiana_veremeenko@struktura.io',   role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost' },
   { name: 'Anna Bilous',       email: 'anna_bilous@struktura.io',            role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'schedule,boost' },
   { name: 'Yana Fedorova',     email: 'yana_fedorova@struktura.io',          role: 'agent', team: 'peekviewer', peekviewerAdmin: true, hiddenPeekviewerTabs: 'references' },
@@ -58,6 +59,7 @@ async function main() {
         secondaryTeam: u.secondaryTeam ?? null,
         peekviewerAdmin: u.peekviewerAdmin ?? false,
         hiddenPeekviewerTabs: u.hiddenPeekviewerTabs ?? '',
+        active: u.active ?? true,
       },
       create: {
         name: u.name,
@@ -69,6 +71,7 @@ async function main() {
         secondaryTeam: u.secondaryTeam ?? null,
         peekviewerAdmin: u.peekviewerAdmin ?? false,
         hiddenPeekviewerTabs: u.hiddenPeekviewerTabs ?? '',
+        active: u.active ?? true,
       },
     });
   }
