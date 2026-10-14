@@ -46,24 +46,42 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/reserve-emails/bulk — admin only. One "email password" per line
-// (password optional — a line with just an email is fine).
+// POST /api/reserve-emails/bulk — admin only. Body: { text, withVerification? }.
+// Without verification: one "email password" per line (password optional —
+// a line with just an email is fine). With verification: "email password
+// verificationEmail verificationPassword" per line (verification password
+// optional, verification email required).
 router.post('/bulk', async (req: Request, res: Response) => {
   try {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not permitted' });
 
-    const { text } = req.body as { text?: string };
+    const { text, withVerification } = req.body as { text?: string; withVerification?: boolean };
     const lines = (text || '').split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) return res.status(400).json({ error: 'No emails found in the pasted text' });
 
-    const rows = lines
-      .map((line) => {
-        const [email, ...rest] = splitColumns(line);
-        if (!email) return null;
-        return { email, emailPassword: rest.join(' ') || null, addedById: me.id, addedByName: me.name };
-      })
-      .filter((r): r is NonNullable<typeof r> => !!r);
+    const rows = [];
+    for (const [i, line] of lines.entries()) {
+      const cols = splitColumns(line);
+      const email = cols[0];
+      if (!email) continue;
+      if (!withVerification) {
+        rows.push({ email, emailPassword: cols.slice(1).join(' ') || null, addedById: me.id, addedByName: me.name });
+        continue;
+      }
+      const [, emailPassword, verificationEmail, ...verificationRest] = cols;
+      if (!verificationEmail) {
+        return res.status(400).json({ error: `Line ${i + 1} ("${email}") is missing the verification email` });
+      }
+      rows.push({
+        email,
+        emailPassword: emailPassword || null,
+        verificationEmail,
+        verificationEmailPassword: verificationRest.join(' ') || null,
+        addedById: me.id,
+        addedByName: me.name,
+      });
+    }
 
     if (rows.length === 0) return res.status(400).json({ error: 'Each line needs at least an email' });
 
@@ -133,13 +151,18 @@ router.patch('/:id', async (req: Request, res: Response) => {
     const me = req.user as Express.User;
     if (!isAdmin(me)) return res.status(403).json({ error: 'Not permitted' });
 
-    const { email, emailPassword } = req.body as { email?: string; emailPassword?: string | null };
+    const { email, emailPassword, verificationEmail, verificationEmailPassword } = req.body as {
+      email?: string; emailPassword?: string | null;
+      verificationEmail?: string | null; verificationEmailPassword?: string | null;
+    };
 
     const result = await prisma.reserveEmail.updateMany({
       where: { id: req.params.id },
       data: {
         ...(typeof email === 'string' ? { email: email.trim() } : {}),
         ...(emailPassword !== undefined ? { emailPassword: emailPassword?.trim() || null } : {}),
+        ...(verificationEmail !== undefined ? { verificationEmail: verificationEmail?.trim() || null } : {}),
+        ...(verificationEmailPassword !== undefined ? { verificationEmailPassword: verificationEmailPassword?.trim() || null } : {}),
       },
     });
     if (result.count === 0) return res.status(404).json({ error: 'Not found' });

@@ -106,6 +106,8 @@ export default function RowAccountsPool() {
 
   const [showAddReserve, setShowAddReserve] = useState(false);
   const [reserveBulkText, setReserveBulkText] = useState('');
+  // "With verification email" adds 2 columns per line: verification email + its password.
+  const [reserveWithVerification, setReserveWithVerification] = useState(false);
   const [addingReserve, setAddingReserve] = useState(false);
   const [addReserveError, setAddReserveError] = useState('');
 
@@ -114,7 +116,7 @@ export default function RowAccountsPool() {
     setAddingReserve(true);
     setAddReserveError('');
     try {
-      const created = await addReserveEmailsBulk(reserveBulkText);
+      const created = await addReserveEmailsBulk(reserveBulkText, reserveWithVerification);
       setReserveEmails((prev) => [...created, ...prev]);
       setReserveBulkText('');
       setShowAddReserve(false);
@@ -304,6 +306,8 @@ export default function RowAccountsPool() {
                 <tr className="text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'rgba(14,14,14,0.45)' }}>
                   <th className="px-4 py-2.5">Email</th>
                   <th className="px-4 py-2.5">Email password</th>
+                  <th className="px-4 py-2.5">Verification email</th>
+                  <th className="px-4 py-2.5">Verification email password</th>
                   <th className="px-4 py-2.5">Accounts added</th>
                   {isAdmin && <th className="px-4 py-2.5 w-8" />}
                 </tr>
@@ -316,6 +320,12 @@ export default function RowAccountsPool() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <CopyValue value={r.emailPassword} isCopied={copiedKey === `${r.id}:pw`} onCopy={() => handleCopy(`${r.id}:pw`, r.emailPassword || '')} />
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <CopyValue value={r.verificationEmail} isCopied={copiedKey === `${r.id}:vemail`} onCopy={() => handleCopy(`${r.id}:vemail`, r.verificationEmail || '')} />
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <CopyValue value={r.verificationEmailPassword} isCopied={copiedKey === `${r.id}:vpw`} onCopy={() => handleCopy(`${r.id}:vpw`, r.verificationEmailPassword || '')} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -632,14 +642,35 @@ export default function RowAccountsPool() {
 
       <Modal open={showAddReserve} onClose={() => setShowAddReserve(false)} title="Add reserve emails">
         <div className="space-y-3">
+          <div className="flex gap-1.5">
+            {([false, true] as const).map((withV) => (
+              <button
+                key={String(withV)}
+                type="button"
+                onClick={() => { setReserveWithVerification(withV); setAddReserveError(''); }}
+                className="flex-1 text-sm font-medium px-3 py-1.5 rounded-lg transition-all"
+                style={reserveWithVerification === withV
+                  ? { backgroundColor: '#A1F96E', color: '#0E0E0E' }
+                  : { backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.55)' }}
+              >
+                {withV ? 'With verification email' : 'Without verification email'}
+              </button>
+            ))}
+          </div>
           <div>
-            <label className="block text-xs text-slate-400 mb-1">One email per line: <code>email password</code> (password optional)</label>
+            <label className="block text-xs text-slate-400 mb-1">
+              {reserveWithVerification
+                ? <>One email per line: <code>email password verification_email verification_password</code> (verification password optional)</>
+                : <>One email per line: <code>email password</code> (password optional)</>}
+            </label>
             <textarea
               className="input text-sm w-full font-mono"
               rows={8}
               value={reserveBulkText}
               onChange={(e) => setReserveBulkText(e.target.value)}
-              placeholder={'reserve1@x.com pass1\nreserve2@x.com pass2'}
+              placeholder={reserveWithVerification
+                ? 'reserve1@x.com pass1 verify1@x.com vpass1\nreserve2@x.com pass2 verify2@x.com vpass2'
+                : 'reserve1@x.com pass1\nreserve2@x.com pass2'}
             />
           </div>
           {addReserveError && <p className="text-xs text-red-500">{addReserveError}</p>}

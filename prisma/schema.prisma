@@ -707,6 +707,10 @@ model ReserveEmail {
   id             String   @id @default(cuid())
   email          String
   emailPassword  String?
+  // Optional recovery/verification inbox — only set when added via
+  // "With verification email" (columns: email, password, verification email, verification password)
+  verificationEmail         String?
+  verificationEmailPassword String?
   linkedAccounts String   @default("[]") // JSON: [{id, nickname, addedById, addedByName, createdAt}]
   addedById      String
   addedByName    String
