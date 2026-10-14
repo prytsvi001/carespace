@@ -1,7 +1,7 @@
 // client/src/api/index.ts
 import axios from 'axios';
 import { cached, invalidateCache } from './cache';
-import type { UpdateAttachment } from '../types';
+import type { UpdateAttachment, PeakRequestComment } from '../types';
 import type { RowAccountColumn } from '../utils/rowAccountParse';
 
 const api = axios.create({
@@ -886,6 +886,38 @@ export const endHiviralsBoost = (id: string) =>
 
 export const deleteHiviralsBoostRequest = (id: string, scope?: 'requester' | 'admin') =>
   api.delete(`/hivirals-boost-requests/${id}`, scope ? { data: { scope } } : undefined).then((r) => r.data);
+
+// ─── Peekviewer Issues (Peek Requests card → Peekviewer team Inbox) ───────
+export type PeekviewerIssueOutcome = 'resolved' | 'blocked' | 'suspended' | 'other';
+
+export interface PeekviewerIssueData {
+  id: string;
+  clientCardId: string;
+  senderId: string;
+  senderName: string;
+  recipientIds: string[];
+  recipientNames: string[];
+  peeker: string;
+  issue: string;
+  comment: string;
+  status: 'open' | PeekviewerIssueOutcome;
+  resolutionComment: string;
+  resolvedByName: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+export const getPeekviewerIssueRecipients = () =>
+  api.get<{ id: string; name: string }[]>('/peekviewer-issues/recipients').then((r) => r.data);
+
+export const getMyPeekviewerIssues = (handled?: boolean) =>
+  api.get<PeekviewerIssueData[]>('/peekviewer-issues/mine', { params: { handled: handled ? 1 : undefined } }).then((r) => r.data);
+
+export const sendPeekviewerIssue = (data: { clientCardId: string; recipientIds: string[]; peeker: string; issue: string; comment: string }) =>
+  api.post<PeekviewerIssueData & { card: { requestId: string; comments: PeakRequestComment[] } | null }>('/peekviewer-issues', data).then((r) => r.data);
+
+export const closePeekviewerIssue = (id: string, outcome: PeekviewerIssueOutcome, comment?: string) =>
+  api.post<PeekviewerIssueData>(`/peekviewer-issues/${id}/close`, { outcome, comment }).then((r) => r.data);
 
 // ─── Notes (My Space — both teams) ─────────────────────────────────────────
 export interface NoteData {

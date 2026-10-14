@@ -17,6 +17,7 @@ import { InboxMessage, TeamUpdate, UpdateAttachment } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { QAReportPreview } from '../components/qaReport';
 import { HiviralsSentView } from '../components/hivirals';
+import { PeekviewerIssuesPanel } from '../components/peekviewerIssues';
 import { UpdatesTab } from '../components/UpdatesTab';
 import { ConfirmDialog, CardListSkeleton, RichText } from '../components/ui';
 
@@ -428,6 +429,9 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
           </button>
         ) : null}
       </div>
+
+      {/* Urgent Peekviewer issues escalated from Peek Requests cards */}
+      {activeTeam === 'peekviewer' && user?.team === 'peekviewer' && <PeekviewerIssuesPanel onChanged={onRead} />}
 
       {/* Create-request panel — Requests sent to Anna */}
       {view === 'requests-to-anna' && showAccountRequestForm && (

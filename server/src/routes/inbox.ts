@@ -103,16 +103,18 @@ router.get('/sent', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/inbox/unread-count — combines unread messages with unread Updates
+// GET /api/inbox/unread-count — combines unread messages, unread Updates, and open Peekviewer issues
 // (the "Updates" tab lives inside Inbox and shares this one bell-icon badge).
 router.get('/unread-count', async (req: Request, res: Response) => {
   try {
     const userId = (req.user as Express.User).id;
-    const [messageCount, updateCount] = await Promise.all([
+    const [messageCount, updateCount, issueCount] = await Promise.all([
       prisma.inboxMessage.count({ where: { receiverId: userId, read: false } }),
       prisma.updateRead.count({ where: { userId, read: false } }),
+      // Open Peekviewer issues stay in the badge until someone closes them.
+      prisma.peekviewerIssue.count({ where: { recipientIds: { contains: userId }, status: 'open' } }),
     ]);
-    res.json({ count: messageCount + updateCount });
+    res.json({ count: messageCount + updateCount + issueCount });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch unread count' });

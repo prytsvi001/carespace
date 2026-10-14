@@ -39,6 +39,7 @@ import requestScheduleRouter from './routes/requestSchedule';
 import onboardingRouter from './routes/onboarding';
 import accountRequestsRouter from './routes/accountRequests';
 import hiviralsBoostRequestsRouter from './routes/hiviralsBoostRequests';
+import peekviewerIssuesRouter from './routes/peekviewerIssues';
 import notesRouter from './routes/notes';
 import { requireAuth } from './middleware/auth';
 
@@ -152,6 +153,7 @@ app.use('/api/request-schedule', requestScheduleRouter); // requireAuth + requir
 app.use('/api/onboarding', onboardingRouter); // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/account-requests', accountRequestsRouter); // requireAuth + requirePeekviewerTeam applied inside router
 app.use('/api/hivirals-boost-requests', hiviralsBoostRequestsRouter); // requireAuth applied inside router — support agents create, Anna/Sandra Moore/Victoria Davis manage
+app.use('/api/peekviewer-issues', peekviewerIssuesRouter); // requireAuth applied inside router — support sends from Peek Requests, Peekviewer team closes
 app.use('/api/notes', notesRouter); // requireAuth applied inside router — every agent, both teams
 
 export default app;

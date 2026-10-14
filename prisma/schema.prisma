@@ -476,6 +476,7 @@ model ClientCard {
 
   requests        PeakRequest[]
   resolutionCredits PeekResolutionCredit[]
+  peekviewerIssues  PeekviewerIssue[]
 
   @@index([status])
   @@index([status, archived])
@@ -522,6 +523,33 @@ model PeakRequest {
   @@index([status, archived])
   @@index([clientCardId])
   @@index([clientCardId, createdAt])
+}
+
+// Support → Peekviewer team escalation from a Peek Requests card ("Send to
+// Peekviewer"). Shows up as an urgent, process-ASAP block at the top of each
+// chosen recipient's Inbox (not as a regular message). Any recipient closes
+// it as resolved / blocked / suspended / other; the outcome is posted back as
+// a comment on the card's active request so support sees it on the board.
+model PeekviewerIssue {
+  id                String     @id @default(cuid())
+  clientCardId      String
+  clientCard        ClientCard @relation(fields: [clientCardId], references: [id], onDelete: Cascade)
+  senderId          String
+  senderName        String
+  recipientIds      String     // comma-separated User ids (Peekviewer team)
+  recipientNames    String     // comma-separated, for display
+  peeker            String
+  issue             String
+  comment           String     @default("")
+  status            String     @default("open") // "open" | "resolved" | "blocked" | "suspended" | "other"
+  resolutionComment String     @default("")
+  resolvedByName    String?
+  resolvedAt        DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([status])
+  @@index([clientCardId])
 }
 
 // Dedup log for the shift-reminder cron — the external scheduler that hits

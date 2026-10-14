@@ -1,6 +1,6 @@
 // client/src/pages/PeakRequests.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User, ArrowUp, ArrowDown, Eye, X } from 'lucide-react';
+import { ClipboardList, Check, ChevronDown, Star, Pencil, Archive, Trash2, Plus, MoreHorizontal, Mail, User, ArrowUp, ArrowDown, Eye, X, Send } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getPeakRequests, createPeakRequest, updatePeakRequest,
@@ -9,6 +9,7 @@ import {
 } from '../api';
 import { ClientCardView, PeakRequestComment, RequestStatus } from '../types';
 import { Modal, EmptyState, ConfirmDialog, CardListSkeleton } from '../components/ui';
+import { SendToPeekviewerModal } from '../components/peekviewerIssues';
 import { useAuth } from '../context/AuthContext';
 
 // ── Tag definitions ───────────────────────────────────────────────────────────
@@ -197,7 +198,7 @@ function EyeCheckButton({ card, canCheck, onCheck }: {
 
 function ClientCard({
   card, onEdit, onStatusChange, onToggleStar, onArchive, onDelete, onFieldsUpdated, onCheckAccount,
-  highlightNew, showEyeCheck, canCheckAccounts, showStatusBadge, currentUserId,
+  highlightNew, showEyeCheck, canCheckAccounts, showStatusBadge, currentUserId, canSendToPeekviewer,
 }: {
   card: ClientCardView;
   onEdit: (card: ClientCardView) => void;
@@ -217,10 +218,12 @@ function ClientCard({
   // The signed-in user's id — a comment's author gets edit/delete controls on
   // their own comments, no one else's.
   currentUserId?: string;
+  canSendToPeekviewer?: boolean;
 }) {
   const [confirm, setConfirm]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [copiedField, setCopiedField]     = useState<'email' | 'nickname' | null>(null);
+  const [sendingToPeekviewer, setSendingToPeekviewer] = useState(false);
 
   const active = card.activeRequest;
 
@@ -725,6 +728,17 @@ function ClientCard({
                 style={{ color: card.starred ? '#D4A847' : 'rgba(14,14,14,0.25)' }}
               />
             </button>
+            {canSendToPeekviewer && (
+              <button
+                type="button"
+                onClick={() => setSendingToPeekviewer(true)}
+                className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-red-600"
+                aria-label="Send to Peekviewer"
+                title="Send to Peekviewer"
+              >
+                <Send size={13} strokeWidth={1.8} />
+              </button>
+            )}
             <button onClick={() => onEdit(card)} className="p-1 rounded hover:bg-black/5 transition-colors text-slate-400 hover:text-brand-600" aria-label="Edit" title="Edit">
               <Pencil size={13} strokeWidth={1.8} />
             </button>
@@ -739,6 +753,19 @@ function ClientCard({
       <ConfirmDialog open={confirmDelete} message="Delete this client card and its full request history permanently?"
         onConfirm={() => { onDelete(card.id); setConfirmDelete(false); }}
         onCancel={() => setConfirmDelete(false)} />
+      {canSendToPeekviewer && (
+        <SendToPeekviewerModal
+          open={sendingToPeekviewer}
+          onClose={() => setSendingToPeekviewer(false)}
+          clientCardId={card.id}
+          onSent={(updated) => {
+            if (updated && updated.requestId === active.id) {
+              setComments(updated.comments);
+              onFieldsUpdated(active.id, { comments: updated.comments });
+            }
+          }}
+        />
+      )}
       <ConfirmDialog open={!!deletingCommentId} message="Delete this comment?"
         onConfirm={() => deletingCommentId && handleDeleteComment(deletingCommentId)}
         onCancel={() => setDeletingCommentId(null)} />
@@ -809,6 +836,8 @@ function SearchResultCard({ card, onOpen }: { card: ClientCardView; onOpen: (car
 
 export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => void }) {
   const { user } = useAuth();
+  // Support escalates a card's issue to the Peekviewer team (Inbox, urgent).
+  const canSendToPeekviewer = user?.team === 'support' || user?.secondaryTeam === 'support';
   const isPeekHandler = user?.role === 'peek_handler';
   const [cards, setCards] = useState<ClientCardView[]>([]);
   // Whether the current viewer is one of the 3 peek team members (Iryna,
@@ -1282,6 +1311,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                   showEyeCheck={card.status === 'IN_PROGRESS'}
                   canCheckAccounts={canCheckAccounts}
                   currentUserId={user?.id}
+                  canSendToPeekviewer={canSendToPeekviewer}
                 />
               ))}
             </div>
@@ -1337,6 +1367,7 @@ export default function PeakRequests({ onDataChanged }: { onDataChanged?: () => 
                       showEyeCheck={col.status === 'IN_PROGRESS'}
                       canCheckAccounts={canCheckAccounts}
                       currentUserId={user?.id}
+                      canSendToPeekviewer={canSendToPeekviewer}
                     />
                   ))}
                 </div>
