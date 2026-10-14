@@ -23,10 +23,10 @@ export const HIVIRALS_PLANS: Record<HiviralsPlan, { label: string; norms: { foll
 const isPlan = (v: string): v is HiviralsPlan => v in HIVIRALS_PLANS;
 
 const STAT_FIELDS: { label: string; start: keyof HiviralsBoostProfile; end: keyof HiviralsEndPoint }[] = [
-  { label: 'Кількість фоловерів', start: 'followersCount', end: 'endFollowersCount' },
-  { label: 'Кількість постів',    start: 'postsCount',     end: 'endPostsCount' },
-  { label: 'Кількість фоловінг',  start: 'followingCount', end: 'endFollowingCount' },
-  { label: 'Engagement rate',     start: 'engagementRate', end: 'endEngagementRate' },
+  { label: 'Followers',       start: 'followersCount', end: 'endFollowersCount' },
+  { label: 'Posts',           start: 'postsCount',     end: 'endPostsCount' },
+  { label: 'Following',       start: 'followingCount', end: 'endFollowingCount' },
+  { label: 'Engagement rate', start: 'engagementRate', end: 'endEngagementRate' },
 ];
 
 // Links are stored one per line; edited as a list with "+".
@@ -41,18 +41,18 @@ export const HIVIRALS_FIELD_GROUPS: { title?: string; cols: string; fields: Fiel
     fields: [
       { key: 'email', label: 'Email' },
       { key: 'plan', label: 'Plan', kind: 'plan' },
-      { key: 'accountName', label: 'Назва акаунта' },
+      { key: 'accountName', label: 'Account name' },
     ],
   },
   {
     cols: 'sm:grid-cols-2',
     fields: [
-      { key: 'startDate', label: 'Дата початку', kind: 'date' },
-      { key: 'endDate', label: 'Дата кінця', kind: 'date' },
+      { key: 'startDate', label: 'Start date', kind: 'date' },
+      { key: 'endDate', label: 'End date', kind: 'date' },
     ],
   },
   {
-    title: 'Старт поінт',
+    title: 'Start point',
     cols: 'grid-cols-2 sm:grid-cols-4',
     fields: STAT_FIELDS.map((s) => ({ key: s.start, label: s.label })),
   },
@@ -60,21 +60,21 @@ export const HIVIRALS_FIELD_GROUPS: { title?: string; cols: string; fields: Fiel
     cols: 'grid-cols-1',
     fields: [
       { key: 'niche', label: 'Niche (theme)', kind: 'textarea' },
-      { key: 'interests', label: 'Зони інтересу', kind: 'textarea' },
+      { key: 'interests', label: 'Areas of interest', kind: 'textarea' },
     ],
   },
   {
-    title: 'Соціальна сітка (бульбашка)',
+    title: 'Social circle (bubble)',
     cols: 'grid-cols-1',
     fields: [
-      { key: 'publicLinks', label: 'Посилання на пабліки', kind: 'links', placeholder: 'https://…' },
-      { key: 'postLinks', label: 'Посилання на пости (коментарі)', kind: 'links', placeholder: 'https://…' },
+      { key: 'publicLinks', label: 'Links to public pages', kind: 'links', placeholder: 'https://…' },
+      { key: 'postLinks', label: 'Links to posts (for comments)', kind: 'links', placeholder: 'https://…' },
     ],
   },
   {
     cols: 'grid-cols-1',
     fields: [
-      { key: 'hashtags', label: 'Хештеги', kind: 'textarea' },
+      { key: 'hashtags', label: 'Hashtags', kind: 'textarea' },
       { key: 'notes', label: 'Additional notes', kind: 'textarea' },
     ],
   },
@@ -189,7 +189,7 @@ export function HiviralsNorms({ request }: { request: HiviralsBoostRequestData }
   ];
   return (
     <div className="rounded-xl p-3 space-y-2" style={{ backgroundColor: 'rgba(161,249,110,0.10)' }}>
-      <p className="text-xs font-semibold text-slate-600">Норми плану {label} — one month boost</p>
+      <p className="text-xs font-semibold text-slate-600">{label} plan norms — one month boost</p>
       <div className="grid grid-cols-3 gap-3">
         {items.map((it) => {
           const done = totals[it.key];
@@ -223,13 +223,13 @@ export function HiviralsEndPointSection({ request, onChange }: {
   if (!onChange && STAT_FIELDS.every((s) => !request[s.end]?.trim())) return null;
   return (
     <div className="space-y-1.5">
-      <p className="text-xs font-semibold text-slate-600">Енд поінт</p>
+      <p className="text-xs font-semibold text-slate-600">End point</p>
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
         {STAT_FIELDS.map((s) => (
           <div key={s.end} className="min-w-0">
             <label className="block text-xs text-slate-400 mb-1">
               {s.label}
-              {request[s.start] && <span className="text-slate-300"> (старт: {request[s.start]})</span>}
+              {request[s.start] && <span className="text-slate-300"> (start: {request[s.start]})</span>}
             </label>
             {onChange ? (
               <input

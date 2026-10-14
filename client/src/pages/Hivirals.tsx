@@ -23,27 +23,27 @@ const SECTIONS: { key: SectionKey; title: string; cols: ColDef[] }[] = [
     key: 'followers',
     title: 'Followers',
     cols: [
-      { key: 'date', label: 'Дата', type: 'date' },
-      { key: 'username', label: 'Юзернейм' },
+      { key: 'date', label: 'Date', type: 'date' },
+      { key: 'username', label: 'Username' },
     ],
   },
   {
     key: 'likes',
     title: 'Likes',
     cols: [
-      { key: 'date', label: 'Дата', type: 'date' },
-      { key: 'username', label: 'Юзернейм (з якого лайк)' },
-      { key: 'postUrl', label: 'Посилання на пост (який лайк)', wide: true },
+      { key: 'date', label: 'Date', type: 'date' },
+      { key: 'username', label: 'Username (liked from)' },
+      { key: 'postUrl', label: 'Liked post link', wide: true },
     ],
   },
   {
     key: 'comments',
-    title: 'Comment',
+    title: 'Comments',
     cols: [
-      { key: 'date', label: 'Дата', type: 'date' },
-      { key: 'username', label: 'Юзернейм (з якого комент)' },
-      { key: 'postUrl', label: 'Посилання на пост (який комент)', wide: true },
-      { key: 'text', label: 'Текст комент', type: 'textarea', wide: true },
+      { key: 'date', label: 'Date', type: 'date' },
+      { key: 'username', label: 'Username (commented from)' },
+      { key: 'postUrl', label: 'Commented post link', wide: true },
+      { key: 'text', label: 'Comment text', type: 'textarea', wide: true },
     ],
   },
 ];
