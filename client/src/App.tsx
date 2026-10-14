@@ -4,7 +4,7 @@ import {
   ClipboardList, CalendarDays, Lightbulb, Bot, ChartBar,
   ListTodo, Star, TrendingUp, FileText, LogOut, User,
   ChevronDown, Bell, BarChart3, Send, CheckCircle2, Camera, Download, Wallet,
-  CalendarClock, Rocket, Wifi, KeyRound, BookOpen, GraduationCap,
+  CalendarClock, Rocket, Wifi, KeyRound, BookOpen, GraduationCap, Sparkles,
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -36,6 +36,7 @@ const MyKPI = React.lazy(() => import('./pages/MyKPI'));
 const Salary = React.lazy(() => import('./pages/Salary'));
 const RequestSchedule = React.lazy(() => import('./pages/RequestSchedule'));
 const BoostRequests = React.lazy(() => import('./pages/BoostRequests'));
+const Hivirals = React.lazy(() => import('./pages/Hivirals'));
 const ProxyPool = React.lazy(() => import('./pages/ProxyPool'));
 const RowAccountsPool = React.lazy(() => import('./pages/RowAccountsPool'));
 const References = React.lazy(() => import('./pages/References'));
@@ -100,12 +101,12 @@ class TabErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
 
 type SharedTab = 'daily' | 'calendar' | 'requests' | 'qa' | 'stats';
 type SpaceTab  = 'plans' | 'inbox' | 'reviews' | 'pdp' | 'qa-reports' | 'kpi' | 'salary';
-type PeekviewerSharedTab = 'schedule' | 'boost' | 'proxy' | 'row-accounts' | 'references' | 'requests' | 'calendar';
+type PeekviewerSharedTab = 'schedule' | 'boost' | 'proxy' | 'row-accounts' | 'references' | 'hivirals' | 'requests' | 'calendar';
 type PeekviewerSpaceTab = 'peek-kpi' | 'peek-plans' | 'onboarding';
 type Tab = SharedTab | SpaceTab | PeekviewerSharedTab | PeekviewerSpaceTab;
 
 const SHARED_TAB_IDS = new Set<Tab>(['daily', 'calendar', 'requests', 'qa', 'stats', 'inbox']);
-const PEEKVIEWER_SHARED_TAB_IDS = new Set<Tab>(['schedule', 'boost', 'proxy', 'row-accounts', 'references', 'requests', 'calendar', 'inbox']);
+const PEEKVIEWER_SHARED_TAB_IDS = new Set<Tab>(['schedule', 'boost', 'proxy', 'row-accounts', 'references', 'hivirals', 'requests', 'calendar', 'inbox']);
 
 const SHARED_TABS: { id: SharedTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
   { id: 'daily',    label: 'Daily Log',      shortLabel: 'Log',      Icon: ClipboardList },
@@ -134,6 +135,7 @@ const PEEKVIEWER_CORE_TABS: { id: PeekviewerSharedTab; label: string; shortLabel
   { id: 'proxy',         label: 'Proxy',             shortLabel: 'Proxy',    Icon: Wifi },
   { id: 'row-accounts',  label: 'Raw Accounts',      shortLabel: 'Accounts', Icon: KeyRound },
   { id: 'references',    label: 'New Accounts',       shortLabel: 'New Accts', Icon: BookOpen },
+  { id: 'hivirals',      label: 'HiVirals',           shortLabel: 'HiVirals', Icon: Sparkles },
 ];
 const PEEKVIEWER_LEGACY_TABS: { id: PeekviewerSharedTab; label: string; shortLabel: string; Icon: React.ElementType }[] = [
   { id: 'requests', label: 'Peek Requests', shortLabel: 'Peek',     Icon: Lightbulb },
@@ -156,6 +158,14 @@ const QUICK_ACTIONS_HIDDEN_EMAILS = new Set([
   'victoria_horopeka@struktura.io',
   'yana_fedorova@struktura.io',
   'tetiana_veremeenko@struktura.io',
+]);
+
+// The HiVirals tab (boost requests from support) is only for Anna Bilous,
+// Sandra Moore, and Victoria Davis — mirrors MANAGER_EMAILS server-side.
+const HIVIRALS_TAB_EMAILS = new Set([
+  'anna_bilous@struktura.io',
+  'oleksandra_kraichynska@struktura.io',
+  'victoria_pryts@struktura.io',
 ]);
 
 const ACTIVE_TEAM_STORAGE_PREFIX = 'carespace_active_team_';
@@ -208,6 +218,7 @@ function MainApp() {
   const isPeekHandler = userRole === 'peek_handler';
   const canSwitchTeam = !!user?.secondaryTeam;
   const hiddenPeekviewerTabIds = new Set((user?.hiddenPeekviewerTabs ?? '').split(',').filter(Boolean));
+  if (!HIVIRALS_TAB_EMAILS.has(user?.email ?? '')) hiddenPeekviewerTabIds.add('hivirals');
 
   const [activeTeam, setActiveTeam] = useState<'support' | 'peekviewer'>(() => getInitialTeam(user));
   const isPeekviewerSpace = activeTeam === 'peekviewer';
@@ -660,6 +671,7 @@ function MainApp() {
             {activeTab === 'proxy'        && <ProxyPool />}
             {activeTab === 'row-accounts' && <RowAccountsPool />}
             {activeTab === 'references'   && <References />}
+            {activeTab === 'hivirals'     && <Hivirals />}
             {activeTab === 'peek-kpi'     && <PeekviewerKPI />}
             {activeTab === 'peek-plans'   && <MyPlans />}
             {activeTab === 'onboarding'   && <Onboarding />}

@@ -1,6 +1,6 @@
 // client/src/pages/Inbox.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mail, MailOpen, Send, X, Trash2, Reply, ChevronDown, ChevronUp, Megaphone, UserPlus, Rocket, Plus } from 'lucide-react';
+import { Mail, MailOpen, Send, X, Trash2, Reply, ChevronDown, ChevronUp, Megaphone, UserPlus, Rocket, Plus, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import {
   getInbox, getSentMessages, getInboxUsers, markMessageRead, sendMessage, deleteMessage,
@@ -16,6 +16,7 @@ import {
 import { InboxMessage, TeamUpdate, UpdateAttachment } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { QAReportPreview } from '../components/qaReport';
+import { HiviralsSentView } from '../components/hivirals';
 import { UpdatesTab } from '../components/UpdatesTab';
 import { ConfirmDialog, CardListSkeleton, RichText } from '../components/ui';
 
@@ -26,6 +27,7 @@ const TYPE_META: Record<string, { label: string; cls: string }> = {
   qa_report:       { label: 'QA Report',  cls: 'bg-amber-50 text-amber-700' },
   salary_message:  { label: 'Salary',     cls: 'bg-emerald-50 text-emerald-700' },
   account_request: { label: 'Account Request', cls: 'bg-violet-50 text-violet-700' },
+  hivirals_boost:  { label: 'HiVirals Boost',  cls: 'bg-pink-50 text-pink-700' },
   general:         { label: 'Message',    cls: 'bg-slate-100 text-slate-600' },
 };
 
@@ -61,7 +63,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
   const isAdmin = role === 'head' || role === 'lead' || (activeTeam === 'peekviewer' && !!user?.peekviewerAdmin);
   const baseTypeOptions = ROLE_TYPE_OPTIONS[role] ?? ROLE_TYPE_OPTIONS.agent;
 
-  const [view, setView] = useState<'received' | 'sent' | 'updates' | 'requests-to-anna' | 'boost-requests'>('received');
+  const [view, setView] = useState<'received' | 'sent' | 'updates' | 'requests-to-anna' | 'boost-requests' | 'hivirals-boost'>('received');
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [sentMessages, setSentMessages] = useState<InboxMessage[]>([]);
   const [updates, setUpdates] = useState<TeamUpdate[]>([]);
@@ -376,6 +378,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
               : view === 'sent' ? 'Messages you sent'
               : view === 'requests-to-anna' ? 'Account requests you sent to Anna'
               : view === 'boost-requests' ? 'Your boost requests'
+              : view === 'hivirals-boost' ? 'Your HiVirals boost requests'
               : 'Team announcements'}
           </p>
         </div>
@@ -598,6 +601,7 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
         {([
           ...(['received', 'sent', 'updates'] as const),
           ...(activeTeam === 'peekviewer' ? (['requests-to-anna', 'boost-requests'] as const) : []),
+          ...(activeTeam === 'support' ? (['hivirals-boost'] as const) : []),
         ]).map((v) => (
           <button
             key={v}
@@ -613,8 +617,9 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
               : v === 'updates' ? <Megaphone size={12} strokeWidth={1.8} />
               : v === 'requests-to-anna' ? <UserPlus size={12} strokeWidth={1.8} />
               : v === 'boost-requests' ? <Rocket size={12} strokeWidth={1.8} />
+              : v === 'hivirals-boost' ? <Sparkles size={12} strokeWidth={1.8} />
               : null}
-            {v === 'received' ? 'Received' : v === 'sent' ? 'Sent' : v === 'updates' ? 'Updates' : v === 'requests-to-anna' ? 'New Account Request' : 'Boost Requests'}
+            {v === 'received' ? 'Received' : v === 'sent' ? 'Sent' : v === 'updates' ? 'Updates' : v === 'requests-to-anna' ? 'New Account Request' : v === 'hivirals-boost' ? 'HiVirals Boost Request' : 'Boost Requests'}
             {((v === 'received' && unreadCount > 0) || (v === 'updates' && updatesUnreadCount > 0)) && (
               <span
                 className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
@@ -689,6 +694,8 @@ export default function Inbox({ onRead, activeTeam = 'support' }: InboxProps) {
             })}
           </div>
         )
+      ) : view === 'hivirals-boost' ? (
+        <HiviralsSentView />
       ) : view === 'boost-requests' ? (
         loading ? (
           <CardListSkeleton />

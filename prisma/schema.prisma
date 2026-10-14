@@ -62,6 +62,7 @@ model User {
   boostRequests        BoostRequest[]
   authoredOnboardingBlocks OnboardingBlock[]
   accountRequests      AccountRequest[]
+  hiviralsBoostRequests HiviralsBoostRequest[]
   requestScheduleReminderLogs RequestScheduleReminderLog[]
   notes                Note[]
 
@@ -760,6 +761,51 @@ model AccountRequest {
   @@index([requesterId])
   @@index([status])
   @@index([archived])
+}
+
+// HiVirals boost request — a support agent fills in the client's account
+// profile (Inbox → "HiVirals Boost Request"); Anna Bilous works it from the
+// Peekviewer "HiVirals" tab (Sandra Moore/Victoria Davis have the same
+// rights), logging per day which followers/likes/comments were delivered,
+// then hits End Boost, which notifies every support agent. Same "structured record
+// + companion InboxMessage" split and per-side soft delete as AccountRequest.
+model HiviralsBoostRequest {
+  id             String    @id @default(cuid())
+  requesterId    String
+  requester      User      @relation(fields: [requesterId], references: [id])
+  requesterName  String
+  email          String
+  plan           String    @default("") // "starter" | "business" | "pro"
+  accountName    String    @default("")
+  startDate      String    @default("") // "YYYY-MM-DD"
+  endDate        String    @default("") // "YYYY-MM-DD"
+  followersCount String    @default("")
+  postsCount     String    @default("")
+  followingCount String    @default("")
+  engagementRate String    @default("")
+  // End point — same four stats, filled by Anna after the boost
+  endFollowersCount String @default("")
+  endPostsCount     String @default("")
+  endFollowingCount String @default("")
+  endEngagementRate String @default("")
+  niche         String    @default("")
+  interests      String    @default("")
+  publicLinks    String    @default("") // social circle — links to publics, one per line
+  postLinks      String    @default("") // social circle — links to posts (comments), one per line
+  hashtags       String    @default("")
+  notes          String    @default("")
+  days           String    @default("[]") // JSON: [{id, date, followers:[{id,date,username}], likes:[{id,date,username,postUrl}], comments:[{id,date,username,postUrl,text}]}]
+  status         String    @default("active") // "draft" | "active" | "ended" — drafts are shared across all support agents
+  draftEditorName String   @default("") // who last edited the draft
+  endedAt        DateTime?
+  inboxMessageId String?
+  deletedByRequester Boolean @default(false)
+  deletedByAdmin     Boolean @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([requesterId])
+  @@index([status])
 }
 
 // One row per user per Kyiv-local date a "your turn to submit new-profile

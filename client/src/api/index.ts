@@ -801,6 +801,92 @@ export const updateAccountRequest = (id: string, data: { status?: AccountRequest
 export const deleteAccountRequest = (id: string, scope?: 'requester' | 'admin') =>
   api.delete(`/account-requests/${id}`, scope ? { data: { scope } } : undefined).then((r) => r.data);
 
+// ─── HiVirals Boost Requests (support agents → Anna's "HiVirals" tab) ─────
+export interface HiviralsFollowerRow { id: string; date: string; username: string }
+export interface HiviralsLikeRow { id: string; date: string; username: string; postUrl: string }
+export interface HiviralsCommentRow { id: string; date: string; username: string; postUrl: string; text: string }
+export interface HiviralsDay {
+  id: string;
+  date: string;
+  followers: HiviralsFollowerRow[];
+  likes: HiviralsLikeRow[];
+  comments: HiviralsCommentRow[];
+}
+
+export interface HiviralsBoostProfile {
+  email: string;
+  plan: string;
+  accountName: string;
+  startDate: string;
+  endDate: string;
+  followersCount: string;
+  postsCount: string;
+  followingCount: string;
+  engagementRate: string;
+  niche: string;
+  interests: string;
+  publicLinks: string;
+  postLinks: string;
+  hashtags: string;
+  notes: string;
+}
+
+export type HiviralsPlan = 'starter' | 'business' | 'pro';
+
+export interface HiviralsEndPoint {
+  endFollowersCount: string;
+  endPostsCount: string;
+  endFollowingCount: string;
+  endEngagementRate: string;
+}
+
+export interface HiviralsBoostRequestData extends HiviralsBoostProfile, HiviralsEndPoint {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  days: HiviralsDay[];
+  status: 'draft' | 'active' | 'ended';
+  draftEditorName: string;
+  endedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Full queue — Anna/Sandra Moore/Victoria Davis only (server-enforced)
+export const getHiviralsBoostQueue = () =>
+  api.get<HiviralsBoostRequestData[]>('/hivirals-boost-requests').then((r) => r.data);
+
+export const getMySentHiviralsBoostRequests = () =>
+  api.get<HiviralsBoostRequestData[]>('/hivirals-boost-requests/sent').then((r) => r.data);
+
+export const createHiviralsBoostRequest = (data: HiviralsBoostProfile) =>
+  api.post<HiviralsBoostRequestData>('/hivirals-boost-requests', data).then((r) => r.data);
+
+// Shared drafts — visible to and editable by every support agent
+export const getHiviralsDrafts = () =>
+  api.get<HiviralsBoostRequestData[]>('/hivirals-boost-requests/drafts').then((r) => r.data);
+
+export const createHiviralsDraft = (data: HiviralsBoostProfile) =>
+  api.post<HiviralsBoostRequestData>('/hivirals-boost-requests/drafts', data).then((r) => r.data);
+
+export const saveHiviralsDraft = (id: string, data: HiviralsBoostProfile) =>
+  api.put<HiviralsBoostRequestData>(`/hivirals-boost-requests/drafts/${id}`, data).then((r) => r.data);
+
+export const submitHiviralsDraft = (id: string, data: HiviralsBoostProfile) =>
+  api.post<HiviralsBoostRequestData>(`/hivirals-boost-requests/drafts/${id}/submit`, data).then((r) => r.data);
+
+export const deleteHiviralsDraft = (id: string) =>
+  api.delete(`/hivirals-boost-requests/drafts/${id}`).then((r) => r.data);
+
+export const updateHiviralsBoost = (id: string, data: { days?: HiviralsDay[] } & Partial<HiviralsEndPoint>) =>
+  api.patch<HiviralsBoostRequestData>(`/hivirals-boost-requests/${id}`, data).then((r) => r.data);
+
+export const endHiviralsBoost = (id: string) =>
+  api.post<HiviralsBoostRequestData>(`/hivirals-boost-requests/${id}/end`).then((r) => r.data);
+
+export const deleteHiviralsBoostRequest = (id: string, scope?: 'requester' | 'admin') =>
+  api.delete(`/hivirals-boost-requests/${id}`, scope ? { data: { scope } } : undefined).then((r) => r.data);
+
 // ─── Notes (My Space — both teams) ─────────────────────────────────────────
 export interface NoteData {
   id: string;
