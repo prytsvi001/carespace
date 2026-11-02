@@ -84,6 +84,50 @@ const LEGACY_ANCHOR_UTC_MS = Date.UTC(2026, 8, 30);
 
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 
+// ─── Monthly profile redistribution (from 2026-11-01) ───────────────────
+// Active/inactive profile redistribution uses the same 3 agents but a
+// separate monthly formula. Anchor month: November 2026 (monthIndex=0).
+// Each subsequent month shifts every day's owner by +1 (mod 3).
+// Direction: Diana ← Yana ← Tetyana ← Diana (same-as-before convention).
+//
+// BASE_REDISTRIB[d-1] = agent index (0=Diana,1=Tetyana,2=Yana) for day d
+// in November 2026, derived from the approved distribution below:
+//   Diana(0):    4·5·9·10·14·15·19·20·25·30
+//   Tetyana(1):  2·6·7·12·16·17·22·24·27·29
+//   Yana(2):     1·3·8·11·13·18·21·23·26·28·31
+const BASE_REDISTRIB: readonly number[] = [
+//  1  2  3  4  5  6  7  8  9 10
+    2, 1, 2, 0, 0, 1, 1, 2, 0, 0,
+// 11 12 13 14 15 16 17 18 19 20
+    2, 1, 2, 0, 0, 1, 1, 2, 0, 0,
+// 21 22 23 24 25 26 27 28 29 30 31
+    2, 1, 2, 1, 0, 2, 1, 2, 1, 0, 2,
+];
+
+const REDISTRIB_EPOCH_YEAR = 2026;
+const REDISTRIB_EPOCH_MONTH = 11; // November
+
+function redistribMonthIndex(year: number, month: number): number {
+  return (year - REDISTRIB_EPOCH_YEAR) * 12 + (month - REDISTRIB_EPOCH_MONTH);
+}
+
+function redistribOwnerForDay(day: number, monthIndex: number): number {
+  return mod(BASE_REDISTRIB[day - 1] + monthIndex, 3);
+}
+
+function computeMonthlyRedistribution(
+  year: number, month: number, agents: RosterUser[],
+): { userId: string; userName: string; days: number[] }[] {
+  const totalDays = daysInMonth(year, month);
+  const mIdx = redistribMonthIndex(year, month);
+  return agents.map((agent, agentIdx) => ({
+    userId: agent.id,
+    userName: agent.name,
+    days: Array.from({ length: totalDays }, (_, i) => i + 1)
+      .filter((d) => redistribOwnerForDay(d, mIdx) === agentIdx),
+  }));
+}
+
 // ─── Wave rotation era (from 2026-11-01) ────────────────────────────────
 // New clients arriving on a given day form a "wave" for that day.
 // Waves are assigned in 3-day blocks, blocks rotate across 9-day cycles:
@@ -290,10 +334,23 @@ router.get('/', async (req: Request, res: Response) => {
       }
     }
 
-    // ── Legacy redistribution (only for months before the wave era) ──────
+    // ── Redistribution ───────────────────────────────────────────────────────
     let redistribution: object[] = [];
     let redistributionPeriod: object | null = null;
-    if (hasLegacyDays && rostersForLegacy) {
+
+    if (hasWaveDays && waveRosterForMonth) {
+      // Wave era (Nov 2026+): monthly formula with the 3 wave agents.
+      redistribution = computeMonthlyRedistribution(year, month, waveRosterForMonth);
+      const periodStartMs = Date.UTC(year, month - 1, 1);
+      const periodEndMs   = Date.UTC(year, month, 1) - MS_PER_DAY;
+      const nextMs        = Date.UTC(year, month, 1); // 1st of next month
+      redistributionPeriod = {
+        start: dateKeyFromUtcMs(periodStartMs),
+        end:   dateKeyFromUtcMs(periodEndMs),
+        next:  dateKeyFromUtcMs(nextMs),
+      };
+    } else if (hasLegacyDays && rostersForLegacy) {
+      // Legacy era: 14-day periods.
       const today = todayKyivDateStr();
       const eraIdx = today < ROTATION_START ? 0 : eraIndexForDate(today);
       const era = ERAS[eraIdx];

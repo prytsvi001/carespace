@@ -316,13 +316,14 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
   );
 }
 
-// ─── Redistribution card (legacy months only) ────────────────────────────────
+// ─── Redistribution card ─────────────────────────────────────────────────────
 
 const formatDotDate = (d: string) => d.split('-').reverse().join('.');
 
-function RedistributionCard({ rows, period }: {
+function RedistributionCard({ rows, period, isMonthly }: {
   rows: RequestScheduleData['redistribution'];
   period: RequestScheduleData['redistributionPeriod'];
+  isMonthly: boolean;
 }) {
   if (!rows.length) return null;
   return (
@@ -330,8 +331,14 @@ function RedistributionCard({ rows, period }: {
       <h3 className="text-sm font-semibold text-ink">Перерозподіл активних і неактивних профілів</h3>
       {period && (
         <div className="text-xs space-y-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>
-          <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{formatDotDate(period.start)}</span></p>
-          <p>Наступний перерозподіл: {formatDotDate(period.next)}</p>
+          {isMonthly ? (
+            <p>Наступний перерозподіл: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{formatDotDate(period.next)}</span></p>
+          ) : (
+            <>
+              <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{formatDotDate(period.start)}</span></p>
+              <p>Наступний перерозподіл: {formatDotDate(period.next)}</p>
+            </>
+          )}
         </div>
       )}
       <div className="space-y-2">
@@ -518,7 +525,7 @@ export default function RequestSchedule() {
         </>
       )}
 
-      <RedistributionCard rows={data.redistribution} period={data.redistributionPeriod} />
+      <RedistributionCard rows={data.redistribution} period={data.redistributionPeriod} isMonthly={isWaveMonth} />
     </div>
   );
 }
