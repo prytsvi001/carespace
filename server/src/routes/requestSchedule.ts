@@ -128,12 +128,26 @@ function computeMonthlyRedistribution(
   }));
 }
 
+// Returns redistribution rows for the cron notifier — null if the roster
+// isn't loaded yet or the month is before the redistribution era.
+export async function getRedistribForNotification(
+  year: number, month: number,
+): Promise<{ userId: string; userName: string; days: number[] }[] | null> {
+  if (year < REDISTRIB_EPOCH.year || (year === REDISTRIB_EPOCH.year && month < REDISTRIB_EPOCH.month)) {
+    return null; // before redistribution era
+  }
+  const roster = await loadWaveRoster();
+  if (!roster) return null;
+  return computeMonthlyRedistribution(year, month, roster);
+}
+
 // ─── Wave rotation era (from 2026-11-01) ────────────────────────────────
 // New clients arriving on a given day form a "wave" for that day.
 // Waves are assigned in 3-day blocks, blocks rotate across 9-day cycles:
 //   Diana (0) → Tetyana (1) → Yana (2) → Diana …
 // Every 9 days all existing waves pass to the next agent.
 export const WAVE_EPOCH = '2026-11-01';
+export const REDISTRIB_EPOCH = { year: 2026, month: 11 } as const;
 const WAVE_EPOCH_UTC_MS = Date.UTC(2026, 10, 1);
 const WAVE_AGENT_EMAILS = [
   'diana_semenuk@struktura.io',      // index 0 — Diana Semeniuk
@@ -141,7 +155,10 @@ const WAVE_AGENT_EMAILS = [
   'yana_fedorova@struktura.io',      // index 2 — Yana Fedorova
 ];
 
-function waveDayIndex(dateStr: string): number {
+export const WAVE_EPOCH_UTC_MS_EXPORT = WAVE_EPOCH_UTC_MS;
+export { MS_PER_DAY as MS_PER_DAY_EXPORT };
+
+export function waveDayIndex(dateStr: string): number {
   return Math.round((utcMsForDate(dateStr) - WAVE_EPOCH_UTC_MS) / MS_PER_DAY);
 }
 
@@ -228,7 +245,7 @@ export async function loadRosters(): Promise<Rosters | null> {
   return { eras, current: eras[eras.length - 1], legacy: loaded[ERAS.length] };
 }
 
-async function loadWaveRoster(): Promise<RosterUser[] | null> {
+export async function loadWaveRoster(): Promise<RosterUser[] | null> {
   const users = await getRotationUsers(WAVE_AGENT_EMAILS);
   if (users.length !== WAVE_AGENT_EMAILS.length) {
     const found = new Set(users.map((u) => u.email));

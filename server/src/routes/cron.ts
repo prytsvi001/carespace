@@ -2,7 +2,61 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { sendTelegramMessage } from '../telegram';
-import { loadRosters, resolveCurrentAssignee, todayKyivDateStr } from './requestSchedule';
+import {
+  loadRosters, resolveCurrentAssignee, todayKyivDateStr,
+  WAVE_EPOCH, WAVE_EPOCH_UTC_MS_EXPORT, MS_PER_DAY_EXPORT,
+  waveDayIndex, waveFirstAgentIndex, waveOwnerIndex,
+  loadWaveRoster,
+  getRedistribForNotification, REDISTRIB_EPOCH,
+} from './requestSchedule';
+
+// ─── Wave reminder helpers ────────────────────────────────────────────────────
+
+const UA_MONTHS = [
+  'січня','лютого','березня','квітня','травня','червня',
+  'липня','серпня','вересня','жовтня','листопада','грудня',
+];
+
+function waveDateFromIndex(dayIdx: number): Date {
+  return new Date(WAVE_EPOCH_UTC_MS_EXPORT + dayIdx * MS_PER_DAY_EXPORT);
+}
+
+function formatWaveRange(startIdx: number, endIdx: number): string {
+  const s = waveDateFromIndex(startIdx);
+  const e = waveDateFromIndex(endIdx);
+  const sd = s.getUTCDate(), ed = e.getUTCDate();
+  const sm = UA_MONTHS[s.getUTCMonth()], em = UA_MONTHS[e.getUTCMonth()];
+  return s.getUTCMonth() === e.getUTCMonth()
+    ? `${sd}–${ed} ${sm}`
+    : `${sd} ${sm} – ${ed} ${em}`;
+}
+
+function groupConsecutive(indices: number[]): { start: number; end: number }[] {
+  if (!indices.length) return [];
+  const result: { start: number; end: number }[] = [];
+  let start = indices[0], prev = indices[0];
+  for (let i = 1; i < indices.length; i++) {
+    if (indices[i] === prev + 1) { prev = indices[i]; continue; }
+    result.push({ start, end: prev });
+    start = prev = indices[i];
+  }
+  result.push({ start, end: prev });
+  return result;
+}
+
+function buildWaveMessage(agentWaveIndices: number[], todayIdx: number): string {
+  const ranges = groupConsecutive(agentWaveIndices);
+  const rangeLines = ranges.map(({ start, end }) => `• ${formatWaveRange(start, end)}`).join('\n');
+  const todayDate = waveDateFromIndex(todayIdx);
+  const todayLabel = `${todayDate.getUTCDate()} ${UA_MONTHS[todayDate.getUTCMonth()]}`;
+  const cycleNum = Math.floor(todayIdx / 9) + 1;
+  const header = cycleNum > 1
+    ? `📋 Сьогодні (${todayLabel}) починається твоя нова хвиля — це вже цикл №${cycleNum}.`
+    : `📋 Сьогодні (${todayLabel}) починається твоя нова хвиля!`;
+  return `${header}\nТи зараз опрацьовуєш:\n${rangeLines}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const router = Router();
 
@@ -270,17 +324,12 @@ router.get('/shift-reminders', async (_req: Request, res: Response) => {
   }
 });
 
-// 10:00 Kyiv — "your turn to submit new-profile requests" nudge for whoever
-// the Request Schedule calendar has on duty today. Shares the same
-// TOLERANCE_MINUTES window as shift-reminders (GitHub Actions' schedule
-// trigger doesn't fire on time — see the comment above that constant), and
-// dedups via RequestScheduleReminderLog (one row per user per Kyiv date)
-// rather than TelegramReminderLog since not every rotation agent has an
-// Agent record.
 const REQUEST_SCHEDULE_REMINDER_TARGET_MINUTES = 10 * 60;
-const REQUEST_SCHEDULE_REMINDER_MESSAGE = 'Твоя черга кидати запити на нові профілі! 📋';
 
-// GET /api/cron/request-schedule-reminder
+// GET /api/cron/request-schedule-reminder — 10:00 Kyiv.
+// Wave era (Nov 2026+): sent to the agent whose new wave starts today;
+//   message lists every wave range they're currently managing.
+// Legacy era: sent to whoever is on duty today; simple nudge.
 router.get('/request-schedule-reminder', async (_req: Request, res: Response) => {
   try {
     const now = new Date();
@@ -290,25 +339,115 @@ router.get('/request-schedule-reminder', async (_req: Request, res: Response) =>
     if (!inWindow) return res.json({ ok: true, sent: [], reason: 'out of window' });
 
     const dateStr = todayKyivDateStr();
-    const rosters = await loadRosters();
-    if (!rosters) return res.json({ ok: true, sent: [] });
+    const sent: string[] = [];
 
-    const assignee = await resolveCurrentAssignee(dateStr, rosters);
-    const user = await prisma.user.findUnique({ where: { id: assignee.userId } });
-    if (!user?.active || !user.telegramChatId) return res.json({ ok: true, sent: [] });
+    if (dateStr >= WAVE_EPOCH) {
+      // ── Wave era ────────────────────────────────────────────────────────
+      const waveRoster = await loadWaveRoster();
+      if (!waveRoster) return res.json({ ok: true, sent: [] });
 
-    try {
-      await prisma.requestScheduleReminderLog.create({ data: { userId: user.id, date: dateStr } });
-    } catch (err: unknown) {
-      if ((err as { code?: string })?.code === 'P2002') return res.json({ ok: true, sent: [] }); // already sent today
-      throw err;
+      const todayIdx = waveDayIndex(dateStr);
+      const firstIdx = waveFirstAgentIndex(todayIdx); // agent receiving new clients today
+
+      // Collect all wave day indices this agent currently manages
+      const managed: number[] = [];
+      for (let c = 0; c <= todayIdx; c++) {
+        if (waveOwnerIndex(c, todayIdx) === firstIdx) managed.push(c);
+      }
+
+      const agent = waveRoster[firstIdx];
+      const user = await prisma.user.findUnique({ where: { id: agent.id } });
+      if (!user?.active || !user.telegramChatId) return res.json({ ok: true, sent: [] });
+
+      try {
+        await prisma.requestScheduleReminderLog.create({ data: { userId: user.id, date: dateStr } });
+      } catch (err: unknown) {
+        if ((err as { code?: string })?.code === 'P2002') return res.json({ ok: true, sent: [] });
+        throw err;
+      }
+
+      await sendTelegramMessage(user.telegramChatId, buildWaveMessage(managed, todayIdx));
+      sent.push(`${user.id}:${dateStr}`);
+    } else {
+      // ── Legacy era ──────────────────────────────────────────────────────
+      const rosters = await loadRosters();
+      if (!rosters) return res.json({ ok: true, sent: [] });
+
+      const assignee = await resolveCurrentAssignee(dateStr, rosters);
+      const user = await prisma.user.findUnique({ where: { id: assignee.userId } });
+      if (!user?.active || !user.telegramChatId) return res.json({ ok: true, sent: [] });
+
+      try {
+        await prisma.requestScheduleReminderLog.create({ data: { userId: user.id, date: dateStr } });
+      } catch (err: unknown) {
+        if ((err as { code?: string })?.code === 'P2002') return res.json({ ok: true, sent: [] });
+        throw err;
+      }
+
+      await sendTelegramMessage(user.telegramChatId, 'Твоя черга кидати запити на нові профілі! 📋');
+      sent.push(`${user.id}:${dateStr}`);
     }
 
-    await sendTelegramMessage(user.telegramChatId, REQUEST_SCHEDULE_REMINDER_MESSAGE);
-    res.json({ ok: true, sent: [`${user.id}:${dateStr}`] });
+    res.json({ ok: true, sent });
   } catch (err) {
     console.error('Request schedule reminder cron error:', err);
     res.status(500).json({ error: 'Failed to process request schedule reminder' });
+  }
+});
+
+// GET /api/cron/redistribution-reminder — 10:00 Kyiv on the 1st of each month.
+// Sends each of the 3 wave agents their personal redistribution dates for the month.
+// Dedups via RequestScheduleReminderLog with key "redistrib:YYYY-MM".
+router.get('/redistribution-reminder', async (_req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    const kyiv = getKyivParts(now);
+    const diff = kyiv.minutesSinceMidnight - REQUEST_SCHEDULE_REMINDER_TARGET_MINUTES;
+    const inWindow = diff >= 0 && diff < TOLERANCE_MINUTES;
+    if (!inWindow) return res.json({ ok: true, sent: [], reason: 'out of window' });
+
+    // Only fires on the 1st of the month in the redistribution era
+    if (kyiv.day !== 1) return res.json({ ok: true, sent: [], reason: 'not 1st of month' });
+    if (kyiv.year < REDISTRIB_EPOCH.year || (kyiv.year === REDISTRIB_EPOCH.year && kyiv.month < REDISTRIB_EPOCH.month)) {
+      return res.json({ ok: true, sent: [], reason: 'before redistribution era' });
+    }
+
+    const rows = await getRedistribForNotification(kyiv.year, kyiv.month);
+    if (!rows) return res.json({ ok: true, sent: [] });
+
+    const ua_month_names = [
+      'січень','лютий','березень','квітень','травень','червень',
+      'липень','серпень','вересень','жовтень','листопад','грудень',
+    ];
+    const monthLabel = `${ua_month_names[kyiv.month - 1]} ${kyiv.year}`;
+    const dedupKey = `redistrib:${kyiv.year}-${String(kyiv.month).padStart(2, '0')}`;
+
+    const userIds = rows.map((r) => r.userId);
+    const users = await prisma.user.findMany({ where: { id: { in: userIds }, active: true } });
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const sent: string[] = [];
+    for (const row of rows) {
+      const user = userById.get(row.userId);
+      if (!user?.telegramChatId) continue;
+
+      try {
+        await prisma.requestScheduleReminderLog.create({ data: { userId: user.id, date: dedupKey } });
+      } catch (err: unknown) {
+        if ((err as { code?: string })?.code === 'P2002') continue; // already sent this month
+        throw err;
+      }
+
+      const daysStr = row.days.join(' · ');
+      const message = `📊 Перерозподіл активних і неактивних профілів на ${monthLabel}:\nТвої числа: ${daysStr}`;
+      await sendTelegramMessage(user.telegramChatId, message);
+      sent.push(`${user.id}:${dedupKey}`);
+    }
+
+    res.json({ ok: true, sent });
+  } catch (err) {
+    console.error('Redistribution reminder cron error:', err);
+    res.status(500).json({ error: 'Failed to process redistribution reminder' });
   }
 });
 
