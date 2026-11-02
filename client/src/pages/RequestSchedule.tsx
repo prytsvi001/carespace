@@ -234,7 +234,6 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
   const cycleNum = Math.floor(viewIdx / 9) + 1;
   const nextTransfer = nextTransferDateStr(viewIdx);
   const isTransfer = isTransferDay(viewIdx);
-  const counts = waveCounts(viewIdx);
   const daysUntilNext = toDayIndex(nextTransfer) - viewIdx;
 
   const step = useCallback((delta: number) => {
@@ -312,22 +311,6 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
           Наступна передача: <span className="font-semibold text-ink">{formatDisplayDate(nextTransfer)}</span>
           <span className="ml-1">({daysUntilNext} {daysUntilNext === 1 ? 'день' : 'дн.'})</span>
         </span>
-      </div>
-
-      {/* Per-agent wave counts */}
-      <div className="flex flex-wrap gap-3">
-        {calendarAgents.map((a, i) => {
-          const s = styleFor(a.userName);
-          return (
-            <div key={a.userId} className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
-              <span className="text-xs text-ink font-medium">{a.userName.split(' ')[0]}</span>
-              <span className="text-xs font-semibold" style={{ color: 'rgba(14,14,14,0.7)' }}>
-                {counts[i]} {counts[i] === 1 ? 'хвиля' : 'хвиль'}
-              </span>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
