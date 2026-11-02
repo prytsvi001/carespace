@@ -182,7 +182,7 @@ export function SalaryCard({
         </div>
       )}
 
-      {row.team === 'peekviewer' && (
+      {row.team === 'peekviewer' && !row.excludePeekviewerExtras && (
         <div className="py-1" style={{ borderBottom: '1px solid rgba(14,14,14,0.07)' }}>
           {teamTotalSet && (
             <div className="flex items-center justify-between gap-2 py-1">

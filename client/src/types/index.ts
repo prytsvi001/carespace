@@ -459,6 +459,7 @@ export interface SalaryRow {
   teamBonus: number; // Peekviewer Team only — 0 until Sandra enters the team's total parsed profiles
   parsedProfiles: number | null; // Peekviewer Team only — this agent's monthly parsed-profiles count
   individualParseBonus: number;
+  excludePeekviewerExtras?: boolean; // true when person is peekviewer but team bonus / parsed profiles / individual parse bonus don't apply this month
   total: number;
   editedFields: string[];
   canNotify: boolean;

@@ -116,9 +116,10 @@ function computeSalary(
   // a raw monthly figure someone types in, not an override of a computed
   // value) — null/undefined means "not entered yet", so no bonus is added.
   const isPeekviewer = person.team === 'peekviewer';
-  const parsedProfiles = isPeekviewer && typeof overrides.parsedProfiles === 'number' ? overrides.parsedProfiles : null;
+  const excludePeekviewerExtras = isPeekviewer && !!person.excludeTeamBonus;
+  const parsedProfiles = isPeekviewer && !excludePeekviewerExtras && typeof overrides.parsedProfiles === 'number' ? overrides.parsedProfiles : null;
   const individualParseBonus = parsedProfiles != null ? individualParseBonusFor(parsedProfiles) : 0;
-  const effectiveTeamBonus = isPeekviewer && !person.excludeTeamBonus ? teamBonus : 0;
+  const effectiveTeamBonus = isPeekviewer && !excludePeekviewerExtras ? teamBonus : 0;
 
   const total = overrides.total ?? round2(base + reviewsBonus + peekBonus + supportDutiesBonus + toggleAmount + bonusesTotal + effectiveTeamBonus + individualParseBonus);
 
@@ -138,6 +139,7 @@ function computeSalary(
     bonuses, bonusesTotal,
     teamBonus: effectiveTeamBonus,
     parsedProfiles, individualParseBonus,
+    excludePeekviewerExtras,
     total,
     editedFields,
   };
