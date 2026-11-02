@@ -1,13 +1,13 @@
 // client/src/pages/RequestSchedule.tsx
 // Peekviewer Team — Request Schedule.
 //
-// From 2026-11-01 the schedule uses a cohort model: new clients arriving on
-// day D form "cohort D". Cohorts are assigned in 3-day blocks rotating across
+// From 2026-11-01 the schedule uses a wave model: new clients arriving on
+// day D form "wave D". Waves are assigned in 3-day blocks rotating across
 // 9-day cycles (Diana → Tetyana → Yana → Diana…). The calendar shows all
 // three agents in every cell; one is highlighted on the selected view-date.
 //
 // Pre-Nov 2026 dates keep the legacy single-agent display. Drag-to-swap and
-// click-to-reassign are disabled in the cohort era (Variant 2 decision).
+// click-to-reassign are disabled in the wave era (Variant 2 decision).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   format, startOfMonth, endOfMonth, eachDayOfInterval,
@@ -39,10 +39,10 @@ const styleFor = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
 const SHORT_LABELS: Record<string, string> = {};
 const shortLabel = (name: string) => SHORT_LABELS[name] ?? name.split(' ')[0];
 
-// ─── Cohort formula (mirrors server logic; pure math, no I/O) ───────────────
+// ─── Wave formula (mirrors server logic; pure math, no I/O) ───────────────
 
-const COHORT_EPOCH = '2026-11-01';
-const COHORT_EPOCH_MS = Date.UTC(2026, 10, 1);
+const WAVE_EPOCH = '2026-11-01';
+const WAVE_EPOCH_MS = Date.UTC(2026, 10, 1);
 const MS_PER_DAY = 86_400_000;
 
 function utcMsForDateStr(d: string): number {
@@ -51,25 +51,25 @@ function utcMsForDateStr(d: string): number {
 }
 
 function toDayIndex(dateStr: string): number {
-  return Math.round((utcMsForDateStr(dateStr) - COHORT_EPOCH_MS) / MS_PER_DAY);
+  return Math.round((utcMsForDateStr(dateStr) - WAVE_EPOCH_MS) / MS_PER_DAY);
 }
 
 const modulo = (n: number, m: number) => ((n % m) + m) % m;
 
-function firstAgentIdx(cohortDayIdx: number): number {
-  return modulo(Math.floor(cohortDayIdx / 3), 3);
+function firstAgentIdx(waveDayIdx: number): number {
+  return modulo(Math.floor(waveDayIdx / 3), 3);
 }
 
-function ownerIdx(cohortDayIdx: number, viewDayIdx: number): number {
+function ownerIdx(waveDayIdx: number, viewDayIdx: number): number {
   return modulo(
-    firstAgentIdx(cohortDayIdx) + Math.floor(viewDayIdx / 9) - Math.floor(cohortDayIdx / 9),
+    firstAgentIdx(waveDayIdx) + Math.floor(viewDayIdx / 9) - Math.floor(waveDayIdx / 9),
     3,
   );
 }
 
 function nextTransferDateStr(viewDayIdx: number): string {
   const nextCycle = (Math.floor(viewDayIdx / 9) + 1) * 9;
-  const ms = COHORT_EPOCH_MS + nextCycle * MS_PER_DAY;
+  const ms = WAVE_EPOCH_MS + nextCycle * MS_PER_DAY;
   const d = new Date(ms);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
@@ -78,8 +78,8 @@ function isTransferDay(viewDayIdx: number): boolean {
   return viewDayIdx >= 0 && viewDayIdx % 9 === 0;
 }
 
-// Returns per-agent cohort count [Diana, Tetyana, Yana] on a given viewDayIdx.
-function cohortCounts(viewDayIdx: number): [number, number, number] {
+// Returns per-agent wave count [Diana, Tetyana, Yana] on a given viewDayIdx.
+function waveCounts(viewDayIdx: number): [number, number, number] {
   const counts: [number, number, number] = [0, 0, 0];
   for (let c = 0; c <= viewDayIdx; c++) {
     counts[ownerIdx(c, viewDayIdx)]++;
@@ -93,14 +93,14 @@ function todayStr(): string {
   return format(new Date(), 'yyyy-MM-dd');
 }
 
-// ─── Cohort cell chips ───────────────────────────────────────────────────────
+// ─── Wave cell chips ───────────────────────────────────────────────────────
 
 // status:
-//   'active'   — this agent currently manages this cohort on viewDate
+//   'active'   — this agent currently manages this wave on viewDate
 //   'inactive' — another agent manages it (shown grey)
-//   'preview'  — cohort date is in the future; this agent will receive it first
+//   'preview'  — wave date is in the future; this agent will receive it first
 
-function CohortChip({ name, status, reduced }: { name: string; status: 'active' | 'inactive' | 'preview'; reduced: boolean }) {
+function WaveChip({ name, status, reduced }: { name: string; status: 'active' | 'inactive' | 'preview'; reduced: boolean }) {
   const s = styleFor(name);
   if (status === 'inactive') {
     return (
@@ -131,7 +131,7 @@ function CohortChip({ name, status, reduced }: { name: string; status: 'active' 
 
 // ─── Day cells ───────────────────────────────────────────────────────────────
 
-function CohortDayCell({ date, day, calendarAgents, viewDateStr, isCurrentMonth, onClick }: {
+function WaveDayCell({ date, day, calendarAgents, viewDateStr, isCurrentMonth, onClick }: {
   date: Date;
   day: RequestScheduleDay | undefined;
   calendarAgents: { userId: string; userName: string }[];
@@ -148,13 +148,13 @@ function CohortDayCell({ date, day, calendarAgents, viewDateStr, isCurrentMonth,
 
   let chips: { name: string; status: 'active' | 'inactive' | 'preview' }[] = [];
 
-  if (day?.firstAgentIndex !== undefined && day.cohortDayIndex !== undefined) {
+  if (day?.firstAgentIndex !== undefined && day.waveDayIndex !== undefined) {
     if (isFuture) {
       // Show only the first agent with dashed preview style
       const previewName = calendarAgents[day.firstAgentIndex]?.userName ?? '';
       chips = previewName ? [{ name: previewName, status: 'preview' }] : [];
     } else {
-      const owner = ownerIdx(day.cohortDayIndex, viewIdx);
+      const owner = ownerIdx(day.waveDayIndex, viewIdx);
       chips = calendarAgents.map((a, i) => ({
         name: a.userName,
         status: (i === owner ? 'active' : 'inactive') as 'active' | 'inactive',
@@ -180,7 +180,7 @@ function CohortDayCell({ date, day, calendarAgents, viewDateStr, isCurrentMonth,
       </div>
       <div className="flex flex-col gap-0.5">
         {chips.map((c) => (
-          <CohortChip key={c.name} name={c.name} status={c.status} reduced={reduced} />
+          <WaveChip key={c.name} name={c.name} status={c.status} reduced={reduced} />
         ))}
       </div>
     </div>
@@ -234,7 +234,7 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
   const cycleNum = Math.floor(viewIdx / 9) + 1;
   const nextTransfer = nextTransferDateStr(viewIdx);
   const isTransfer = isTransferDay(viewIdx);
-  const counts = cohortCounts(viewIdx);
+  const counts = waveCounts(viewIdx);
   const daysUntilNext = toDayIndex(nextTransfer) - viewIdx;
 
   const step = useCallback((delta: number) => {
@@ -314,7 +314,7 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
         </span>
       </div>
 
-      {/* Per-agent cohort counts */}
+      {/* Per-agent wave counts */}
       <div className="flex flex-wrap gap-3">
         {calendarAgents.map((a, i) => {
           const s = styleFor(a.userName);
@@ -323,7 +323,7 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
               <span className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
               <span className="text-xs text-ink font-medium">{a.userName.split(' ')[0]}</span>
               <span className="text-xs font-semibold" style={{ color: 'rgba(14,14,14,0.7)' }}>
-                {counts[i]} {counts[i] === 1 ? 'когорта' : 'когорт'}
+                {counts[i]} {counts[i] === 1 ? 'хвиля' : 'хвиль'}
               </span>
             </div>
           );
@@ -377,7 +377,7 @@ export default function RequestSchedule() {
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [data, setData] = useState<RequestScheduleData>({
-    days: [], redistribution: [], redistributionPeriod: null, calendarAgents: [], cohortEpoch: COHORT_EPOCH,
+    days: [], redistribution: [], redistributionPeriod: null, calendarAgents: [], waveEpoch: WAVE_EPOCH,
   });
   const [loading, setLoading] = useState(true);
   const [viewDateStr, setViewDateStr] = useState<string>(todayStr());
@@ -429,15 +429,15 @@ export default function RequestSchedule() {
   const paddedDays: (Date | null)[] = [...Array(startPad).fill(null), ...days];
   const dayByDate = new Map(data.days.map((d) => [d.date, d]));
 
-  const epochStr = data.cohortEpoch ?? COHORT_EPOCH;
-  const cohortMonthFirst = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
-  const isCohortMonth = cohortMonthFirst >= epochStr;
+  const epochStr = data.waveEpoch ?? WAVE_EPOCH;
+  const waveMonthFirst = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
+  const isWaveMonth = waveMonthFirst >= epochStr;
 
-  // Cohort agents in rotation order (only present for cohort months)
-  const cohortAgents = isCohortMonth ? data.calendarAgents : [];
+  // Wave agents in rotation order (only present for wave months)
+  const waveAgents = isWaveMonth ? data.calendarAgents : [];
 
-  // Legacy agents for legend (non-cohort months)
-  const legacyAgents = isCohortMonth ? [] : data.calendarAgents;
+  // Legacy agents for legend (non-wave months)
+  const legacyAgents = isWaveMonth ? [] : data.calendarAgents;
 
   return (
     <div className="space-y-4">
@@ -457,7 +457,7 @@ export default function RequestSchedule() {
         <div>
           <h2 className="text-xl font-bold text-ink">Request Schedule</h2>
           <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>
-            {isCohortMonth
+            {isWaveMonth
               ? 'Клікни на день, щоб переглянути стан на цю дату'
               : 'Графік призначень на місяць'}
           </p>
@@ -473,7 +473,7 @@ export default function RequestSchedule() {
 
       {/* Agent legend */}
       <div className="flex flex-wrap gap-2">
-        {(isCohortMonth ? cohortAgents : legacyAgents).map((a) => {
+        {(isWaveMonth ? waveAgents : legacyAgents).map((a) => {
           const s = styleFor(a.userName);
           return (
             <span key={a.userId} className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border ${s.bg} ${s.text} ${s.border}`}>
@@ -484,11 +484,11 @@ export default function RequestSchedule() {
         })}
       </div>
 
-      {/* Cohort view-date panel */}
-      {isCohortMonth && cohortAgents.length === 3 && (
+      {/* Wave view-date panel */}
+      {isWaveMonth && waveAgents.length === 3 && (
         <ViewDatePanel
           viewDateStr={viewDateStr}
-          calendarAgents={cohortAgents}
+          calendarAgents={waveAgents}
           onSetViewDate={handleSetViewDate}
         />
       )}
@@ -507,15 +507,15 @@ export default function RequestSchedule() {
               if (!date) return <div key={`pad-${i}`} className="min-h-[68px] sm:min-h-[80px]" />;
               const dateStr = format(date, 'yyyy-MM-dd');
               const day = dayByDate.get(dateStr);
-              const isInCohortEra = dateStr >= epochStr;
+              const isInWaveEra = dateStr >= epochStr;
 
-              if (isInCohortEra && cohortAgents.length === 3) {
+              if (isInWaveEra && waveAgents.length === 3) {
                 return (
-                  <CohortDayCell
+                  <WaveDayCell
                     key={dateStr}
                     date={date}
                     day={day}
-                    calendarAgents={cohortAgents}
+                    calendarAgents={waveAgents}
                     viewDateStr={viewDateStr}
                     isCurrentMonth={isSameMonth(date, currentMonth)}
                     onClick={() => handleSetViewDate(dateStr)}

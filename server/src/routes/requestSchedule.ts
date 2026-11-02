@@ -84,32 +84,32 @@ const LEGACY_ANCHOR_UTC_MS = Date.UTC(2026, 8, 30);
 
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 
-// ─── Cohort rotation era (from 2026-11-01) ────────────────────────────────
-// New clients arriving on a given day form a "cohort" for that day.
-// Cohorts are assigned in 3-day blocks, blocks rotate across 9-day cycles:
+// ─── Wave rotation era (from 2026-11-01) ────────────────────────────────
+// New clients arriving on a given day form a "wave" for that day.
+// Waves are assigned in 3-day blocks, blocks rotate across 9-day cycles:
 //   Diana (0) → Tetyana (1) → Yana (2) → Diana …
-// Every 9 days all existing cohorts pass to the next agent.
-export const COHORT_EPOCH = '2026-11-01';
-const COHORT_EPOCH_UTC_MS = Date.UTC(2026, 10, 1);
-const COHORT_AGENT_EMAILS = [
+// Every 9 days all existing waves pass to the next agent.
+export const WAVE_EPOCH = '2026-11-01';
+const WAVE_EPOCH_UTC_MS = Date.UTC(2026, 10, 1);
+const WAVE_AGENT_EMAILS = [
   'diana_semenuk@struktura.io',      // index 0 — Diana Semeniuk
   'tetiana_veremeenko@struktura.io', // index 1 — Tetyana Veremeyenko
   'yana_fedorova@struktura.io',      // index 2 — Yana Fedorova
 ];
 
-function cohortDayIndex(dateStr: string): number {
-  return Math.round((utcMsForDate(dateStr) - COHORT_EPOCH_UTC_MS) / MS_PER_DAY);
+function waveDayIndex(dateStr: string): number {
+  return Math.round((utcMsForDate(dateStr) - WAVE_EPOCH_UTC_MS) / MS_PER_DAY);
 }
 
-// Which agent (0/1/2) is first assigned to the cohort born on dayIdx.
-export function cohortFirstAgentIndex(dayIdx: number): number {
+// Which agent (0/1/2) is first assigned to the wave born on dayIdx.
+export function waveFirstAgentIndex(dayIdx: number): number {
   return mod(Math.floor(dayIdx / 3), 3);
 }
 
-// Who currently owns the cohort born on cohortDayIdx, viewed on viewDayIdx.
-export function cohortOwnerIndex(cohortDayIdx: number, viewDayIdx: number): number {
-  const first = cohortFirstAgentIndex(cohortDayIdx);
-  return mod(first + Math.floor(viewDayIdx / 9) - Math.floor(cohortDayIdx / 9), 3);
+// Who currently owns the wave born on waveDayIdx, viewed on viewDayIdx.
+export function waveOwnerIndex(waveDayIdx: number, viewDayIdx: number): number {
+  const first = waveFirstAgentIndex(waveDayIdx);
+  return mod(first + Math.floor(viewDayIdx / 9) - Math.floor(waveDayIdx / 9), 3);
 }
 
 function utcMsForDate(dateStr: string): number {
@@ -184,11 +184,11 @@ export async function loadRosters(): Promise<Rosters | null> {
   return { eras, current: eras[eras.length - 1], legacy: loaded[ERAS.length] };
 }
 
-async function loadCohortRoster(): Promise<RosterUser[] | null> {
-  const users = await getRotationUsers(COHORT_AGENT_EMAILS);
-  if (users.length !== COHORT_AGENT_EMAILS.length) {
+async function loadWaveRoster(): Promise<RosterUser[] | null> {
+  const users = await getRotationUsers(WAVE_AGENT_EMAILS);
+  if (users.length !== WAVE_AGENT_EMAILS.length) {
     const found = new Set(users.map((u) => u.email));
-    console.error('Cohort roster incomplete, missing:', COHORT_AGENT_EMAILS.filter((e) => !found.has(e)));
+    console.error('Wave roster incomplete, missing:', WAVE_AGENT_EMAILS.filter((e) => !found.has(e)));
     return null;
   }
   return users;
@@ -226,34 +226,34 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     const firstDayOfMonth = dateKey(year, month, 1);
-    const isCohortMonth = firstDayOfMonth >= COHORT_EPOCH;
+    const isWaveMonth = firstDayOfMonth >= WAVE_EPOCH;
 
     // Load rosters needed for this month
-    const rosters = isCohortMonth ? null : await loadRosters();
-    if (!isCohortMonth && !rosters) {
+    const rosters = isWaveMonth ? null : await loadRosters();
+    if (!isWaveMonth && !rosters) {
       return res.status(500).json({ error: 'Rotation roster not found — check that every rotation agent account exists' });
     }
 
-    const cohortRoster = isCohortMonth ? await loadCohortRoster() : null;
-    if (isCohortMonth && !cohortRoster) {
-      return res.status(500).json({ error: 'Cohort roster incomplete — check that Diana, Tetyana and Yana accounts exist' });
+    const waveRoster = isWaveMonth ? await loadWaveRoster() : null;
+    if (isWaveMonth && !waveRoster) {
+      return res.status(500).json({ error: 'Wave roster incomplete — check that Diana, Tetyana and Yana accounts exist' });
     }
 
-    // For mixed months (Oct 2026 straddles no boundary since cohort starts Nov 1),
-    // load both if the month contains both legacy and cohort days.
+    // For mixed months (Oct 2026 straddles no boundary since wave starts Nov 1),
+    // load both if the month contains both legacy and wave days.
     const total = daysInMonth(year, month);
     const lastDayOfMonth = dateKey(year, month, total);
-    const hasLegacyDays = firstDayOfMonth < COHORT_EPOCH;
-    const hasCohortDays = lastDayOfMonth >= COHORT_EPOCH;
+    const hasLegacyDays = firstDayOfMonth < WAVE_EPOCH;
+    const hasWaveDays = lastDayOfMonth >= WAVE_EPOCH;
 
     const rostersForLegacy = hasLegacyDays ? (rosters ?? await loadRosters()) : null;
-    const cohortRosterForMonth = hasCohortDays ? (cohortRoster ?? await loadCohortRoster()) : null;
+    const waveRosterForMonth = hasWaveDays ? (waveRoster ?? await loadWaveRoster()) : null;
 
     if (hasLegacyDays && !rostersForLegacy) {
       return res.status(500).json({ error: 'Rotation roster not found' });
     }
-    if (hasCohortDays && !cohortRosterForMonth) {
-      return res.status(500).json({ error: 'Cohort roster incomplete' });
+    if (hasWaveDays && !waveRosterForMonth) {
+      return res.status(500).json({ error: 'Wave roster incomplete' });
     }
 
     const from = dateKey(year, month, 1);
@@ -267,12 +267,12 @@ router.get('/', async (req: Request, res: Response) => {
     const days = [];
     for (let day = 1; day <= total; day++) {
       const date = dateKey(year, month, day);
-      if (date >= COHORT_EPOCH) {
-        const dayIdx = cohortDayIndex(date);
+      if (date >= WAVE_EPOCH) {
+        const dayIdx = waveDayIndex(date);
         days.push({
           date,
-          firstAgentIndex: cohortFirstAgentIndex(dayIdx),
-          cohortDayIndex: dayIdx,
+          firstAgentIndex: waveFirstAgentIndex(dayIdx),
+          waveDayIndex: dayIdx,
           // Keep legacy fields empty so old clients don't break
           userId: '',
           userName: '',
@@ -290,7 +290,7 @@ router.get('/', async (req: Request, res: Response) => {
       }
     }
 
-    // ── Legacy redistribution (only for months before the cohort era) ──────
+    // ── Legacy redistribution (only for months before the wave era) ──────
     let redistribution: object[] = [];
     let redistributionPeriod: object | null = null;
     if (hasLegacyDays && rostersForLegacy) {
@@ -315,16 +315,16 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     // ── Calendar agents ──────────────────────────────────────────────────────
-    // For cohort months: the 3 cohort agents in rotation order.
+    // For wave months: the 3 wave agents in rotation order.
     // For legacy months: every roster in effect on any day of the month.
     let calendarAgentsMap = new Map<string, RosterUser>();
-    if (hasCohortDays && cohortRosterForMonth) {
-      for (const u of cohortRosterForMonth) calendarAgentsMap.set(u.id, u);
+    if (hasWaveDays && waveRosterForMonth) {
+      for (const u of waveRosterForMonth) calendarAgentsMap.set(u.id, u);
     }
     if (hasLegacyDays && rostersForLegacy) {
       for (let day = 1; day <= total; day++) {
         const date = dateKey(year, month, day);
-        if (date < COHORT_EPOCH) {
+        if (date < WAVE_EPOCH) {
           for (const u of rosterForDate(date, rostersForLegacy)) calendarAgentsMap.set(u.id, u);
         }
       }
@@ -335,7 +335,7 @@ router.get('/', async (req: Request, res: Response) => {
       redistribution,
       redistributionPeriod,
       calendarAgents: [...calendarAgentsMap.values()].map((u) => ({ userId: u.id, userName: u.name })),
-      cohortEpoch: COHORT_EPOCH,
+      waveEpoch: WAVE_EPOCH,
     });
   } catch (err) {
     console.error(err);
@@ -350,15 +350,15 @@ export async function resolveCurrentAssignee(d: string, rosters: Rosters) {
   return { userId: base.id, userName: base.name };
 }
 
-// For the cohort era: who is the first agent for a given date's cohort
+// For the wave era: who is the first agent for a given date's wave
 // (i.e. who submits new requests that day). No override concept — the formula
 // is pure and deterministic.
-async function resolveCohortTodayAssignee(d: string): Promise<{ userId: string; userName: string } | null> {
-  const cohortRoster = await loadCohortRoster();
-  if (!cohortRoster) return null;
-  const idx = cohortDayIndex(d);
-  const agentIdx = cohortFirstAgentIndex(idx);
-  const agent = cohortRoster[agentIdx];
+async function resolveWaveTodayAssignee(d: string): Promise<{ userId: string; userName: string } | null> {
+  const waveRoster = await loadWaveRoster();
+  if (!waveRoster) return null;
+  const idx = waveDayIndex(d);
+  const agentIdx = waveFirstAgentIndex(idx);
+  const agent = waveRoster[agentIdx];
   return { userId: agent.id, userName: agent.name };
 }
 
@@ -377,14 +377,14 @@ export function todayKyivDateStr(): string {
 }
 
 // GET /api/request-schedule/today — who's on duty today (Kyiv-local date),
-// for the "your turn" banner. In the cohort era "on duty" = first agent for
-// today's cohort (who submits new-profile requests for today's new clients).
+// for the "your turn" banner. In the wave era "on duty" = first agent for
+// today's wave (who submits new-profile requests for today's new clients).
 router.get('/today', async (_req: Request, res: Response) => {
   try {
     const date = todayKyivDateStr();
-    if (date >= COHORT_EPOCH) {
-      const assignee = await resolveCohortTodayAssignee(date);
-      if (!assignee) return res.status(500).json({ error: 'Cohort roster incomplete' });
+    if (date >= WAVE_EPOCH) {
+      const assignee = await resolveWaveTodayAssignee(date);
+      if (!assignee) return res.status(500).json({ error: 'Wave roster incomplete' });
       return res.json({ date, ...assignee });
     }
     const rosters = await loadRosters();

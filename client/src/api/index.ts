@@ -699,7 +699,7 @@ export interface RequestScheduleDay {
   isOverride: boolean;
   // Cohort era (>= COHORT_EPOCH): index into calendarAgents (0=Diana,1=Tetyana,2=Yana)
   firstAgentIndex?: number;
-  cohortDayIndex?: number;
+  waveDayIndex?: number;
 }
 
 export interface RequestScheduleRedistributionRow {
@@ -713,8 +713,8 @@ export interface RequestScheduleData {
   redistribution: RequestScheduleRedistributionRow[];
   redistributionPeriod: { start: string; end: string; next: string } | null;
   calendarAgents: { userId: string; userName: string }[];
-  // "YYYY-MM-DD" threshold; days on/after this use cohort logic
-  cohortEpoch: string;
+  // "YYYY-MM-DD" threshold; days on/after this use wave logic
+  waveEpoch: string;
 }
 
 export const getRequestSchedule = (year: number, month: number) =>

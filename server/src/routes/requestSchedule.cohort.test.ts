@@ -1,8 +1,8 @@
-// server/src/routes/requestSchedule.cohort.test.ts
-// Reference tests for the cohort rotation formula.
-// Run with:  npx tsx server/src/routes/requestSchedule.cohort.test.ts
+// server/src/routes/requestSchedule.wave.test.ts
+// Reference tests for the wave rotation formula.
+// Run with:  npx tsx server/src/routes/requestSchedule.wave.test.ts
 import assert from 'assert/strict';
-import { cohortFirstAgentIndex, cohortOwnerIndex } from './requestSchedule';
+import { waveFirstAgentIndex, waveOwnerIndex } from './requestSchedule';
 
 const COHORT_EPOCH_MS = Date.UTC(2026, 10, 1);
 const MS_PER_DAY = 86_400_000;
@@ -14,12 +14,12 @@ function dayIndex(dateStr: string): number {
 
 const AGENTS = ['Diana', 'Tetyana', 'Yana'] as const;
 
-function agentOn(cohortDate: string, viewDate: string): typeof AGENTS[number] {
-  return AGENTS[cohortOwnerIndex(dayIndex(cohortDate), dayIndex(viewDate))];
+function agentOn(waveDate: string, viewDate: string): typeof AGENTS[number] {
+  return AGENTS[waveOwnerIndex(dayIndex(waveDate), dayIndex(viewDate))];
 }
 
-function firstAgent(cohortDate: string): typeof AGENTS[number] {
-  return AGENTS[cohortFirstAgentIndex(dayIndex(cohortDate))];
+function firstAgent(waveDate: string): typeof AGENTS[number] {
+  return AGENTS[waveFirstAgentIndex(dayIndex(waveDate))];
 }
 
 let passed = 0;
