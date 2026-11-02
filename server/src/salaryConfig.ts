@@ -24,6 +24,8 @@ export interface SalaryPerson {
   agentName?: string;     // matches Agent.name, for support-team auto-pull; absent for peekviewer
   userName?: string;      // matches User.name exactly, for notifications — only set when it differs from (or isn't covered by) agentName
   hasResolvedRequestCount?: boolean; // Viktoria Horopeka / Iryna Kolodiyenko — reference-only count of Peek Requests they personally resolved that month (PeekResolutionCredit), no bonus math attached (their existing Update bonus toggle already covers that)
+  firstMonth?: string;    // "YYYY-MM" — joined the team; absent from earlier months, shown from this month onwards
+  fixedBaseSchedule?: Array<{ from: string; amount: number }>; // salary history; rosterForTeam resolves fixedBase to the latest entry with from <= current month
   lastMonth?: string;     // "YYYY-MM" — left the company; shown up to and including this month, gone from later months (past months keep their rows)
 }
 
@@ -56,20 +58,33 @@ export const PEEKVIEWER_ROSTER: SalaryPerson[] = [
   { personKey: 'tetyana_veremeyenko', displayName: 'Tetyana Veremeyenko', team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'strukturaOn', label: 'Struktura boost', amount: 10 }], userName: 'Tetyana Veremeyenko' },
   { personKey: 'iryna_kolodiyenko',   displayName: 'Iryna Kolodiyenko',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Iryna Kolodienko', hasResolvedRequestCount: true, lastMonth: '2026-09' },
   { personKey: 'anna_bilous',         displayName: 'Anna Bilous',         team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 300, userName: 'Anna Bilous' },
+  { personKey: 'diana_semeniuk',      displayName: 'Diana Semeniuk',      team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 350, fixedBaseSchedule: [{ from: '2026-10', amount: 250 }, { from: '2026-11', amount: 350 }], userName: 'Diana Semeniuk', firstMonth: '2026-10' },
 ];
 
-// Roster for one salary month — people who left drop out after their lastMonth.
-// hasPeekBonusUntil: peek bonus fields are cleared for months after the cutoff.
+// Roster for one salary month — people who left drop out after lastMonth,
+// people who joined appear from firstMonth. hasPeekBonusUntil clears peek
+// bonus fields after the cutoff. fixedBaseSchedule resolves fixedBase to the
+// latest applicable entry for the requested month.
 export function rosterForTeam(team: 'support' | 'peekviewer', year: number, month: number): SalaryPerson[] {
   const ym = `${year}-${String(month).padStart(2, '0')}`;
   return (team === 'support' ? SUPPORT_ROSTER : PEEKVIEWER_ROSTER)
-    .filter((p) => !p.lastMonth || ym <= p.lastMonth)
+    .filter((p) => (!p.lastMonth || ym <= p.lastMonth) && (!p.firstMonth || ym >= p.firstMonth))
     .map((p) => {
-      if (p.hasPeekBonus && p.hasPeekBonusUntil && ym > p.hasPeekBonusUntil) {
-        const { hasPeekBonus: _, hasPeekBonusUntil: __, ...rest } = p;
-        return rest;
+      let result = p as SalaryPerson;
+
+      if (p.fixedBaseSchedule?.length) {
+        const applicable = [...p.fixedBaseSchedule]
+          .filter((e) => e.from <= ym)
+          .sort((a, b) => b.from.localeCompare(a.from));
+        if (applicable.length) result = { ...result, fixedBase: applicable[0].amount };
       }
-      return p;
+
+      if (result.hasPeekBonus && result.hasPeekBonusUntil && ym > result.hasPeekBonusUntil) {
+        const { hasPeekBonus: _, hasPeekBonusUntil: __, ...rest } = result;
+        result = rest;
+      }
+
+      return result;
     });
 }
 
