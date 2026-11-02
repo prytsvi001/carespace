@@ -27,6 +27,8 @@ export interface SalaryPerson {
   firstMonth?: string;    // "YYYY-MM" — joined the team; absent from earlier months, shown from this month onwards
   fixedBaseSchedule?: Array<{ from: string; amount: number }>; // salary history; rosterForTeam resolves fixedBase to the latest entry with from <= current month
   lastMonth?: string;     // "YYYY-MM" — left the company; shown up to and including this month, gone from later months (past months keep their rows)
+  teamBonusUntil?: string;  // "YYYY-MM" — Team Bonus included up to and including this month, excluded from later months
+  excludeTeamBonus?: boolean; // resolved by rosterForTeam from teamBonusUntil; do not set manually
 }
 
 export const REVIEW_TIERS = [
@@ -57,7 +59,7 @@ export const PEEKVIEWER_ROSTER: SalaryPerson[] = [
   { personKey: 'viktoria_horopeka',   displayName: 'Viktoria Horopeka',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }, { key: 'smmDutyOn', label: 'SMM duty', amount: 150 }], userName: 'Victoria Horopeka', hasResolvedRequestCount: true, lastMonth: '2026-09' },
   { personKey: 'tetyana_veremeyenko', displayName: 'Tetyana Veremeyenko', team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'strukturaOn', label: 'Struktura boost', amount: 10 }], userName: 'Tetyana Veremeyenko' },
   { personKey: 'iryna_kolodiyenko',   displayName: 'Iryna Kolodiyenko',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Iryna Kolodienko', hasResolvedRequestCount: true, lastMonth: '2026-09' },
-  { personKey: 'anna_bilous',         displayName: 'Anna Bilous',         team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 300, userName: 'Anna Bilous' },
+  { personKey: 'anna_bilous',         displayName: 'Anna Bilous',         team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 300, userName: 'Anna Bilous', teamBonusUntil: '2026-09' },
   { personKey: 'diana_semeniuk',      displayName: 'Diana Semeniuk',      team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 350, fixedBaseSchedule: [{ from: '2026-10', amount: 250 }, { from: '2026-11', amount: 350 }], userName: 'Diana Semeniuk', firstMonth: '2026-10' },
 ];
 
@@ -82,6 +84,10 @@ export function rosterForTeam(team: 'support' | 'peekviewer', year: number, mont
       if (result.hasPeekBonus && result.hasPeekBonusUntil && ym > result.hasPeekBonusUntil) {
         const { hasPeekBonus: _, hasPeekBonusUntil: __, ...rest } = result;
         result = rest;
+      }
+
+      if (result.teamBonusUntil && ym > result.teamBonusUntil) {
+        result = { ...result, excludeTeamBonus: true };
       }
 
       return result;

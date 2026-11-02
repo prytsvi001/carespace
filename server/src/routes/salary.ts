@@ -118,7 +118,7 @@ function computeSalary(
   const isPeekviewer = person.team === 'peekviewer';
   const parsedProfiles = isPeekviewer && typeof overrides.parsedProfiles === 'number' ? overrides.parsedProfiles : null;
   const individualParseBonus = parsedProfiles != null ? individualParseBonusFor(parsedProfiles) : 0;
-  const effectiveTeamBonus = isPeekviewer ? teamBonus : 0;
+  const effectiveTeamBonus = isPeekviewer && !person.excludeTeamBonus ? teamBonus : 0;
 
   const total = overrides.total ?? round2(base + reviewsBonus + peekBonus + supportDutiesBonus + toggleAmount + bonusesTotal + effectiveTeamBonus + individualParseBonus);
 
