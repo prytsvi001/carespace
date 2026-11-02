@@ -693,9 +693,13 @@ export const patchSalaryTeamMeta = (body: {
 // ─── Request Schedule (Peekviewer Team) ────────────────────────────────────
 export interface RequestScheduleDay {
   date: string; // "YYYY-MM-DD"
+  // Legacy era (< COHORT_EPOCH):
   userId: string;
   userName: string;
   isOverride: boolean;
+  // Cohort era (>= COHORT_EPOCH): index into calendarAgents (0=Diana,1=Tetyana,2=Yana)
+  firstAgentIndex?: number;
+  cohortDayIndex?: number;
 }
 
 export interface RequestScheduleRedistributionRow {
@@ -707,10 +711,10 @@ export interface RequestScheduleRedistributionRow {
 export interface RequestScheduleData {
   days: RequestScheduleDay[];
   redistribution: RequestScheduleRedistributionRow[];
-  // The 14-day period `redistribution` applies to, "YYYY-MM-DD"; `next` is
-  // the date of the next automatic redistribution.
   redistributionPeriod: { start: string; end: string; next: string } | null;
   calendarAgents: { userId: string; userName: string }[];
+  // "YYYY-MM-DD" threshold; days on/after this use cohort logic
+  cohortEpoch: string;
 }
 
 export const getRequestSchedule = (year: number, month: number) =>

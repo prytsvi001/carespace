@@ -1,81 +1,359 @@
 // client/src/pages/RequestSchedule.tsx
-// Peekviewer Team — "Request Schedule" tab: who's on duty to submit new-profile
-// requests each day, among the rotating agents (5 in October 2026, 4 from 01.11.2026). From 01.10.2026 the
-// calendar and the "Перерозподіл активних і неактивних профілів" card
-// share one day-number ownership (each agent owns e.g.
-// 1 · 6 · 11 · …) that rotates automatically every 14 days — computed
-// server-side (see server/src/routes/requestSchedule.ts), no spreadsheet.
-// Agents drag their own day onto another to swap, or click a day's chip to
-// reassign it directly; peekviewerAdmin can do either for anyone. Same
-// @dnd-kit pattern as PeekRequestsCalendar.tsx.
-import React, { useCallback, useEffect, useState } from 'react';
+// Peekviewer Team — Request Schedule.
+//
+// From 2026-11-01 the schedule uses a cohort model: new clients arriving on
+// day D form "cohort D". Cohorts are assigned in 3-day blocks rotating across
+// 9-day cycles (Diana → Tetyana → Yana → Diana…). The calendar shows all
+// three agents in every cell; one is highlighted on the selected view-date.
+//
+// Pre-Nov 2026 dates keep the legacy single-agent display. Drag-to-swap and
+// click-to-reassign are disabled in the cohort era (Variant 2 decision).
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  DndContext, DragEndEvent, DragOverlay, DragStartEvent,
-  PointerSensor, useSensor, useSensors, useDroppable, useDraggable,
-} from '@dnd-kit/core';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths } from 'date-fns';
+  format, startOfMonth, endOfMonth, eachDayOfInterval,
+  isSameMonth, isToday, addMonths, subMonths, addDays, parseISO,
+} from 'date-fns';
 import { Megaphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
-  getRequestSchedule, swapRequestScheduleDay, assignRequestScheduleDay, getTodayRequestScheduleAssignee,
-  RequestScheduleDay, RequestScheduleData,
+  getRequestSchedule, RequestScheduleDay, RequestScheduleData,
 } from '../api';
-import { Spinner, Modal } from '../components/ui';
+import { Spinner } from '../components/ui';
 
-interface AssigneeStyle { bg: string; text: string; border: string; dot: string }
+// ─── Styles ─────────────────────────────────────────────────────────────────
 
-// Iryna/Victoria Horopeka reuse the exact colors PeekRequestsCalendar.tsx
-// already uses for them, for visual consistency across the app. Victoria
-// Horopeka's entry is kept even though she was replaced by Tetyana Fomyuk
-// everywhere in this tab on 2026-09-28, since her past calendar days (already
-// pinned as overrides) still need a color to render.
+interface AssigneeStyle { bg: string; text: string; border: string; dot: string; ring: string }
+
 const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
-  'Iryna Kolodienko':     { bg: 'bg-indigo-100',  text: 'text-indigo-700',  border: 'border-indigo-200',  dot: 'bg-indigo-400' },
-  'Victoria Horopeka':    { bg: 'bg-red-100',     text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-400' },
-  'Tetyana Veremeyenko':  { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
-  'Yana Fedorova':        { bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400' },
-  'Tetyana Fomyuk':       { bg: 'bg-sky-100',     text: 'text-sky-700',     border: 'border-sky-200',     dot: 'bg-sky-400' },
-  'Diana Semeniuk':       { bg: 'bg-pink-100',    text: 'text-pink-700',    border: 'border-pink-200',    dot: 'bg-pink-400' },
+  'Iryna Kolodienko':    { bg: 'bg-indigo-100',  text: 'text-indigo-700',  border: 'border-indigo-200',  dot: 'bg-indigo-400',  ring: 'ring-indigo-400' },
+  'Victoria Horopeka':  { bg: 'bg-red-100',      text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-400',    ring: 'ring-red-400' },
+  'Tetyana Veremeyenko':{ bg: 'bg-emerald-100',  text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400', ring: 'ring-emerald-400' },
+  'Yana Fedorova':      { bg: 'bg-amber-100',    text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400',   ring: 'ring-amber-400' },
+  'Diana Semeniuk':     { bg: 'bg-pink-100',     text: 'text-pink-700',    border: 'border-pink-200',    dot: 'bg-pink-400',    ring: 'ring-pink-400' },
+  // Kept for historical rendering only — removed from future rotation
+  'Tetyana Fomyuk':     { bg: 'bg-sky-100',      text: 'text-sky-700',     border: 'border-sky-200',     dot: 'bg-sky-400',     ring: 'ring-sky-400' },
 };
-const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' };
-const styleForAssignee = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
+const DEFAULT_STYLE: AssigneeStyle = { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400', ring: 'ring-slate-400' };
+const styleFor = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
 
-// Calendar chips show only the first word of userName by default — fine
-// until two agents share one (Tetyana Veremeyenko and Tetyana Fomyuk both
-// start with "Tetyana"), so Fomyuk gets an explicit short label here to stay
-// distinguishable on the calendar.
-const ASSIGNEE_SHORT_LABELS: Record<string, string> = {
-  'Tetyana Fomyuk': 'Tanya F',
-};
-const shortLabelForAssignee = (name: string) => ASSIGNEE_SHORT_LABELS[name] ?? name.split(' ')[0];
+const SHORT_LABELS: Record<string, string> = {};
+const shortLabel = (name: string) => SHORT_LABELS[name] ?? name.split(' ')[0];
 
-// Profile-creation date range the redistribution applies to — the day numbers
-// below are matched against each profile's date within this range.
-const PROFILE_REDISTRIBUTION_VALID_RANGE = '01.10.2026 - 30.09.2022';
+// ─── Cohort formula (mirrors server logic; pure math, no I/O) ───────────────
 
-// "YYYY-MM-DD" → "DD.MM.YYYY"
+const COHORT_EPOCH = '2026-11-01';
+const COHORT_EPOCH_MS = Date.UTC(2026, 10, 1);
+const MS_PER_DAY = 86_400_000;
+
+function utcMsForDateStr(d: string): number {
+  const [y, m, day] = d.split('-').map(Number);
+  return Date.UTC(y, m - 1, day);
+}
+
+function toDayIndex(dateStr: string): number {
+  return Math.round((utcMsForDateStr(dateStr) - COHORT_EPOCH_MS) / MS_PER_DAY);
+}
+
+const modulo = (n: number, m: number) => ((n % m) + m) % m;
+
+function firstAgentIdx(cohortDayIdx: number): number {
+  return modulo(Math.floor(cohortDayIdx / 3), 3);
+}
+
+function ownerIdx(cohortDayIdx: number, viewDayIdx: number): number {
+  return modulo(
+    firstAgentIdx(cohortDayIdx) + Math.floor(viewDayIdx / 9) - Math.floor(cohortDayIdx / 9),
+    3,
+  );
+}
+
+function nextTransferDateStr(viewDayIdx: number): string {
+  const nextCycle = (Math.floor(viewDayIdx / 9) + 1) * 9;
+  const ms = COHORT_EPOCH_MS + nextCycle * MS_PER_DAY;
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function isTransferDay(viewDayIdx: number): boolean {
+  return viewDayIdx >= 0 && viewDayIdx % 9 === 0;
+}
+
+// Returns per-agent cohort count [Diana, Tetyana, Yana] on a given viewDayIdx.
+function cohortCounts(viewDayIdx: number): [number, number, number] {
+  const counts: [number, number, number] = [0, 0, 0];
+  for (let c = 0; c <= viewDayIdx; c++) {
+    counts[ownerIdx(c, viewDayIdx)]++;
+  }
+  return counts;
+}
+
+// Today as "YYYY-MM-DD" in local time (matches Kyiv-local used server-side
+// for the banner, close enough for navigation purposes).
+function todayStr(): string {
+  return format(new Date(), 'yyyy-MM-dd');
+}
+
+// ─── Cohort cell chips ───────────────────────────────────────────────────────
+
+// status:
+//   'active'   — this agent currently manages this cohort on viewDate
+//   'inactive' — another agent manages it (shown grey)
+//   'preview'  — cohort date is in the future; this agent will receive it first
+
+function CohortChip({ name, status, reduced }: { name: string; status: 'active' | 'inactive' | 'preview'; reduced: boolean }) {
+  const s = styleFor(name);
+  if (status === 'inactive') {
+    return (
+      <div className="px-1.5 py-0.5 rounded text-[10px] font-medium truncate bg-slate-100 text-slate-400 border border-slate-200">
+        {shortLabel(name)}
+      </div>
+    );
+  }
+  if (status === 'preview') {
+    return (
+      <div
+        className={`px-1.5 py-0.5 rounded text-[10px] font-medium truncate ${s.text} border border-dashed ${s.border}`}
+        style={{ backgroundColor: 'transparent' }}
+      >
+        {shortLabel(name)}
+      </div>
+    );
+  }
+  // active
+  return (
+    <div className={`px-1.5 py-0.5 rounded text-[10px] font-semibold truncate border ${s.bg} ${s.text} ${s.border} ${
+      reduced ? '' : 'transition-colors duration-500'
+    }`}>
+      {shortLabel(name)}
+    </div>
+  );
+}
+
+// ─── Day cells ───────────────────────────────────────────────────────────────
+
+function CohortDayCell({ date, day, calendarAgents, viewDateStr, isCurrentMonth, onClick }: {
+  date: Date;
+  day: RequestScheduleDay | undefined;
+  calendarAgents: { userId: string; userName: string }[];
+  viewDateStr: string;
+  isCurrentMonth: boolean;
+  onClick: () => void;
+}) {
+  const dateStr = format(date, 'yyyy-MM-dd');
+  const isFuture = dateStr > viewDateStr;
+  const viewIdx = toDayIndex(viewDateStr);
+
+  const reduced = typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  let chips: { name: string; status: 'active' | 'inactive' | 'preview' }[] = [];
+
+  if (day?.firstAgentIndex !== undefined && day.cohortDayIndex !== undefined) {
+    if (isFuture) {
+      // Show only the first agent with dashed preview style
+      const previewName = calendarAgents[day.firstAgentIndex]?.userName ?? '';
+      chips = previewName ? [{ name: previewName, status: 'preview' }] : [];
+    } else {
+      const owner = ownerIdx(day.cohortDayIndex, viewIdx);
+      chips = calendarAgents.map((a, i) => ({
+        name: a.userName,
+        status: (i === owner ? 'active' : 'inactive') as 'active' | 'inactive',
+      }));
+    }
+  }
+
+  return (
+    <div
+      className={`relative min-h-[80px] sm:min-h-[92px] p-1.5 rounded-lg cursor-pointer
+        ${!isCurrentMonth ? 'opacity-35' : ''}
+        ${isToday(date) ? 'ring-2 ring-inset ring-[#0E0E0E]/20' : ''}
+        ${dateStr === viewDateStr ? 'ring-2 ring-inset ring-[#A1F96E]/70' : ''}
+      `}
+      style={{ border: '1px solid rgba(14,14,14,0.09)' }}
+      onClick={onClick}
+    >
+      <div className="mb-1">
+        <span className={`text-xs font-bold ${isToday(date) ? 'text-ink' : ''}`}
+              style={!isToday(date) ? { color: 'rgba(14,14,14,0.55)' } : undefined}>
+          {format(date, 'd')}
+        </span>
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {chips.map((c) => (
+          <CohortChip key={c.name} name={c.name} status={c.status} reduced={reduced} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LegacyDayCell({ date, day, isCurrentMonth }: {
+  date: Date;
+  day: RequestScheduleDay | undefined;
+  isCurrentMonth: boolean;
+}) {
+  const s = day ? styleFor(day.userName) : DEFAULT_STYLE;
+  return (
+    <div
+      className={`relative min-h-[68px] sm:min-h-[80px] p-1.5 rounded-lg
+        ${!isCurrentMonth ? 'opacity-35' : ''}
+        ${isToday(date) ? 'ring-2 ring-inset ring-[#0E0E0E]/20' : ''}
+      `}
+      style={{ border: '1px solid rgba(14,14,14,0.09)' }}
+    >
+      <div className="mb-1">
+        <span className={`text-xs font-bold ${isToday(date) ? 'text-ink' : ''}`}
+              style={!isToday(date) ? { color: 'rgba(14,14,14,0.55)' } : undefined}>
+          {format(date, 'd')}
+        </span>
+      </div>
+      {day && (
+        <div className={`px-1.5 py-1 rounded text-[11px] font-medium border truncate ${s.bg} ${s.text} ${s.border}`}>
+          {shortLabel(day.userName)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── View-date panel ─────────────────────────────────────────────────────────
+
+function formatDisplayDate(dateStr: string): string {
+  return format(parseISO(dateStr), 'd MMM yyyy');
+}
+
+function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
+  viewDateStr: string;
+  calendarAgents: { userId: string; userName: string }[];
+  onSetViewDate: (d: string | ((prev: string) => string)) => void;
+}) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const playRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const viewIdx = toDayIndex(viewDateStr);
+  const cycleNum = Math.floor(viewIdx / 9) + 1;
+  const nextTransfer = nextTransferDateStr(viewIdx);
+  const isTransfer = isTransferDay(viewIdx);
+  const counts = cohortCounts(viewIdx);
+  const daysUntilNext = toDayIndex(nextTransfer) - viewIdx;
+
+  const step = useCallback((delta: number) => {
+    onSetViewDate((prev: string) => {
+      const d = addDays(parseISO(prev), delta);
+      return format(d, 'yyyy-MM-dd');
+    });
+  }, [onSetViewDate]);
+
+  useEffect(() => {
+    if (isPlaying) {
+      playRef.current = setInterval(() => step(1), 1000);
+    } else {
+      if (playRef.current) clearInterval(playRef.current);
+    }
+    return () => { if (playRef.current) clearInterval(playRef.current); };
+  }, [isPlaying, step]);
+
+  return (
+    <div className="card p-4 space-y-3">
+      {/* Transfer banner */}
+      {isTransfer && (
+        <div
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold"
+          style={{ backgroundColor: 'rgba(161,249,110,0.22)', border: '1px solid rgba(161,249,110,0.55)', color: '#0E0E0E' }}
+        >
+          <Megaphone size={16} strokeWidth={1.8} className="shrink-0" style={{ color: '#166534' }} />
+          <span>
+            Сьогодні — день передачі клієнтів:{' '}
+            {calendarAgents.map((a, i) => {
+              const nextAgent = calendarAgents[(i + 1) % calendarAgents.length];
+              return `${a.userName.split(' ')[0]} → ${nextAgent.userName.split(' ')[0]}`;
+            }).join(', ')}
+          </span>
+        </div>
+      )}
+
+      {/* Date navigation */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-ink">
+          Стан на {formatDisplayDate(viewDateStr)}
+        </span>
+        <div className="flex items-center gap-1 ml-auto flex-wrap">
+          <button className="btn-secondary px-2 py-1 text-xs" onClick={() => step(-1)}>− день</button>
+          <button className="btn-secondary px-2 py-1 text-xs" onClick={() => step(1)}>+ день</button>
+          <button
+            className="btn-secondary px-2 py-1 text-xs"
+            onClick={() => onSetViewDate(nextTransfer)}
+          >
+            До наступної передачі
+          </button>
+          <button
+            className="btn-secondary px-2 py-1 text-xs"
+            onClick={() => onSetViewDate(todayStr())}
+          >
+            Сьогодні
+          </button>
+          <button
+            className={`px-2 py-1 text-xs rounded border font-medium transition-colors ${
+              isPlaying
+                ? 'bg-[#A1F96E]/30 border-[#A1F96E]/60 text-ink'
+                : 'btn-secondary'
+            }`}
+            onClick={() => setIsPlaying((p) => !p)}
+          >
+            {isPlaying ? '⏸ Пауза' : '▶ Авто'}
+          </button>
+        </div>
+      </div>
+
+      {/* Cycle info */}
+      <div className="flex flex-wrap gap-4 text-xs" style={{ color: 'rgba(14,14,14,0.6)' }}>
+        <span>Цикл <span className="font-semibold text-ink">#{cycleNum}</span></span>
+        <span>
+          Наступна передача: <span className="font-semibold text-ink">{formatDisplayDate(nextTransfer)}</span>
+          <span className="ml-1">({daysUntilNext} {daysUntilNext === 1 ? 'день' : 'дн.'})</span>
+        </span>
+      </div>
+
+      {/* Per-agent cohort counts */}
+      <div className="flex flex-wrap gap-3">
+        {calendarAgents.map((a, i) => {
+          const s = styleFor(a.userName);
+          return (
+            <div key={a.userId} className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
+              <span className="text-xs text-ink font-medium">{a.userName.split(' ')[0]}</span>
+              <span className="text-xs font-semibold" style={{ color: 'rgba(14,14,14,0.7)' }}>
+                {counts[i]} {counts[i] === 1 ? 'когорта' : 'когорт'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Redistribution card (legacy months only) ────────────────────────────────
+
 const formatDotDate = (d: string) => d.split('-').reverse().join('.');
 
-// "Перерозподіл активних і неактивних профілів" — one card for both, since
-// they share the same per-agent day numbers for the current 14-day period.
-function RedistributionCard({ title, rows, period }: {
-  title: string;
+function RedistributionCard({ rows, period }: {
   rows: RequestScheduleData['redistribution'];
   period: RequestScheduleData['redistributionPeriod'];
 }) {
+  if (!rows.length) return null;
   return (
     <div className="card p-4 space-y-3">
-      <h3 className="text-sm font-semibold text-ink">{title}</h3>
+      <h3 className="text-sm font-semibold text-ink">Перерозподіл активних і неактивних профілів</h3>
       {period && (
         <div className="text-xs space-y-0.5" style={{ color: 'rgba(14,14,14,0.55)' }}>
           <p>День перерозподілу: <span className="font-semibold" style={{ color: 'rgba(14,14,14,0.75)' }}>{formatDotDate(period.start)}</span></p>
           <p>Наступний перерозподіл: {formatDotDate(period.next)}</p>
-          <p>Поширюється на {PROFILE_REDISTRIBUTION_VALID_RANGE}</p>
         </div>
       )}
       <div className="space-y-2">
         {rows.map((r) => {
-          const s = styleForAssignee(r.userName);
+          const s = styleFor(r.userName);
           return (
             <div key={r.userId} className="flex items-center gap-2 flex-wrap">
               <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${s.bg} ${s.text} ${s.border}`}>
@@ -92,80 +370,44 @@ function RedistributionCard({ title, rows, period }: {
   );
 }
 
-function AssigneeChip({ day, canEdit, isActive, onClick }: {
-  day: RequestScheduleDay; canEdit: boolean; isActive: boolean; onClick: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: day.date, disabled: !canEdit });
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
-  const s = styleForAssignee(day.userName);
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
-      onClick={(e) => { e.stopPropagation(); if (canEdit) onClick(); }}
-      title={isActive ? day.userName : `${day.userName} (inactive)`}
-      className={`px-1.5 py-1 rounded text-[11px] font-medium select-none border truncate ${s.bg} ${s.text} ${s.border}
-        ${!isActive ? 'opacity-60' : ''}
-        ${canEdit ? 'cursor-pointer active:cursor-grabbing' : ''} ${isDragging ? 'opacity-50' : ''}`}
-    >
-      {shortLabelForAssignee(day.userName)}{!isActive && <span className="opacity-70"> · inactive</span>}
-    </div>
-  );
-}
-
-function DayCell({ date, day, isCurrentMonth, canEdit, isActiveAgent, onChipClick }: {
-  date: Date; day: RequestScheduleDay | undefined; isCurrentMonth: boolean; canEdit: boolean; isActiveAgent: boolean; onChipClick: () => void;
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id: format(date, 'yyyy-MM-dd'), disabled: !day });
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={`relative min-h-[68px] sm:min-h-[80px] p-1.5 rounded-lg transition-colors
-        ${isOver ? 'ring-1 ring-inset ring-[#A1F96E]/70' : ''}
-        ${!isCurrentMonth ? 'opacity-35' : ''}
-        ${isToday(date) ? 'ring-2 ring-inset ring-[#0E0E0E]/20' : ''}
-      `}
-      style={{
-        border: '1px solid rgba(14,14,14,0.09)',
-        backgroundColor: isOver ? 'rgba(161,249,110,0.10)' : undefined,
-      }}
-    >
-      <div className="flex items-center justify-between mb-1">
-        <span className={`text-xs font-bold ${isToday(date) ? 'text-ink' : ''}`}
-              style={!isToday(date) ? { color: 'rgba(14,14,14,0.55)' } : undefined}>
-          {format(date, 'd')}
-        </span>
-      </div>
-      {day && <AssigneeChip day={day} canEdit={canEdit} isActive={isActiveAgent} onClick={onChipClick} />}
-    </div>
-  );
-}
+// ─── Main component ──────────────────────────────────────────────────────────
 
 export default function RequestSchedule() {
   const { user } = useAuth();
-  const isAdmin = !!user?.peekviewerAdmin;
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [data, setData] = useState<RequestScheduleData>({ days: [], redistribution: [], redistributionPeriod: null, calendarAgents: [] });
+  const [data, setData] = useState<RequestScheduleData>({
+    days: [], redistribution: [], redistributionPeriod: null, calendarAgents: [], cohortEpoch: COHORT_EPOCH,
+  });
   const [loading, setLoading] = useState(true);
-  const [activeDay, setActiveDay] = useState<RequestScheduleDay | null>(null);
-  const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [viewDateStr, setViewDateStr] = useState<string>(todayStr());
   const [isMyTurnToday, setIsMyTurnToday] = useState(false);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  // Allow both string setter and updater function (for auto-play step)
+  const handleSetViewDate = useCallback((d: string | ((prev: string) => string)) => {
+    if (typeof d === 'function') {
+      setViewDateStr((prev) => d(prev));
+    } else {
+      setViewDateStr(d);
+      // Navigate calendar to the month of the selected date if needed
+      setCurrentMonth((prev) => {
+        const target = parseISO(d);
+        if (target.getFullYear() !== prev.getFullYear() || target.getMonth() !== prev.getMonth()) {
+          return new Date(target.getFullYear(), target.getMonth(), 1);
+        }
+        return prev;
+      });
+    }
+  }, []);
 
-  // Independent of `currentMonth` (the calendar view being browsed) — always
-  // reflects today (Kyiv-local), so the banner doesn't disappear just
-  // because someone navigated the calendar to a different month.
+  // "Your turn" banner — who submits new requests today
   useEffect(() => {
     if (!user?.id) return;
-    getTodayRequestScheduleAssignee()
-      .then((a) => setIsMyTurnToday(a.userId === user.id))
-      .catch((e) => console.error(e));
+    import('../api').then(({ getTodayRequestScheduleAssignee }) => {
+      getTodayRequestScheduleAssignee()
+        .then((a) => setIsMyTurnToday(a.userId === user.id))
+        .catch((e) => console.error(e));
+    });
   }, [user?.id]);
 
   const loadData = useCallback(async () => {
@@ -185,66 +427,17 @@ export default function RequestSchedule() {
   const days = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) });
   const startPad = startOfMonth(currentMonth).getDay();
   const paddedDays: (Date | null)[] = [...Array(startPad).fill(null), ...days];
-
   const dayByDate = new Map(data.days.map((d) => [d.date, d]));
-  const isRotationMember = data.calendarAgents.some((a) => a.userId === user?.id);
-  const canEditDay = () => isAdmin || isRotationMember;
 
-  const handleDragStart = (event: DragStartEvent) => {
-    const found = dayByDate.get(event.active.id as string);
-    setActiveDay(found ?? null);
-  };
+  const epochStr = data.cohortEpoch ?? COHORT_EPOCH;
+  const cohortMonthFirst = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
+  const isCohortMonth = cohortMonthFirst >= epochStr;
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    setActiveDay(null);
-    const { active, over } = event;
-    if (!over || !active || active.id === over.id) return;
+  // Cohort agents in rotation order (only present for cohort months)
+  const cohortAgents = isCohortMonth ? data.calendarAgents : [];
 
-    const date = active.id as string;
-    const targetDate = over.id as string;
-
-    // Optimistic swap
-    setData((prev) => {
-      const a = prev.days.find((d) => d.date === date);
-      const b = prev.days.find((d) => d.date === targetDate);
-      if (!a || !b) return prev;
-      return {
-        ...prev,
-        days: prev.days.map((d) => {
-          if (d.date === date) return { ...d, userId: b.userId, userName: b.userName, isOverride: true };
-          if (d.date === targetDate) return { ...d, userId: a.userId, userName: a.userName, isOverride: true };
-          return d;
-        }),
-      };
-    });
-
-    try {
-      await swapRequestScheduleDay(date, targetDate);
-    } catch (e) {
-      console.error(e);
-      await loadData();
-    }
-  };
-
-  const handleAssign = async (userId: string) => {
-    if (!editingDate) return;
-    const date = editingDate;
-    setEditingDate(null);
-    const agent = data.calendarAgents.find((a) => a.userId === userId);
-    if (!agent) return;
-
-    setData((prev) => ({
-      ...prev,
-      days: prev.days.map((d) => (d.date === date ? { ...d, userId: agent.userId, userName: agent.userName, isOverride: true } : d)),
-    }));
-
-    try {
-      await assignRequestScheduleDay(date, userId);
-    } catch (e) {
-      console.error(e);
-      await loadData();
-    }
-  };
+  // Legacy agents for legend (non-cohort months)
+  const legacyAgents = isCohortMonth ? [] : data.calendarAgents;
 
   return (
     <div className="space-y-4">
@@ -263,7 +456,11 @@ export default function RequestSchedule() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-ink">Request Schedule</h2>
-          <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>Drag a day to swap, or click an agent to reassign</p>
+          <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>
+            {isCohortMonth
+              ? 'Клікни на день, щоб переглянути стан на цю дату'
+              : 'Графік призначень на місяць'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button className="btn-secondary px-3" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>‹</button>
@@ -274,82 +471,71 @@ export default function RequestSchedule() {
         </div>
       </div>
 
+      {/* Agent legend */}
       <div className="flex flex-wrap gap-2">
-        {data.calendarAgents.map((a) => {
-          const s = styleForAssignee(a.userName);
+        {(isCohortMonth ? cohortAgents : legacyAgents).map((a) => {
+          const s = styleFor(a.userName);
           return (
-            <span key={a.userId} className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${s.bg} ${s.text} ${s.border}`}>
+            <span key={a.userId} className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border ${s.bg} ${s.text} ${s.border}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
               {a.userName}
             </span>
           );
         })}
       </div>
 
+      {/* Cohort view-date panel */}
+      {isCohortMonth && cohortAgents.length === 3 && (
+        <ViewDatePanel
+          viewDateStr={viewDateStr}
+          calendarAgents={cohortAgents}
+          onSetViewDate={handleSetViewDate}
+        />
+      )}
+
       {loading ? (
         <div className="flex justify-center py-12"><Spinner size="lg" /></div>
       ) : (
-        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <>
           <div className="grid grid-cols-7 gap-1 mb-1">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
               <div key={d} className="text-center text-xs font-bold py-1" style={{ color: 'rgba(14,14,14,0.55)' }}>{d}</div>
             ))}
           </div>
-
           <div className="grid grid-cols-7 gap-1">
-            {paddedDays.map((date, i) => date ? (
-              <DayCell
-                key={format(date, 'yyyy-MM-dd')}
-                date={date}
-                day={dayByDate.get(format(date, 'yyyy-MM-dd'))}
-                isCurrentMonth={isSameMonth(date, currentMonth)}
-                canEdit={canEditDay()}
-                isActiveAgent={(() => {
-                  const d = dayByDate.get(format(date, 'yyyy-MM-dd'));
-                  return !!d && data.calendarAgents.some((a) => a.userId === d.userId);
-                })()}
-                onChipClick={() => setEditingDate(format(date, 'yyyy-MM-dd'))}
-              />
-            ) : (
-              <div key={`pad-${i}`} className="min-h-[68px] sm:min-h-[80px]" />
-            ))}
-          </div>
+            {paddedDays.map((date, i) => {
+              if (!date) return <div key={`pad-${i}`} className="min-h-[68px] sm:min-h-[80px]" />;
+              const dateStr = format(date, 'yyyy-MM-dd');
+              const day = dayByDate.get(dateStr);
+              const isInCohortEra = dateStr >= epochStr;
 
-          <DragOverlay>
-            {activeDay && (() => {
-              const s = styleForAssignee(activeDay.userName);
+              if (isInCohortEra && cohortAgents.length === 3) {
+                return (
+                  <CohortDayCell
+                    key={dateStr}
+                    date={date}
+                    day={day}
+                    calendarAgents={cohortAgents}
+                    viewDateStr={viewDateStr}
+                    isCurrentMonth={isSameMonth(date, currentMonth)}
+                    onClick={() => handleSetViewDate(dateStr)}
+                  />
+                );
+              }
               return (
-                <div className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium shadow-lg border ${s.bg} ${s.text} ${s.border}`}>
-                  {shortLabelForAssignee(activeDay.userName)}
-                </div>
+                <LegacyDayCell
+                  key={dateStr}
+                  date={date}
+                  day={day}
+                  isCurrentMonth={isSameMonth(date, currentMonth)}
+                />
               );
-            })()}
-          </DragOverlay>
-        </DndContext>
+            })}
+          </div>
+        </>
       )}
 
-      <RedistributionCard title="Перерозподіл активних і неактивних профілів" rows={data.redistribution} period={data.redistributionPeriod} />
-
-      <Modal open={!!editingDate} onClose={() => setEditingDate(null)} title={editingDate ? `Reassign — ${format(new Date(editingDate), 'dd MMM yyyy')}` : ''}>
-        <div className="grid grid-cols-1 gap-2">
-          {data.calendarAgents.map((a) => {
-            const s = styleForAssignee(a.userName);
-            const current = editingDate ? dayByDate.get(editingDate)?.userId === a.userId : false;
-            return (
-              <button
-                key={a.userId}
-                type="button"
-                onClick={() => handleAssign(a.userId)}
-                className={`p-2 rounded-lg border-2 text-xs font-medium transition-all text-left flex items-center gap-2 ${
-                  current ? `${s.bg} ${s.text} ${s.border}` : 'border-slate-200 text-slate-500'
-                }`}
-              >
-                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.dot}`} />
-                {a.userName}
-              </button>
-            );
-          })}
-        </div>
-      </Modal>
+      <RedistributionCard rows={data.redistribution} period={data.redistributionPeriod} />
     </div>
   );
 }
