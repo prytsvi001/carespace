@@ -41,8 +41,9 @@ router.use(requirePeekviewerTeam);
 //   Yana 5 · 10…
 // Iryna Kolodienko left the company in October 2026 — she stays on her
 // October days (requested), and from 01.11.2026 the rotation runs with the
-// remaining 4 (period 0 = 01.11–14.11): Tetyana Fomyuk 1 · 5 · 9…,
-// Diana 2 · 6…, Tetyana 3 · 7…, Yana 4 · 8…
+// remaining agents (period 0 = 01.11–14.11). Tetyana Fomyuk left on
+// 2026-11-04, so she's not in this era: Diana 1 · 4 · 7…, Tetyana 2 · 5…,
+// Yana 3 · 6… (calendar days from 01.11 use the wave formula below anyway).
 type Era = { start: string; startMs: number; emails: string[] };
 const ERAS: Era[] = [
   {
@@ -60,7 +61,6 @@ const ERAS: Era[] = [
     start: '2026-11-01',
     startMs: Date.UTC(2026, 10, 1),
     emails: [
-      'tetyana_fomyuk@struktura.io',
       'diana_semenuk@struktura.io',
       'tetiana_veremeenko@struktura.io',
       'yana_fedorova@struktura.io',
