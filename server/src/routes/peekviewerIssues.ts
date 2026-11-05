@@ -27,6 +27,10 @@ function isSupport(me: Express.User): boolean {
 
 const recipientIdList = (raw: string) => raw.split(',').filter(Boolean);
 
+// Peekviewer team members who can't be picked in "Send to Peekviewer".
+const EXCLUDED_RECIPIENT_NAMES = ['Tetyana Fomyuk'];
+const recipientWhere = { team: 'peekviewer', active: true, name: { notIn: EXCLUDED_RECIPIENT_NAMES } };
+
 function formatIssue<T extends { recipientIds: string; recipientNames: string }>(i: T) {
   return { ...i, recipientIds: recipientIdList(i.recipientIds), recipientNames: i.recipientNames.split(',').filter(Boolean) };
 }
@@ -52,7 +56,7 @@ async function commentOnCard(clientCardId: string, author: Express.User, text: s
 router.get('/recipients', async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
-      where: { team: 'peekviewer', active: true },
+      where: recipientWhere,
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
@@ -100,7 +104,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const [card, recipients] = await Promise.all([
       prisma.clientCard.findUnique({ where: { id: clientCardId }, select: { id: true } }),
-      prisma.user.findMany({ where: { id: { in: ids }, team: 'peekviewer', active: true } }),
+      prisma.user.findMany({ where: { id: { in: ids }, ...recipientWhere } }),
     ]);
     if (!card) return res.status(404).json({ error: 'Card not found' });
     if (recipients.length === 0) return res.status(400).json({ error: 'Pick at least one Peekviewer team member' });
