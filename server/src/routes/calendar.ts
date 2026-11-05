@@ -5,11 +5,6 @@ import { getRotationPair, SHIFT_REASSIGNED } from '../rotationSchedule';
 
 const router = Router();
 
-function isAdmin(req: Request): boolean {
-  const role = (req.user as Express.User).role;
-  return role === 'head' || role === 'lead';
-}
-
 // GET /api/calendar?year=2024&month=3
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -168,100 +163,6 @@ router.patch('/:id/reschedule', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to reschedule calendar event' });
-  }
-});
-
-// POST /api/calendar/fix-victoria-nicky-august-2026-swap — head/lead only,
-// one-off admin action (button in ShiftCalendar.tsx). Corrects a swap that
-// happened before the SHIFT_REASSIGNED fix above existed: on 2026-08-04 and
-// 2026-08-07 Victoria Davis covered Nicky Brown's native rotation shift; on
-// 2026-08-18 and 2026-08-19 Nicky Brown covered Victoria Davis's. Without
-// this, statsHelpers.ts kept crediting the original native agent's phantom
-// shift on each of those days on top of the real shift now correctly counted
-// (as an "extra shift") for whoever actually covered it — see the
-// conversation this was diagnosed in for the full root-cause writeup.
-//
-// Idempotent — checks current state before each change, safe to click more
-// than once. Delete this route (and its button in ShiftCalendar.tsx) once
-// August's numbers have been confirmed correct; it has no ongoing purpose.
-router.post('/fix-victoria-nicky-august-2026-swap', async (req: Request, res: Response) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: 'Not allowed' });
-
-    const SWAPS: { date: string; nativeAgentName: string; coveredByAgentName: string }[] = [
-      { date: '2026-08-04', nativeAgentName: 'Nicky Brown',    coveredByAgentName: 'Victoria Davis' },
-      { date: '2026-08-07', nativeAgentName: 'Nicky Brown',    coveredByAgentName: 'Victoria Davis' },
-      { date: '2026-08-18', nativeAgentName: 'Victoria Davis', coveredByAgentName: 'Nicky Brown' },
-      { date: '2026-08-19', nativeAgentName: 'Victoria Davis', coveredByAgentName: 'Nicky Brown' },
-    ];
-
-    const results: string[] = [];
-
-    for (const swap of SWAPS) {
-      const day = new Date(`${swap.date}T00:00:00.000Z`);
-      const [nativeAgent, coveredByAgent] = await Promise.all([
-        prisma.agent.findFirst({ where: { name: swap.nativeAgentName } }),
-        prisma.agent.findFirst({ where: { name: swap.coveredByAgentName } }),
-      ]);
-      if (!nativeAgent || !coveredByAgent) {
-        results.push(`${swap.date}: agent not found — skipped`);
-        continue;
-      }
-
-      // Authoritative source for which shift type (MORNING/NIGHT) the native
-      // agent's slot was, regardless of whether their stored row still exists.
-      const pair = getRotationPair(day);
-      const rotationShiftType = pair?.morning === swap.nativeAgentName ? 'MORNING' : pair?.night === swap.nativeAgentName ? 'NIGHT' : null;
-      if (!rotationShiftType) {
-        results.push(`${swap.date}: ${swap.nativeAgentName} isn't natively rotated this day — skipped`);
-        continue;
-      }
-
-      const nativeEvent = await prisma.calendarEvent.findFirst({
-        where: { agentId: nativeAgent.id, eventDate: day },
-      });
-
-      if (!nativeEvent) {
-        // Row already gone (e.g. dragged away pre-fix, which just deletes it
-        // with no trace) — create the reassigned marker from scratch.
-        await prisma.calendarEvent.create({
-          data: { agentId: nativeAgent.id, eventDate: day, leaveType: SHIFT_REASSIGNED, shiftType: null, isExtraShift: false, notes: `Auto: covered by ${swap.coveredByAgentName}` },
-        });
-      } else if (nativeEvent.leaveType === SHIFT_REASSIGNED) {
-        results.push(`${swap.date}: already applied — skipped`);
-        continue;
-      } else {
-        await prisma.calendarEvent.update({
-          where: { id: nativeEvent.id },
-          data: { leaveType: SHIFT_REASSIGNED, notes: `Auto: covered by ${swap.coveredByAgentName}` },
-        });
-      }
-
-      const existingCoverEvent = await prisma.calendarEvent.findFirst({
-        where: { agentId: coveredByAgent.id, eventDate: day },
-      });
-      if (existingCoverEvent) {
-        results.push(`${swap.date}: ${swap.nativeAgentName} reassigned; ${swap.coveredByAgentName} already had an event that day — left as-is`);
-        continue;
-      }
-
-      await prisma.calendarEvent.create({
-        data: {
-          agentId: coveredByAgent.id,
-          eventDate: day,
-          leaveType: 'SHIFT',
-          shiftType: rotationShiftType,
-          isExtraShift: true,
-          notes: `Auto: covered ${swap.nativeAgentName}'s shift`,
-        },
-      });
-      results.push(`${swap.date}: fixed — ${swap.nativeAgentName} reassigned, ${swap.coveredByAgentName} credited`);
-    }
-
-    return res.json({ success: true, results });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to apply fix' });
   }
 });
 

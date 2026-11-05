@@ -79,12 +79,6 @@ export const deleteCalendarEvent = (id: string) =>
 export const rescheduleCalendarEvent = (id: string, newDate: string) =>
   api.patch(`/calendar/${id}/reschedule`, { newDate }).then(r => r.data);
 
-// One-off admin action (head/lead only) — see calendar.ts for the full
-// writeup. Remove this + its button in ShiftCalendar.tsx once August's
-// numbers are confirmed correct.
-export const fixVictoriaNickyAugustSwap = () =>
-  api.post('/calendar/fix-victoria-nicky-august-2026-swap').then(r => r.data as { success: boolean; results: string[] });
-
 // ─── Peek Requests Calendar ──────────────────────────────────────────────────
 export const getPeekCalendarAccess = (): Promise<{ canAccess: boolean }> =>
   api.get('/peek-calendar/access').then(r => r.data);
