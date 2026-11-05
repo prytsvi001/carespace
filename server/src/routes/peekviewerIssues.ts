@@ -27,9 +27,7 @@ function isSupport(me: Express.User): boolean {
 
 const recipientIdList = (raw: string) => raw.split(',').filter(Boolean);
 
-// Peekviewer team members who can't be picked in "Send to Peekviewer".
-const EXCLUDED_RECIPIENT_NAMES = ['Tetyana Fomyuk'];
-const recipientWhere = { team: 'peekviewer', active: true, name: { notIn: EXCLUDED_RECIPIENT_NAMES } };
+const recipientWhere = { team: 'peekviewer', active: true };
 
 function formatIssue<T extends { recipientIds: string; recipientNames: string }>(i: T) {
   return { ...i, recipientIds: recipientIdList(i.recipientIds), recipientNames: i.recipientNames.split(',').filter(Boolean) };
