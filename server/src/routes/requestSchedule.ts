@@ -118,12 +118,14 @@ function redistribOwnerForDay(day: number, monthIndex: number): number {
 function computeMonthlyRedistribution(
   year: number, month: number, agents: RosterUser[],
 ): { userId: string; userName: string; days: number[] }[] {
-  const totalDays = daysInMonth(year, month);
+  // Always days 1–31, whatever the current month's length: profiles are
+  // keyed by their creation day-of-month across every month, so a profile
+  // from e.g. 31 Oct still needs an owner while it's November or February.
   const mIdx = redistribMonthIndex(year, month);
   return agents.map((agent, agentIdx) => ({
     userId: agent.id,
     userName: agent.name,
-    days: Array.from({ length: totalDays }, (_, i) => i + 1)
+    days: Array.from({ length: 31 }, (_, i) => i + 1)
       .filter((d) => redistribOwnerForDay(d, mIdx) === agentIdx),
   }));
 }
