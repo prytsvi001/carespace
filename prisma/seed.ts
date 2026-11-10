@@ -30,6 +30,7 @@ const USERS: {
   { name: 'Yana Fedorova',     email: 'yana_fedorova@struktura.io',          role: 'agent', team: 'peekviewer', peekviewerAdmin: true, hiddenPeekviewerTabs: 'references' },
   { name: 'Tetyana Fomyuk',    email: 'tetyana_fomyuk@struktura.io',         role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost' },
   { name: 'Diana Semeniuk',   email: 'diana_semenuk@struktura.io',          role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost' },
+  { name: 'Daria Biletska',   email: 'daria_biletska@struktura.io',         role: 'agent', team: 'peekviewer', hiddenPeekviewerTabs: 'references,boost' },
 ];
 
 async function main() {

@@ -61,6 +61,7 @@ export const PEEKVIEWER_ROSTER: SalaryPerson[] = [
   { personKey: 'iryna_kolodiyenko',   displayName: 'Iryna Kolodiyenko',   team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 500, toggles: [{ key: 'updateOn', label: 'Update bonus', amount: 150 }], userName: 'Iryna Kolodienko', hasResolvedRequestCount: true, lastMonth: '2026-09' },
   { personKey: 'anna_bilous',         displayName: 'Anna Bilous',         team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 300, userName: 'Anna Bilous', teamBonusUntil: '2026-09' },
   { personKey: 'diana_semeniuk',      displayName: 'Diana Semeniuk',      team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 350, fixedBaseSchedule: [{ from: '2026-10', amount: 250 }, { from: '2026-11', amount: 350 }], userName: 'Diana Semeniuk', firstMonth: '2026-10' },
+  { personKey: 'daria_biletska',      displayName: 'Daria Biletska',      team: 'peekviewer', formula: { type: 'fixed_base' }, fixedBase: 250, userName: 'Daria Biletska', firstMonth: '2026-11' },
 ];
 
 // Roster for one salary month — people who left drop out after lastMonth,
