@@ -3,8 +3,9 @@
 //
 // From 2026-11-01 the schedule uses a wave model: new clients arriving on
 // day D form "wave D". Waves are assigned in 3-day blocks rotating across
-// 9-day cycles (Diana → Tetyana → Yana → Diana…). The calendar shows all
-// three agents in every cell; one is highlighted on the selected view-date.
+// cycles of 3·N days (01.11: Diana → Tetyana → Yana, 9-day cycles; from
+// 22.11: Daria → Tetyana → Yana → Diana, 12-day cycles). The calendar shows
+// the agents in rotation in every cell; one is highlighted on the view-date.
 //
 // Pre-Nov 2026 dates keep the legacy single-agent display. Drag-to-swap and
 // click-to-reassign are disabled in the wave era (Variant 2 decision).
@@ -30,6 +31,7 @@ const ASSIGNEE_STYLES: Record<string, AssigneeStyle> = {
   'Tetyana Veremeyenko':{ bg: 'bg-emerald-100',  text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400', ring: 'ring-emerald-400' },
   'Yana Fedorova':      { bg: 'bg-amber-100',    text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400',   ring: 'ring-amber-400' },
   'Diana Semeniuk':     { bg: 'bg-pink-100',     text: 'text-pink-700',    border: 'border-pink-200',    dot: 'bg-pink-400',    ring: 'ring-pink-400' },
+  'Daria Biletska':     { bg: 'bg-violet-100',   text: 'text-violet-700',  border: 'border-violet-200',  dot: 'bg-violet-400',  ring: 'ring-violet-400' },
   // Kept for historical rendering only — removed from future rotation
   'Tetyana Fomyuk':     { bg: 'bg-sky-100',      text: 'text-sky-700',     border: 'border-sky-200',     dot: 'bg-sky-400',     ring: 'ring-sky-400' },
 };
@@ -39,11 +41,23 @@ const styleFor = (name: string) => ASSIGNEE_STYLES[name] ?? DEFAULT_STYLE;
 const SHORT_LABELS: Record<string, string> = {};
 const shortLabel = (name: string) => SHORT_LABELS[name] ?? name.split(' ')[0];
 
-// ─── Wave formula (mirrors server logic; pure math, no I/O) ───────────────
+// ─── Wave formula (mirrors server/src/routes/requestSchedule.ts; pure math) ──
+// Agent indices point into calendarAgents (server's WAVE_AGENT_EMAILS order:
+// 0 Diana, 1 Tetyana, 2 Yana, 3 Daria). Each era rotates 3-day blocks through
+// its `order`; every 3·N days all waves pass to the next agent in that order.
+// An era's start is not a transfer.
 
 const WAVE_EPOCH = '2026-11-01';
 const WAVE_EPOCH_MS = Date.UTC(2026, 10, 1);
 const MS_PER_DAY = 86_400_000;
+const WAVE_BLOCK_DAYS = 3;
+
+type WaveEra = { startIdx: number; order: number[] };
+const WAVE_ERAS: WaveEra[] = [
+  { startIdx: 0,  order: [0, 1, 2] },    // 01.11.2026: Diana → Tetyana → Yana
+  { startIdx: 21, order: [3, 1, 2, 0] }, // 22.11.2026: Daria → Tetyana → Yana → Diana
+];
+const WAVE_AGENT_COUNT = 4;
 
 function utcMsForDateStr(d: string): number {
   const [y, m, day] = d.split('-').map(Number);
@@ -54,37 +68,76 @@ function toDayIndex(dateStr: string): number {
   return Math.round((utcMsForDateStr(dateStr) - WAVE_EPOCH_MS) / MS_PER_DAY);
 }
 
-const modulo = (n: number, m: number) => ((n % m) + m) % m;
-
-function firstAgentIdx(waveDayIdx: number): number {
-  return modulo(Math.floor(waveDayIdx / 3), 3);
-}
-
-function ownerIdx(waveDayIdx: number, viewDayIdx: number): number {
-  return modulo(
-    firstAgentIdx(waveDayIdx) + Math.floor(viewDayIdx / 9) - Math.floor(waveDayIdx / 9),
-    3,
-  );
-}
-
-function nextTransferDateStr(viewDayIdx: number): string {
-  const nextCycle = (Math.floor(viewDayIdx / 9) + 1) * 9;
-  const ms = WAVE_EPOCH_MS + nextCycle * MS_PER_DAY;
-  const d = new Date(ms);
+function dateStrFromDayIndex(idx: number): string {
+  const d = new Date(WAVE_EPOCH_MS + idx * MS_PER_DAY);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
-function isTransferDay(viewDayIdx: number): boolean {
-  return viewDayIdx >= 0 && viewDayIdx % 9 === 0;
+const modulo = (n: number, m: number) => ((n % m) + m) % m;
+const cycleDays = (era: WaveEra) => WAVE_BLOCK_DAYS * era.order.length;
+
+function eraIndex(dayIdx: number): number {
+  let idx = 0;
+  WAVE_ERAS.forEach((e, i) => { if (dayIdx >= e.startIdx) idx = i; });
+  return idx;
 }
 
-// Returns per-agent wave count [Diana, Tetyana, Yana] on a given viewDayIdx.
-function waveCounts(viewDayIdx: number): [number, number, number] {
-  const counts: [number, number, number] = [0, 0, 0];
-  for (let c = 0; c <= viewDayIdx; c++) {
-    counts[ownerIdx(c, viewDayIdx)]++;
+function firstAgentIdx(waveDayIdx: number): number {
+  const era = WAVE_ERAS[eraIndex(waveDayIdx)];
+  return era.order[modulo(Math.floor((waveDayIdx - era.startIdx) / WAVE_BLOCK_DAYS), era.order.length)];
+}
+
+function ownerIdx(waveDayIdx: number, viewDayIdx: number): number {
+  let ei = eraIndex(waveDayIdx);
+  let agent = firstAgentIdx(waveDayIdx);
+  let from = waveDayIdx;
+  for (;;) {
+    const era = WAVE_ERAS[ei];
+    const next = WAVE_ERAS[ei + 1];
+    const until = next && viewDayIdx >= next.startIdx ? next.startIdx - 1 : viewDayIdx;
+    const L = cycleDays(era);
+    const transfers = Math.floor((until - era.startIdx) / L) - Math.floor((from - era.startIdx) / L);
+    agent = era.order[modulo(era.order.indexOf(agent) + transfers, era.order.length)];
+    if (until === viewDayIdx) return agent;
+    ei += 1;
+    from = WAVE_ERAS[ei].startIdx;
   }
-  return counts;
+}
+
+// First transfer day strictly after viewDayIdx.
+function nextTransferDateStr(viewDayIdx: number): string {
+  let ei = eraIndex(viewDayIdx);
+  let from = viewDayIdx;
+  for (;;) {
+    const era = WAVE_ERAS[ei];
+    const L = cycleDays(era);
+    const t = era.startIdx + (Math.floor((from - era.startIdx) / L) + 1) * L;
+    const next = WAVE_ERAS[ei + 1];
+    if (!next || t < next.startIdx) return dateStrFromDayIndex(t);
+    ei += 1;
+    from = next.startIdx;
+  }
+}
+
+function isTransferDay(viewDayIdx: number): boolean {
+  const era = WAVE_ERAS[eraIndex(viewDayIdx)];
+  const offset = viewDayIdx - era.startIdx;
+  return offset > 0 && offset % cycleDays(era) === 0;
+}
+
+function cycleNumber(viewDayIdx: number): number {
+  const ei = eraIndex(viewDayIdx);
+  let n = 0;
+  for (let i = 0; i < ei; i++) {
+    n += Math.ceil((WAVE_ERAS[i + 1].startIdx - WAVE_ERAS[i].startIdx) / cycleDays(WAVE_ERAS[i]));
+  }
+  const era = WAVE_ERAS[ei];
+  return n + Math.floor((viewDayIdx - era.startIdx) / cycleDays(era)) + 1;
+}
+
+// Agent indices in rotation on viewDayIdx (that era's order).
+function eraOrder(viewDayIdx: number): number[] {
+  return WAVE_ERAS[eraIndex(viewDayIdx)].order;
 }
 
 // Today as "YYYY-MM-DD" in local time (matches Kyiv-local used server-side
@@ -155,10 +208,14 @@ function WaveDayCell({ date, day, calendarAgents, viewDateStr, isCurrentMonth, o
       chips = previewName ? [{ name: previewName, status: 'preview' }] : [];
     } else {
       const owner = ownerIdx(day.waveDayIndex, viewIdx);
-      chips = calendarAgents.map((a, i) => ({
-        name: a.userName,
-        status: (i === owner ? 'active' : 'inactive') as 'active' | 'inactive',
-      }));
+      const inRotation = eraOrder(viewIdx);
+      chips = calendarAgents
+        .map((a, i) => ({ a, i }))
+        .filter(({ i }) => inRotation.includes(i))
+        .map(({ a, i }) => ({
+          name: a.userName,
+          status: (i === owner ? 'active' : 'inactive') as 'active' | 'inactive',
+        }));
     }
   }
 
@@ -231,7 +288,7 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
   const playRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const viewIdx = toDayIndex(viewDateStr);
-  const cycleNum = Math.floor(viewIdx / 9) + 1;
+  const cycleNum = cycleNumber(viewIdx);
   const nextTransfer = nextTransferDateStr(viewIdx);
   const isTransfer = isTransferDay(viewIdx);
   const daysUntilNext = toDayIndex(nextTransfer) - viewIdx;
@@ -263,9 +320,10 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
           <Megaphone size={16} strokeWidth={1.8} className="shrink-0" style={{ color: '#166534' }} />
           <span>
             Сьогодні — день передачі клієнтів:{' '}
-            {calendarAgents.map((a, i) => {
-              const nextAgent = calendarAgents[(i + 1) % calendarAgents.length];
-              return `${a.userName.split(' ')[0]} → ${nextAgent.userName.split(' ')[0]}`;
+            {eraOrder(viewIdx).map((agentIdx, i, order) => {
+              const a = calendarAgents[agentIdx];
+              const nextAgent = calendarAgents[order[(i + 1) % order.length]];
+              return `${a?.userName.split(' ')[0]} → ${nextAgent?.userName.split(' ')[0]}`;
             }).join(', ')}
           </span>
         </div>
@@ -475,7 +533,7 @@ export default function RequestSchedule() {
       </div>
 
       {/* Wave view-date panel */}
-      {isWaveMonth && waveAgents.length === 3 && (
+      {isWaveMonth && waveAgents.length === WAVE_AGENT_COUNT && (
         <ViewDatePanel
           viewDateStr={viewDateStr}
           calendarAgents={waveAgents}
@@ -499,7 +557,7 @@ export default function RequestSchedule() {
               const day = dayByDate.get(dateStr);
               const isInWaveEra = dateStr >= epochStr;
 
-              if (isInWaveEra && waveAgents.length === 3) {
+              if (isInWaveEra && waveAgents.length === WAVE_AGENT_COUNT) {
                 return (
                   <WaveDayCell
                     key={dateStr}

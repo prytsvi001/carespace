@@ -5,7 +5,7 @@ import { sendTelegramMessage } from '../telegram';
 import {
   loadRosters, resolveCurrentAssignee, todayKyivDateStr,
   WAVE_EPOCH, WAVE_EPOCH_UTC_MS_EXPORT, MS_PER_DAY_EXPORT,
-  waveDayIndex, waveFirstAgentIndex, waveOwnerIndex,
+  waveDayIndex, waveFirstAgentIndex, waveOwnerIndex, waveCycleNumber,
   loadWaveRoster,
   getRedistribForNotification, REDISTRIB_EPOCH,
 } from './requestSchedule';
@@ -49,7 +49,7 @@ function buildWaveMessage(agentWaveIndices: number[], todayIdx: number): string 
   const rangeLines = ranges.map(({ start, end }) => `• ${formatWaveRange(start, end)}`).join('\n');
   const todayDate = waveDateFromIndex(todayIdx);
   const todayLabel = `${todayDate.getUTCDate()} ${UA_MONTHS[todayDate.getUTCMonth()]}`;
-  const cycleNum = Math.floor(todayIdx / 9) + 1;
+  const cycleNum = waveCycleNumber(todayIdx);
   const header = cycleNum > 1
     ? `📋 Сьогодні (${todayLabel}) починається твоя нова хвиля — це вже цикл №${cycleNum}.`
     : `📋 Сьогодні (${todayLabel}) починається твоя нова хвиля!`;
@@ -396,7 +396,7 @@ router.get('/request-schedule-reminder', async (_req: Request, res: Response) =>
 });
 
 // GET /api/cron/redistribution-reminder — 10:00 Kyiv on the 1st of each month.
-// Sends each of the 3 wave agents their personal redistribution dates for the month.
+// Sends each redistribution agent their personal redistribution dates for the month.
 // Dedups via RequestScheduleReminderLog with key "redistrib:YYYY-MM".
 router.get('/redistribution-reminder', async (_req: Request, res: Response) => {
   try {

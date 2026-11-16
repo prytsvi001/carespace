@@ -85,8 +85,9 @@ const LEGACY_ANCHOR_UTC_MS = Date.UTC(2026, 8, 30);
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 
 // ─── Monthly profile redistribution (from 2026-11-01) ───────────────────
-// Active/inactive profile redistribution uses the same 3 agents but a
-// separate monthly formula. Anchor month: November 2026 (monthIndex=0).
+// Active/inactive profile redistribution uses its own 3-agent roster
+// (REDISTRIB_AGENT_EMAILS — Daria Biletska isn't in it yet, only in the wave
+// calendar from 22.11.2026) and a separate monthly formula. Anchor month: November 2026 (monthIndex=0).
 // Each subsequent month shifts every day's owner by +1 (mod 3).
 // Direction: Diana ← Yana ← Tetyana ← Diana (same-as-before convention).
 //
@@ -138,23 +139,56 @@ export async function getRedistribForNotification(
   if (year < REDISTRIB_EPOCH.year || (year === REDISTRIB_EPOCH.year && month < REDISTRIB_EPOCH.month)) {
     return null; // before redistribution era
   }
-  const roster = await loadWaveRoster();
+  const roster = await loadRedistribRoster();
   if (!roster) return null;
   return computeMonthlyRedistribution(year, month, roster);
 }
 
-// ─── Wave rotation era (from 2026-11-01) ────────────────────────────────
-// New clients arriving on a given day form a "wave" for that day.
-// Waves are assigned in 3-day blocks, blocks rotate across 9-day cycles:
-//   Diana (0) → Tetyana (1) → Yana (2) → Diana …
-// Every 9 days all existing waves pass to the next agent.
+// ─── Wave rotation (from 2026-11-01) ────────────────────────────────────
+// New clients arriving on a given day form a "wave" for that day. Within a
+// wave era of N agents, waves are assigned in 3-day blocks rotating through
+// the era's order, and every 3·N days (one cycle) all existing waves pass to
+// the next agent in that order. Cycles are anchored at the era's start.
+//
+// Eras:
+//   01.11.2026 — 3 agents, 9-day cycles: Diana → Tetyana → Yana → Diana…
+//                (transfers 10.11, 19.11)
+//   22.11.2026 — Daria Biletska joins; 4 agents, 12-day cycles:
+//                Daria → Tetyana → Yana → Diana → Daria…
+//                (blocks: Daria 22–24.11, Tetyana 25–27, Yana 28–30,
+//                Diana 01–03.12; transfers 04.12, 16.12, 28.12…)
+// An era start is not a transfer: waves born in an earlier era stay with
+// whoever held them on the era's eve, then move along the new era's order at
+// its transfers (so the 28.11 transfer of the 3-agent era never happens).
+//
+// Agent indices everywhere (API firstAgentIndex, cron) point into
+// WAVE_AGENT_EMAILS, which only ever grows so old indices stay stable.
+// Every agent of an era must still be in the next era's order — someone
+// leaving needs an explicit rule for who takes over their waves.
 export const WAVE_EPOCH = '2026-11-01';
 export const REDISTRIB_EPOCH = { year: 2026, month: 11 } as const;
 const WAVE_EPOCH_UTC_MS = Date.UTC(2026, 10, 1);
+const WAVE_BLOCK_DAYS = 3;
 const WAVE_AGENT_EMAILS = [
   'diana_semenuk@struktura.io',      // index 0 — Diana Semeniuk
   'tetiana_veremeenko@struktura.io', // index 1 — Tetyana Veremeyenko
   'yana_fedorova@struktura.io',      // index 2 — Yana Fedorova
+  'daria_biletska@struktura.io',     // index 3 — Daria Biletska (from 22.11.2026)
+];
+
+// startIdx = wave day index of the era's first day; order = indices into
+// WAVE_AGENT_EMAILS in rotation order (order[0] gets the era's first block).
+export type WaveEra = { start: string; startIdx: number; order: number[] };
+// Profile redistribution roster; BASE_REDISTRIB indices point into this.
+const REDISTRIB_AGENT_EMAILS = [
+  'diana_semenuk@struktura.io',      // 0 — Diana Semeniuk
+  'tetiana_veremeenko@struktura.io', // 1 — Tetyana Veremeyenko
+  'yana_fedorova@struktura.io',      // 2 — Yana Fedorova
+];
+
+export const WAVE_ERAS: WaveEra[] = [
+  { start: '2026-11-01', startIdx: 0,  order: [0, 1, 2] },
+  { start: '2026-11-22', startIdx: 21, order: [3, 1, 2, 0] },
 ];
 
 export const WAVE_EPOCH_UTC_MS_EXPORT = WAVE_EPOCH_UTC_MS;
@@ -164,15 +198,61 @@ export function waveDayIndex(dateStr: string): number {
   return Math.round((utcMsForDate(dateStr) - WAVE_EPOCH_UTC_MS) / MS_PER_DAY);
 }
 
-// Which agent (0/1/2) is first assigned to the wave born on dayIdx.
-export function waveFirstAgentIndex(dayIdx: number): number {
-  return mod(Math.floor(dayIdx / 3), 3);
+const waveCycleDays = (era: WaveEra) => WAVE_BLOCK_DAYS * era.order.length;
+
+function waveEraIndex(dayIdx: number): number {
+  let idx = 0;
+  WAVE_ERAS.forEach((e, i) => { if (dayIdx >= e.startIdx) idx = i; });
+  return idx;
 }
 
-// Who currently owns the wave born on waveDayIdx, viewed on viewDayIdx.
+export function waveEraForDay(dayIdx: number): WaveEra {
+  return WAVE_ERAS[waveEraIndex(dayIdx)];
+}
+
+// Which agent (index into WAVE_AGENT_EMAILS) first gets the wave born on dayIdx.
+export function waveFirstAgentIndex(dayIdx: number): number {
+  const era = waveEraForDay(dayIdx);
+  return era.order[mod(Math.floor((dayIdx - era.startIdx) / WAVE_BLOCK_DAYS), era.order.length)];
+}
+
+// Who owns the wave born on waveDayIdx, viewed on viewDayIdx (>= waveDayIdx).
 export function waveOwnerIndex(waveDayIdx: number, viewDayIdx: number): number {
-  const first = waveFirstAgentIndex(waveDayIdx);
-  return mod(first + Math.floor(viewDayIdx / 9) - Math.floor(waveDayIdx / 9), 3);
+  let eraIdx = waveEraIndex(waveDayIdx);
+  let agent = waveFirstAgentIndex(waveDayIdx);
+  // Day from which transfers are counted in the current era: for the wave's
+  // own era that's its birth day, for later eras the era's start.
+  let from = waveDayIdx;
+  for (;;) {
+    const era = WAVE_ERAS[eraIdx];
+    const next = WAVE_ERAS[eraIdx + 1];
+    const until = next && viewDayIdx >= next.startIdx ? next.startIdx - 1 : viewDayIdx;
+    const L = waveCycleDays(era);
+    const transfers = Math.floor((until - era.startIdx) / L) - Math.floor((from - era.startIdx) / L);
+    const pos = era.order.indexOf(agent);
+    agent = era.order[mod(pos + transfers, era.order.length)];
+    if (until === viewDayIdx) return agent;
+    eraIdx += 1;
+    from = WAVE_ERAS[eraIdx].startIdx;
+  }
+}
+
+// True if waves change hands on dayIdx (era starts are not transfers).
+export function isWaveTransferDay(dayIdx: number): boolean {
+  const era = waveEraForDay(dayIdx);
+  const offset = dayIdx - era.startIdx;
+  return offset > 0 && offset % waveCycleDays(era) === 0;
+}
+
+// Cycle number (1-based) of dayIdx, counted across all eras.
+export function waveCycleNumber(dayIdx: number): number {
+  const eraIdx = waveEraIndex(dayIdx);
+  let n = 0;
+  for (let i = 0; i < eraIdx; i++) {
+    n += Math.ceil((WAVE_ERAS[i + 1].startIdx - WAVE_ERAS[i].startIdx) / waveCycleDays(WAVE_ERAS[i]));
+  }
+  const era = WAVE_ERAS[eraIdx];
+  return n + Math.floor((dayIdx - era.startIdx) / waveCycleDays(era)) + 1;
 }
 
 function utcMsForDate(dateStr: string): number {
@@ -247,14 +327,23 @@ export async function loadRosters(): Promise<Rosters | null> {
   return { eras, current: eras[eras.length - 1], legacy: loaded[ERAS.length] };
 }
 
-export async function loadWaveRoster(): Promise<RosterUser[] | null> {
-  const users = await getRotationUsers(WAVE_AGENT_EMAILS);
-  if (users.length !== WAVE_AGENT_EMAILS.length) {
+async function loadFullRoster(label: string, emails: string[]): Promise<RosterUser[] | null> {
+  const users = await getRotationUsers(emails);
+  if (users.length !== emails.length) {
     const found = new Set(users.map((u) => u.email));
-    console.error('Wave roster incomplete, missing:', WAVE_AGENT_EMAILS.filter((e) => !found.has(e)));
+    console.error(`${label} roster incomplete, missing:`, emails.filter((e) => !found.has(e)));
     return null;
   }
   return users;
+}
+
+// Indexed like WAVE_AGENT_EMAILS (null if any account is missing).
+export function loadWaveRoster(): Promise<RosterUser[] | null> {
+  return loadFullRoster('Wave', WAVE_AGENT_EMAILS);
+}
+
+function loadRedistribRoster(): Promise<RosterUser[] | null> {
+  return loadFullRoster('Redistribution', REDISTRIB_AGENT_EMAILS);
 }
 
 function baseAssigneeForDate(dateStr: string, rosters: Rosters): RosterUser {
@@ -299,7 +388,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     const waveRoster = isWaveMonth ? await loadWaveRoster() : null;
     if (isWaveMonth && !waveRoster) {
-      return res.status(500).json({ error: 'Wave roster incomplete — check that Diana, Tetyana and Yana accounts exist' });
+      return res.status(500).json({ error: 'Wave roster incomplete — check that Diana, Tetyana, Yana and Daria accounts exist' });
     }
 
     // For mixed months (Oct 2026 straddles no boundary since wave starts Nov 1),
@@ -357,9 +446,13 @@ router.get('/', async (req: Request, res: Response) => {
     let redistribution: object[] = [];
     let redistributionPeriod: object | null = null;
 
-    if (hasWaveDays && waveRosterForMonth) {
-      // Wave era (Nov 2026+): monthly formula with the 3 wave agents.
-      redistribution = computeMonthlyRedistribution(year, month, waveRosterForMonth);
+    if (hasWaveDays) {
+      // Wave era (Nov 2026+): monthly formula with the redistribution roster.
+      const redistribRoster = await loadRedistribRoster();
+      if (!redistribRoster) {
+        return res.status(500).json({ error: 'Redistribution roster incomplete' });
+      }
+      redistribution = computeMonthlyRedistribution(year, month, redistribRoster);
       const periodStartMs = Date.UTC(year, month - 1, 1);
       const periodEndMs   = Date.UTC(year, month, 1) - MS_PER_DAY;
       const nextMs        = Date.UTC(year, month, 1); // 1st of next month
@@ -391,7 +484,8 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     // ── Calendar agents ──────────────────────────────────────────────────────
-    // For wave months: the 3 wave agents in rotation order.
+    // For wave months: every wave agent, indexed like WAVE_AGENT_EMAILS
+    // (firstAgentIndex points into this list).
     // For legacy months: every roster in effect on any day of the month.
     let calendarAgentsMap = new Map<string, RosterUser>();
     if (hasWaveDays && waveRosterForMonth) {
