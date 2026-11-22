@@ -98,6 +98,10 @@ export async function computeAgentStatsForRange(start: Date, end: Date): Promise
   for (const ev of calendarEvents) {
     const key = utcDateKey(ev.eventDate);
     if (!storedByDateAgent[key]) storedByDateAgent[key] = {};
+    // A real event outranks a SHIFT_REASSIGNED marker for the same agent/day,
+    // so a leftover marker can never hide a shift or leave that does exist.
+    const prev = storedByDateAgent[key][ev.agentId];
+    if (prev && prev.leaveType !== SHIFT_REASSIGNED && ev.leaveType === SHIFT_REASSIGNED) continue;
     storedByDateAgent[key][ev.agentId] = ev;
   }
 

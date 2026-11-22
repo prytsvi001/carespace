@@ -11,7 +11,8 @@ export const ROTATION_BLOCKS = [
 
 // Internal-only CalendarEvent.leaveType marker (never user-selectable, never
 // returned by GET /api/calendar) — stamped by PATCH /api/calendar/:id/reschedule
-// on a rotation agent's native day when their SHIFT is dragged to another day.
+// on a rotation agent's native day when their SHIFT is dragged to another day
+// or deleted.
 // Tells statsHelpers.ts's rotation fallback that this day was vacated, so it
 // stops crediting a shift nobody works anymore on top of the one now counted
 // (as an "extra shift") on the day it moved to.

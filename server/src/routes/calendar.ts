@@ -5,6 +5,44 @@ import { getRotationPair, SHIFT_REASSIGNED } from '../rotationSchedule';
 
 const router = Router();
 
+type EventWithAgentName = { agentId: string; eventDate: Date; leaveType: string; agent: { name: string } };
+
+function isNativeRotationShift(ev: EventWithAgentName): boolean {
+  if (ev.leaveType !== 'SHIFT') return false;
+  const pair = getRotationPair(ev.eventDate);
+  return !!pair && (pair.morning === ev.agent.name || pair.night === ev.agent.name);
+}
+
+// Stamp a SHIFT_REASSIGNED marker on a rotation agent's native day once their
+// SHIFT there is gone (dragged away or deleted). statsHelpers.ts credits
+// rotation shifts from the schedule, not from stored rows, so without the
+// marker the vacated shift keeps counting toward the original agent's hours.
+async function markVacatedRotationDay(ev: EventWithAgentName, note: string) {
+  if (!isNativeRotationShift(ev)) return;
+  const existing = await prisma.calendarEvent.findFirst({
+    where: { agentId: ev.agentId, eventDate: ev.eventDate, leaveType: SHIFT_REASSIGNED },
+  });
+  if (existing) return;
+  await prisma.calendarEvent.create({
+    data: {
+      agentId: ev.agentId,
+      eventDate: ev.eventDate,
+      leaveType: SHIFT_REASSIGNED,
+      shiftType: null,
+      isExtraShift: false,
+      notes: note,
+    },
+  });
+}
+
+// The agent got an event back on a day previously marked vacated (re-added or
+// dragged back), so the marker no longer applies.
+async function clearVacatedMarker(agentId: string, eventDate: Date) {
+  await prisma.calendarEvent.deleteMany({
+    where: { agentId, eventDate, leaveType: SHIFT_REASSIGNED },
+  });
+}
+
 // GET /api/calendar?year=2024&month=3
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -47,6 +85,12 @@ router.post('/', async (req: Request, res: Response) => {
     if (!agentId || !eventDate || !leaveType) {
       return res.status(400).json({ error: 'agentId, eventDate, and leaveType are required' });
     }
+
+    if (leaveType === SHIFT_REASSIGNED) {
+      return res.status(400).json({ error: 'Invalid leaveType' });
+    }
+
+    await clearVacatedMarker(agentId, new Date(eventDate));
 
     const event = await prisma.calendarEvent.create({
       data: {
@@ -128,6 +172,7 @@ router.patch('/:id/reschedule', async (req: Request, res: Response) => {
         agentId: dragged.agentId,
         id: { not: dragged.id },
         archived: false,
+        leaveType: { not: SHIFT_REASSIGNED },
         eventDate: newDateObj,
       },
     });
@@ -140,24 +185,10 @@ router.patch('/:id/reschedule', async (req: Request, res: Response) => {
       return res.json({ moved: updatedDragged, swappedWith: updatedTarget });
     }
 
+    await clearVacatedMarker(dragged.agentId, newDateObj);
     const updated = await prisma.calendarEvent.update({ where: { id: dragged.id }, data: { eventDate: newDateObj } });
 
-    if (dragged.leaveType === 'SHIFT') {
-      const pair = getRotationPair(oldDateObj);
-      const isNativeDay = !!pair && (pair.morning === dragged.agent.name || pair.night === dragged.agent.name);
-      if (isNativeDay) {
-        await prisma.calendarEvent.create({
-          data: {
-            agentId: dragged.agentId,
-            eventDate: oldDateObj,
-            leaveType: SHIFT_REASSIGNED,
-            shiftType: null,
-            isExtraShift: false,
-            notes: `Auto: shift moved to ${newDate}`,
-          },
-        });
-      }
-    }
+    await markVacatedRotationDay(dragged, `Auto: shift moved to ${newDate}`);
 
     return res.json({ moved: updated });
   } catch (error) {
@@ -170,10 +201,12 @@ router.patch('/:id/reschedule', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    await prisma.calendarEvent.update({
+    const ev = await prisma.calendarEvent.update({
       where: { id },
       data: { archived: true },
+      include: { agent: { select: { name: true } } },
     });
+    await markVacatedRotationDay(ev, 'Auto: rotation shift deleted');
     res.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -183,7 +216,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 router.delete('/delete/:id', async (req: Request, res: Response) => {
   try {
-    await prisma.calendarEvent.delete({ where: { id: req.params.id } });
+    const ev = await prisma.calendarEvent.delete({
+      where: { id: req.params.id },
+      include: { agent: { select: { name: true } } },
+    });
+    await markVacatedRotationDay(ev, 'Auto: rotation shift deleted');
     res.json({ success: true });
   } catch (error) {
     console.error(error);
