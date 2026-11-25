@@ -81,7 +81,8 @@ router.get('/summary', async (req: Request, res: Response) => {
     }
 
     const agentUsers = await prisma.user.findMany({
-      where: { role: { in: ['agent', 'lead'] }, active: true },
+      // Support team only — Peekviewer-team agents (Anna, Diana, Tetyana, Yana…) have no PDP.
+      where: { role: { in: ['agent', 'lead'] }, active: true, team: 'support' },
       include: {
         pdpPlan: {
           include: { goals: { select: { status: true } } },
