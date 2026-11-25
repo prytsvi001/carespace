@@ -5,7 +5,7 @@ import { sendTelegramMessage } from '../telegram';
 import {
   loadRosters, resolveCurrentAssignee, todayKyivDateStr,
   WAVE_EPOCH, WAVE_EPOCH_UTC_MS_EXPORT, MS_PER_DAY_EXPORT,
-  waveDayIndex, waveFirstAgentIndex, waveOwnerIndex, waveCycleNumber,
+  waveDayIndex, waveFirstAgentIndex, waveOwnerIndex, waveCycleNumber, waveHandoverEra,
   loadWaveRoster,
   getRedistribForNotification, REDISTRIB_EPOCH,
 } from './requestSchedule';
@@ -54,6 +54,22 @@ function buildWaveMessage(agentWaveIndices: number[], todayIdx: number): string 
     ? `📋 Сьогодні (${todayLabel}) починається твоя нова хвиля — це вже цикл №${cycleNum}.`
     : `📋 Сьогодні (${todayLabel}) починається твоя нова хвиля!`;
   return `${header}\nТи зараз опрацьовуєш:\n${rangeLines}`;
+}
+
+// Sent to every agent of a new rotation on its first day when waves were
+// reassigned (someone left). startsNewWave = today's new block is theirs.
+function buildHandoverMessage(
+  takenOver: { fromIdx: number; toIdx: number }[], managed: number[], todayIdx: number, startsNewWave: boolean,
+): string {
+  const todayDate = waveDateFromIndex(todayIdx);
+  const todayLabel = `${todayDate.getUTCDate()} ${UA_MONTHS[todayDate.getUTCMonth()]}`;
+  const lines = [`🔄 З сьогодні (${todayLabel}) — новий розклад хвиль.`];
+  if (takenOver.length) {
+    lines.push(`Тобі передано хвилі:\n${takenOver.map((r) => `• ${formatWaveRange(r.fromIdx, r.toIdx)}`).join('\n')}`);
+  }
+  if (startsNewWave) lines.push('Також сьогодні починається твоя нова хвиля!');
+  lines.push(`Ти зараз опрацьовуєш:\n${groupConsecutive(managed).map(({ start, end }) => `• ${formatWaveRange(start, end)}`).join('\n')}`);
+  return lines.join('\n');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,26 +364,36 @@ router.get('/request-schedule-reminder', async (_req: Request, res: Response) =>
 
       const todayIdx = waveDayIndex(dateStr);
       const firstIdx = waveFirstAgentIndex(todayIdx); // agent receiving new clients today
+      // On a handover day (e.g. 01.12.2026) everyone in the new rotation is
+      // told which waves they took over; otherwise only today's first agent.
+      const handover = waveHandoverEra(todayIdx);
+      const recipients = handover ? handover.order : [firstIdx];
 
-      // Collect all wave day indices this agent currently manages
-      const managed: number[] = [];
-      for (let c = 0; c <= todayIdx; c++) {
-        if (waveOwnerIndex(c, todayIdx) === firstIdx) managed.push(c);
+      for (const agentIdx of recipients) {
+        // All wave day indices this agent currently manages
+        const managed: number[] = [];
+        for (let c = 0; c <= todayIdx; c++) {
+          if (waveOwnerIndex(c, todayIdx) === agentIdx) managed.push(c);
+        }
+
+        const agent = waveRoster[agentIdx];
+        const user = await prisma.user.findUnique({ where: { id: agent.id } });
+        if (!user?.active || !user.telegramChatId) continue;
+
+        try {
+          await prisma.requestScheduleReminderLog.create({ data: { userId: user.id, date: dateStr } });
+        } catch (err: unknown) {
+          if ((err as { code?: string })?.code === 'P2002') continue;
+          throw err;
+        }
+
+        const takenOver = handover?.reassign!.filter((r) => r.agent === agentIdx) ?? [];
+        const text = handover
+          ? buildHandoverMessage(takenOver, managed, todayIdx, agentIdx === firstIdx)
+          : buildWaveMessage(managed, todayIdx);
+        await sendTelegramMessage(user.telegramChatId, text);
+        sent.push(`${user.id}:${dateStr}`);
       }
-
-      const agent = waveRoster[firstIdx];
-      const user = await prisma.user.findUnique({ where: { id: agent.id } });
-      if (!user?.active || !user.telegramChatId) return res.json({ ok: true, sent: [] });
-
-      try {
-        await prisma.requestScheduleReminderLog.create({ data: { userId: user.id, date: dateStr } });
-      } catch (err: unknown) {
-        if ((err as { code?: string })?.code === 'P2002') return res.json({ ok: true, sent: [] });
-        throw err;
-      }
-
-      await sendTelegramMessage(user.telegramChatId, buildWaveMessage(managed, todayIdx));
-      sent.push(`${user.id}:${dateStr}`);
     } else {
       // ── Legacy era ──────────────────────────────────────────────────────
       const rosters = await loadRosters();

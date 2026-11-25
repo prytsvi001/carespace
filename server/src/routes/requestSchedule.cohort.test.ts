@@ -64,11 +64,12 @@ function expectOwners(viewDate: string, owners: Record<string, string[]>) {
   }
 }
 
-console.log('4. New-client blocks from Nov 22:');
+console.log('4. New-client blocks from Nov 22 (Daria era, then 3-agent era from Dec 1):');
 const blocks: [number, string][] = [
   [Date.UTC(2026, 10, 22), 'Daria'], [Date.UTC(2026, 10, 25), 'Tetyana'],
-  [Date.UTC(2026, 10, 28), 'Yana'], [Date.UTC(2026, 11, 1), 'Diana'],
-  [Date.UTC(2026, 11, 4), 'Daria'], [Date.UTC(2026, 11, 7), 'Tetyana'],
+  [Date.UTC(2026, 10, 28), 'Yana'],
+  [Date.UTC(2026, 11, 1), 'Tetyana'], [Date.UTC(2026, 11, 4), 'Yana'],
+  [Date.UTC(2026, 11, 7), 'Diana'], [Date.UTC(2026, 11, 10), 'Tetyana'],
 ];
 for (const [ms, agent] of blocks) {
   for (let k = 0; k < 3; k++) {
@@ -85,36 +86,56 @@ expectOwners(nov(22), {
   Daria: [nov(22)],
 });
 
-console.log('6. Dec 3 view date (eve of first 4-agent transfer):');
-expectOwners(dec(3), {
-  Yana: [...[1, 2, 3, 13, 14, 15, 28, 29, 30].map(nov)],
-  Diana: [...[4, 5, 6, 16, 17, 18, 19, 20, 21].map(nov), ...[1, 2, 3].map(dec)],
+console.log('6. Nov 30 view date (last day of the Daria era):');
+expectOwners(nov(30), {
+  Yana: [1, 2, 3, 13, 14, 15, 28, 29, 30].map(nov),
+  Diana: [4, 5, 6, 16, 17, 18, 19, 20, 21].map(nov),
   Tetyana: [7, 8, 9, 10, 11, 12, 25, 26, 27].map(nov),
   Daria: [22, 23, 24].map(nov),
 });
 
-console.log('7. Dec 4 view date (transfer Diana→Daria→Tetyana→Yana→Diana):');
-expectOwners(dec(4), {
-  Diana: [1, 2, 3, 13, 14, 15, 28, 29, 30].map(nov),
-  Daria: [...[4, 5, 6, 16, 17, 18, 19, 20, 21].map(nov), ...[1, 2, 3, 4].map(dec)],
-  Yana: [7, 8, 9, 10, 11, 12, 25, 26, 27].map(nov),
-  Tetyana: [22, 23, 24].map(nov),
+// ─── 01.12 — Daria left: her 19–30.11 waves are split ───────────────────────
+console.log('7. Dec 1 view date (handover, no transfer):');
+expectOwners(dec(1), {
+  Diana: [4, 5, 6, 16, 17, 18, 19, 20, 21, 28, 29, 30].map(nov),
+  Tetyana: [...[7, 8, 9, 10, 11, 12, 22, 23, 24].map(nov), dec(1)],
+  Yana: [1, 2, 3, 13, 14, 15, 25, 26, 27].map(nov),
 });
 
-console.log('8. Dec 16 view date (second 4-agent transfer):');
-expectOwners(dec(16), {
-  Daria: [...[1, 2, 3, 13, 14, 15, 28, 29, 30].map(nov), ...[13, 14, 15, 16].map(dec)],
-  Tetyana: [...[4, 5, 6, 16, 17, 18, 19, 20, 21].map(nov), ...[1, 2, 3, 4, 5, 6].map(dec)],
-  Diana: [...[7, 8, 9, 10, 11, 12, 25, 26, 27].map(nov), ...[10, 11, 12].map(dec)],
-  Yana: [...[22, 23, 24].map(nov), ...[7, 8, 9].map(dec)],
+console.log('8. Dec 9 view date (eve of first 3-agent transfer — 15 wave-days each):');
+expectOwners(dec(9), {
+  Diana: [...[4, 5, 6, 16, 17, 18, 19, 20, 21, 28, 29, 30].map(nov), ...[7, 8, 9].map(dec)],
+  Tetyana: [...[7, 8, 9, 10, 11, 12, 22, 23, 24].map(nov), ...[1, 2, 3].map(dec)],
+  Yana: [...[1, 2, 3, 13, 14, 15, 25, 26, 27].map(nov), ...[4, 5, 6].map(dec)],
 });
+
+console.log('9. Dec 10 view date (transfer Tetyana→Yana→Diana→Tetyana):');
+expectOwners(dec(10), {
+  Tetyana: [...[4, 5, 6, 16, 17, 18, 19, 20, 21, 28, 29, 30].map(nov), ...[7, 8, 9, 10].map(dec)],
+  Yana: [...[7, 8, 9, 10, 11, 12, 22, 23, 24].map(nov), ...[1, 2, 3].map(dec)],
+  Diana: [...[1, 2, 3, 13, 14, 15, 25, 26, 27].map(nov), ...[4, 5, 6].map(dec)],
+});
+
+console.log('10. Dec 19 view date (second 3-agent transfer):');
+expectOwners(dec(19), {
+  Yana: [...[4, 5, 6, 16, 17, 18, 19, 20, 21, 28, 29, 30].map(nov), ...[7, 8, 9, 10, 11, 12].map(dec)],
+  Diana: [...[7, 8, 9, 10, 11, 12, 22, 23, 24].map(nov), ...[1, 2, 3, 13, 14, 15].map(dec)],
+  Tetyana: [...[1, 2, 3, 13, 14, 15, 25, 26, 27].map(nov), ...[4, 5, 6, 16, 17, 18, 19].map(dec)],
+});
+
+console.log('11. Nobody owns anything as Daria from Dec 1:');
+for (let w = 0; w <= dayIndex(dec(31)); w++) {
+  for (const v of [dec(1), dec(15), dec(31)]) {
+    if (w <= dayIndex(v)) check(`wave ${w} on ${v} not Daria`, String(AGENTS[waveOwnerIndex(w, dayIndex(v))] !== 'Daria'), 'true');
+  }
+}
 
 // ─── Transfer days & cycle numbers ───────────────────────────────────────────
-console.log('9. Transfer days:');
-for (const d of [nov(10), nov(19), dec(4), dec(16), dec(28)]) check(`${d} is transfer`, String(isWaveTransferDay(dayIndex(d))), 'true');
-for (const d of [nov(1), nov(22), nov(28), dec(7)]) check(`${d} is not transfer`, String(isWaveTransferDay(dayIndex(d))), 'false');
-console.log('10. Cycle numbers:');
-for (const [d, n] of [[nov(1), 1], [nov(10), 2], [nov(21), 3], [nov(22), 4], [dec(3), 4], [dec(4), 5]] as const) {
+console.log('12. Transfer days:');
+for (const d of [nov(10), nov(19), dec(10), dec(19), dec(28)]) check(`${d} is transfer`, String(isWaveTransferDay(dayIndex(d))), 'true');
+for (const d of [nov(1), nov(22), nov(28), dec(1), dec(4), dec(16)]) check(`${d} is not transfer`, String(isWaveTransferDay(dayIndex(d))), 'false');
+console.log('13. Cycle numbers:');
+for (const [d, n] of [[nov(1), 1], [nov(10), 2], [nov(21), 3], [nov(22), 4], [nov(30), 4], [dec(1), 5], [dec(9), 5], [dec(10), 6]] as const) {
   check(`${d} cycle`, String(waveCycleNumber(dayIndex(d))), String(n));
 }
 

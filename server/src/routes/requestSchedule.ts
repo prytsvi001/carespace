@@ -155,16 +155,23 @@ export async function getRedistribForNotification(
 //                (transfers 10.11, 19.11)
 //   22.11.2026 — Daria Biletska joins; 4 agents, 12-day cycles:
 //                Daria → Tetyana → Yana → Diana → Daria…
-//                (blocks: Daria 22–24.11, Tetyana 25–27, Yana 28–30,
-//                Diana 01–03.12; transfers 04.12, 16.12, 28.12…)
+//                (blocks: Daria 22–24.11, Tetyana 25–27, Yana 28–30)
+//   01.12.2026 — Daria left; 3 agents, 9-day cycles:
+//                Tetyana → Yana → Diana → Tetyana…
+//                (blocks: Tetyana 01–03.12, Yana 04–06, Diana 07–09;
+//                transfers 10.12, 19.12, 28.12…). Daria actually worked
+//                every wave of 19–30.11, so on 01.12 those waves are split
+//                as if this order had already run since 19.11:
+//                19–21 Diana, 22–24 Tetyana, 25–27 Yana, 28–30 Diana
+//                (everyone holds 12 wave-days once Yana's 04–06 block ends).
 // An era start is not a transfer: waves born in an earlier era stay with
-// whoever held them on the era's eve, then move along the new era's order at
-// its transfers (so the 28.11 transfer of the 3-agent era never happens).
+// whoever held them on the era's eve (unless the era's `reassign` says
+// otherwise), then move along the new era's order at its transfers.
 //
 // Agent indices everywhere (API firstAgentIndex, cron) point into
 // WAVE_AGENT_EMAILS, which only ever grows so old indices stay stable.
 // Every agent of an era must still be in the next era's order — someone
-// leaving needs an explicit rule for who takes over their waves.
+// leaving needs a `reassign` rule for who takes over their waves.
 export const WAVE_EPOCH = '2026-11-01';
 export const REDISTRIB_EPOCH = { year: 2026, month: 11 } as const;
 const WAVE_EPOCH_UTC_MS = Date.UTC(2026, 10, 1);
@@ -173,12 +180,15 @@ const WAVE_AGENT_EMAILS = [
   'diana_semenuk@struktura.io',      // index 0 — Diana Semeniuk
   'tetiana_veremeenko@struktura.io', // index 1 — Tetyana Veremeyenko
   'yana_fedorova@struktura.io',      // index 2 — Yana Fedorova
-  'daria_biletska@struktura.io',     // index 3 — Daria Biletska (from 22.11.2026)
+  'daria_biletska@struktura.io',     // index 3 — Daria Biletska (22–30.11.2026 only; left)
 ];
 
 // startIdx = wave day index of the era's first day; order = indices into
 // WAVE_AGENT_EMAILS in rotation order (order[0] gets the era's first block).
-export type WaveEra = { start: string; startIdx: number; order: number[] };
+// reassign = waves born on wave days fromIdx..toIdx (inclusive) that pass to
+// `agent` on the era's first day, overriding whoever held them on its eve.
+export type WaveReassign = { fromIdx: number; toIdx: number; agent: number };
+export type WaveEra = { start: string; startIdx: number; order: number[]; reassign?: WaveReassign[] };
 // Profile redistribution roster; BASE_REDISTRIB indices point into this.
 const REDISTRIB_AGENT_EMAILS = [
   'diana_semenuk@struktura.io',      // 0 — Diana Semeniuk
@@ -189,7 +199,23 @@ const REDISTRIB_AGENT_EMAILS = [
 export const WAVE_ERAS: WaveEra[] = [
   { start: '2026-11-01', startIdx: 0,  order: [0, 1, 2] },
   { start: '2026-11-22', startIdx: 21, order: [3, 1, 2, 0] },
+  {
+    start: '2026-12-01', startIdx: 30, order: [1, 2, 0],
+    reassign: [
+      { fromIdx: 18, toIdx: 20, agent: 0 }, // 19–21.11 → Diana
+      { fromIdx: 21, toIdx: 23, agent: 1 }, // 22–24.11 → Tetyana
+      { fromIdx: 24, toIdx: 26, agent: 2 }, // 25–27.11 → Yana
+      { fromIdx: 27, toIdx: 29, agent: 0 }, // 28–30.11 → Diana
+    ],
+  },
 ];
+
+// Era starting exactly on dayIdx that hands waves over, if any (for the
+// 01.12-style "your waves changed" notice).
+export function waveHandoverEra(dayIdx: number): WaveEra | null {
+  const era = WAVE_ERAS.find((e) => e.startIdx === dayIdx);
+  return era?.reassign?.length ? era : null;
+}
 
 export const WAVE_EPOCH_UTC_MS_EXPORT = WAVE_EPOCH_UTC_MS;
 export { MS_PER_DAY as MS_PER_DAY_EXPORT };
@@ -234,6 +260,8 @@ export function waveOwnerIndex(waveDayIdx: number, viewDayIdx: number): number {
     if (until === viewDayIdx) return agent;
     eraIdx += 1;
     from = WAVE_ERAS[eraIdx].startIdx;
+    const r = WAVE_ERAS[eraIdx].reassign?.find((x) => waveDayIdx >= x.fromIdx && waveDayIdx <= x.toIdx);
+    if (r) agent = r.agent;
   }
 }
 

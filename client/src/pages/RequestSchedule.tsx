@@ -45,17 +45,27 @@ const shortLabel = (name: string) => SHORT_LABELS[name] ?? name.split(' ')[0];
 // Agent indices point into calendarAgents (server's WAVE_AGENT_EMAILS order:
 // 0 Diana, 1 Tetyana, 2 Yana, 3 Daria). Each era rotates 3-day blocks through
 // its `order`; every 3·N days all waves pass to the next agent in that order.
-// An era's start is not a transfer.
+// An era's start is not a transfer; `reassign` hands specific waves to a new
+// owner on the era's first day (someone left).
 
 const WAVE_EPOCH = '2026-11-01';
 const WAVE_EPOCH_MS = Date.UTC(2026, 10, 1);
 const MS_PER_DAY = 86_400_000;
 const WAVE_BLOCK_DAYS = 3;
 
-type WaveEra = { startIdx: number; order: number[] };
+type WaveEra = { startIdx: number; order: number[]; reassign?: { fromIdx: number; toIdx: number; agent: number }[] };
 const WAVE_ERAS: WaveEra[] = [
   { startIdx: 0,  order: [0, 1, 2] },    // 01.11.2026: Diana → Tetyana → Yana
   { startIdx: 21, order: [3, 1, 2, 0] }, // 22.11.2026: Daria → Tetyana → Yana → Diana
+  {                                      // 01.12.2026: Daria left; Tetyana → Yana → Diana
+    startIdx: 30, order: [1, 2, 0],
+    reassign: [                          // Daria's 19–30.11 waves
+      { fromIdx: 18, toIdx: 20, agent: 0 }, // 19–21.11 → Diana
+      { fromIdx: 21, toIdx: 23, agent: 1 }, // 22–24.11 → Tetyana
+      { fromIdx: 24, toIdx: 26, agent: 2 }, // 25–27.11 → Yana
+      { fromIdx: 27, toIdx: 29, agent: 0 }, // 28–30.11 → Diana
+    ],
+  },
 ];
 const WAVE_AGENT_COUNT = 4;
 
@@ -101,7 +111,15 @@ function ownerIdx(waveDayIdx: number, viewDayIdx: number): number {
     if (until === viewDayIdx) return agent;
     ei += 1;
     from = WAVE_ERAS[ei].startIdx;
+    const r = WAVE_ERAS[ei].reassign?.find((x) => waveDayIdx >= x.fromIdx && waveDayIdx <= x.toIdx);
+    if (r) agent = r.agent;
   }
+}
+
+// Era starting exactly on viewDayIdx that reassigns waves, if any.
+function handoverEra(viewDayIdx: number): WaveEra | null {
+  const era = WAVE_ERAS.find((e) => e.startIdx === viewDayIdx);
+  return era?.reassign?.length ? era : null;
 }
 
 // First transfer day strictly after viewDayIdx.
@@ -291,6 +309,7 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
   const cycleNum = cycleNumber(viewIdx);
   const nextTransfer = nextTransferDateStr(viewIdx);
   const isTransfer = isTransferDay(viewIdx);
+  const handover = handoverEra(viewIdx);
   const daysUntilNext = toDayIndex(nextTransfer) - viewIdx;
 
   const step = useCallback((delta: number) => {
@@ -324,6 +343,23 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
               const a = calendarAgents[agentIdx];
               const nextAgent = calendarAgents[order[(i + 1) % order.length]];
               return `${a?.userName.split(' ')[0]} → ${nextAgent?.userName.split(' ')[0]}`;
+            }).join(', ')}
+          </span>
+        </div>
+      )}
+
+      {/* Handover banner (new rotation that reassigns waves) */}
+      {handover && (
+        <div
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold"
+          style={{ backgroundColor: 'rgba(161,249,110,0.22)', border: '1px solid rgba(161,249,110,0.55)', color: '#0E0E0E' }}
+        >
+          <Megaphone size={16} strokeWidth={1.8} className="shrink-0" style={{ color: '#166534' }} />
+          <span>
+            Новий розклад хвиль. Передано:{' '}
+            {handover.reassign!.map((r) => {
+              const range = `${format(parseISO(dateStrFromDayIndex(r.fromIdx)), 'd')}–${format(parseISO(dateStrFromDayIndex(r.toIdx)), 'd.MM')}`;
+              return `${range} → ${calendarAgents[r.agent]?.userName.split(' ')[0]}`;
             }).join(', ')}
           </span>
         </div>
@@ -483,6 +519,15 @@ export default function RequestSchedule() {
 
   // Wave agents in rotation order (only present for wave months)
   const waveAgents = isWaveMonth ? data.calendarAgents : [];
+  // Legend shows only agents in rotation on some day of this month (Daria
+  // stays in calendarAgents so indices hold, but drops out from December).
+  const monthStartIdx = toDayIndex(waveMonthFirst);
+  const monthEndIdx = toDayIndex(format(endOfMonth(currentMonth), 'yyyy-MM-dd'));
+  const legendWaveAgents = waveAgents.filter((_, i) =>
+    WAVE_ERAS.some((e, ei) => {
+      const nextStart = WAVE_ERAS[ei + 1]?.startIdx ?? Infinity;
+      return e.order.includes(i) && e.startIdx <= monthEndIdx && nextStart > monthStartIdx;
+    }));
 
   // Legacy agents for legend (non-wave months)
   const legacyAgents = isWaveMonth ? [] : data.calendarAgents;
@@ -521,7 +566,7 @@ export default function RequestSchedule() {
 
       {/* Agent legend */}
       <div className="flex flex-wrap gap-2">
-        {(isWaveMonth ? waveAgents : legacyAgents).map((a) => {
+        {(isWaveMonth ? legendWaveAgents : legacyAgents).map((a) => {
           const s = styleFor(a.userName);
           return (
             <span key={a.userId} className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border ${s.bg} ${s.text} ${s.border}`}>
