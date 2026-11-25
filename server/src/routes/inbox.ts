@@ -109,7 +109,8 @@ router.get('/unread-count', async (req: Request, res: Response) => {
   try {
     const userId = (req.user as Express.User).id;
     const [messageCount, updateCount, issueCount] = await Promise.all([
-      prisma.inboxMessage.count({ where: { receiverId: userId, read: false } }),
+      // Deleted-unread messages are invisible in the list, so they must not count here.
+      prisma.inboxMessage.count({ where: { receiverId: userId, read: false, deletedByReceiver: false } }),
       prisma.updateRead.count({ where: { userId, read: false } }),
       // Open Peekviewer issues stay in the badge until someone closes them.
       prisma.peekviewerIssue.count({ where: { recipientIds: { contains: userId }, status: 'open' } }),
@@ -228,13 +229,15 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     const deletedBySender = msg.senderId === userId ? true : msg.deletedBySender;
     const deletedByReceiver = msg.receiverId === userId ? true : msg.deletedByReceiver;
+    // Deleting as the receiver also marks it read, so it can't linger as unread.
+    const read = msg.receiverId === userId ? true : msg.read;
 
     if (deletedBySender && deletedByReceiver) {
       await prisma.inboxMessage.delete({ where: { id: msg.id } });
     } else {
       await prisma.inboxMessage.update({
         where: { id: msg.id },
-        data: { deletedBySender, deletedByReceiver },
+        data: { deletedBySender, deletedByReceiver, read },
       });
     }
 
