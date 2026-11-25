@@ -45,27 +45,19 @@ const shortLabel = (name: string) => SHORT_LABELS[name] ?? name.split(' ')[0];
 // Agent indices point into calendarAgents (server's WAVE_AGENT_EMAILS order:
 // 0 Diana, 1 Tetyana, 2 Yana, 3 Daria). Each era rotates 3-day blocks through
 // its `order`; every 3·N days all waves pass to the next agent in that order.
-// An era's start is not a transfer; `reassign` hands specific waves to a new
-// owner on the era's first day (someone left).
+// An era's start is not a transfer. A `fresh` era starts the schedule over:
+// earlier waves stay frozen with their owner on its eve, cycles restart at 1.
 
 const WAVE_EPOCH = '2026-11-01';
 const WAVE_EPOCH_MS = Date.UTC(2026, 10, 1);
 const MS_PER_DAY = 86_400_000;
 const WAVE_BLOCK_DAYS = 3;
 
-type WaveEra = { startIdx: number; order: number[]; reassign?: { fromIdx: number; toIdx: number; agent: number }[] };
+type WaveEra = { startIdx: number; order: number[]; fresh?: boolean };
 const WAVE_ERAS: WaveEra[] = [
   { startIdx: 0,  order: [0, 1, 2] },    // 01.11.2026: Diana → Tetyana → Yana
   { startIdx: 21, order: [3, 1, 2, 0] }, // 22.11.2026: Daria → Tetyana → Yana → Diana
-  {                                      // 01.12.2026: Daria left; Tetyana → Yana → Diana
-    startIdx: 30, order: [1, 2, 0],
-    reassign: [                          // Daria's 19–30.11 waves
-      { fromIdx: 18, toIdx: 20, agent: 0 }, // 19–21.11 → Diana
-      { fromIdx: 21, toIdx: 23, agent: 1 }, // 22–24.11 → Tetyana
-      { fromIdx: 24, toIdx: 26, agent: 2 }, // 25–27.11 → Yana
-      { fromIdx: 27, toIdx: 29, agent: 0 }, // 28–30.11 → Diana
-    ],
-  },
+  { startIdx: 30, order: [1, 2, 0], fresh: true }, // 01.12.2026: new schedule, Tetyana → Yana → Diana
 ];
 const WAVE_AGENT_COUNT = 4;
 
@@ -97,7 +89,14 @@ function firstAgentIdx(waveDayIdx: number): number {
   return era.order[modulo(Math.floor((waveDayIdx - era.startIdx) / WAVE_BLOCK_DAYS), era.order.length)];
 }
 
+// View day clamped to the eve of a fresh era that ended the wave's schedule.
+function frozenView(waveDayIdx: number, viewDayIdx: number): number {
+  const fresh = WAVE_ERAS.find((e) => e.fresh && e.startIdx > waveDayIdx && e.startIdx <= viewDayIdx);
+  return fresh ? fresh.startIdx - 1 : viewDayIdx;
+}
+
 function ownerIdx(waveDayIdx: number, viewDayIdx: number): number {
+  viewDayIdx = frozenView(waveDayIdx, viewDayIdx);
   let ei = eraIndex(waveDayIdx);
   let agent = firstAgentIdx(waveDayIdx);
   let from = waveDayIdx;
@@ -111,15 +110,12 @@ function ownerIdx(waveDayIdx: number, viewDayIdx: number): number {
     if (until === viewDayIdx) return agent;
     ei += 1;
     from = WAVE_ERAS[ei].startIdx;
-    const r = WAVE_ERAS[ei].reassign?.find((x) => waveDayIdx >= x.fromIdx && waveDayIdx <= x.toIdx);
-    if (r) agent = r.agent;
   }
 }
 
-// Era starting exactly on viewDayIdx that reassigns waves, if any.
-function handoverEra(viewDayIdx: number): WaveEra | null {
-  const era = WAVE_ERAS.find((e) => e.startIdx === viewDayIdx);
-  return era?.reassign?.length ? era : null;
+// True if a fresh era (new schedule) starts on viewDayIdx.
+function isFreshStart(viewDayIdx: number): boolean {
+  return WAVE_ERAS.some((e) => e.fresh && e.startIdx === viewDayIdx);
 }
 
 // First transfer day strictly after viewDayIdx.
@@ -146,7 +142,9 @@ function isTransferDay(viewDayIdx: number): boolean {
 function cycleNumber(viewDayIdx: number): number {
   const ei = eraIndex(viewDayIdx);
   let n = 0;
-  for (let i = 0; i < ei; i++) {
+  let firstEra = 0; // counting restarts at the latest fresh era
+  WAVE_ERAS.forEach((e, i) => { if (e.fresh && i <= ei) firstEra = i; });
+  for (let i = firstEra; i < ei; i++) {
     n += Math.ceil((WAVE_ERAS[i + 1].startIdx - WAVE_ERAS[i].startIdx) / cycleDays(WAVE_ERAS[i]));
   }
   const era = WAVE_ERAS[ei];
@@ -226,7 +224,8 @@ function WaveDayCell({ date, day, calendarAgents, viewDateStr, isCurrentMonth, o
       chips = previewName ? [{ name: previewName, status: 'preview' }] : [];
     } else {
       const owner = ownerIdx(day.waveDayIndex, viewIdx);
-      const inRotation = eraOrder(viewIdx);
+      // A past-schedule wave shows the agents of its own (frozen) rotation.
+      const inRotation = eraOrder(frozenView(day.waveDayIndex, viewIdx));
       chips = calendarAgents
         .map((a, i) => ({ a, i }))
         .filter(({ i }) => inRotation.includes(i))
@@ -309,7 +308,7 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
   const cycleNum = cycleNumber(viewIdx);
   const nextTransfer = nextTransferDateStr(viewIdx);
   const isTransfer = isTransferDay(viewIdx);
-  const handover = handoverEra(viewIdx);
+  const freshStart = isFreshStart(viewIdx);
   const daysUntilNext = toDayIndex(nextTransfer) - viewIdx;
 
   const step = useCallback((delta: number) => {
@@ -348,19 +347,16 @@ function ViewDatePanel({ viewDateStr, calendarAgents, onSetViewDate }: {
         </div>
       )}
 
-      {/* Handover banner (new rotation that reassigns waves) */}
-      {handover && (
+      {/* New-schedule banner (fresh era starts today) */}
+      {freshStart && (
         <div
           className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold"
           style={{ backgroundColor: 'rgba(161,249,110,0.22)', border: '1px solid rgba(161,249,110,0.55)', color: '#0E0E0E' }}
         >
           <Megaphone size={16} strokeWidth={1.8} className="shrink-0" style={{ color: '#166534' }} />
           <span>
-            Новий розклад хвиль. Передано:{' '}
-            {handover.reassign!.map((r) => {
-              const range = `${format(parseISO(dateStrFromDayIndex(r.fromIdx)), 'd')}–${format(parseISO(dateStrFromDayIndex(r.toIdx)), 'd.MM')}`;
-              return `${range} → ${calendarAgents[r.agent]?.userName.split(' ')[0]}`;
-            }).join(', ')}
+            Сьогодні починається новий графік:{' '}
+            {eraOrder(viewIdx).map((i) => calendarAgents[i]?.userName.split(' ')[0]).join(' → ')}
           </span>
         </div>
       )}

@@ -2,7 +2,7 @@
 // Reference tests for the wave rotation formula.
 // Run with:  npx tsx server/src/routes/requestSchedule.wave.test.ts
 import assert from 'assert/strict';
-import { waveFirstAgentIndex, waveOwnerIndex, isWaveTransferDay, waveCycleNumber } from './requestSchedule';
+import { waveFirstAgentIndex, waveOwnerIndex, isWaveTransferDay, waveCycleNumber, waveScheduleStartIdx } from './requestSchedule';
 
 const COHORT_EPOCH_MS = Date.UTC(2026, 10, 1);
 const MS_PER_DAY = 86_400_000;
@@ -94,48 +94,55 @@ expectOwners(nov(30), {
   Daria: [22, 23, 24].map(nov),
 });
 
-// ─── 01.12 — Daria left: her 19–30.11 waves are split ───────────────────────
-console.log('7. Dec 1 view date (handover, no transfer):');
-expectOwners(dec(1), {
-  Diana: [4, 5, 6, 16, 17, 18, 19, 20, 21, 28, 29, 30].map(nov),
-  Tetyana: [...[7, 8, 9, 10, 11, 12, 22, 23, 24].map(nov), dec(1)],
-  Yana: [1, 2, 3, 13, 14, 15, 25, 26, 27].map(nov),
-});
+// ─── 01.12 — new schedule from scratch (Daria left) ─────────────────────────
+// November waves stay frozen with their 30.11 owners; December waves rotate
+// Tetyana → Yana → Diana with 9-day cycles.
+const NOV_FROZEN = {
+  Yana: [1, 2, 3, 13, 14, 15, 28, 29, 30].map(nov),
+  Diana: [4, 5, 6, 16, 17, 18, 19, 20, 21].map(nov),
+  Tetyana: [7, 8, 9, 10, 11, 12, 25, 26, 27].map(nov),
+  Daria: [22, 23, 24].map(nov),
+};
 
-console.log('8. Dec 9 view date (eve of first 3-agent transfer — 15 wave-days each):');
+console.log('7. Dec 1 view date (fresh start):');
+expectOwners(dec(1), { ...NOV_FROZEN, Tetyana: [...NOV_FROZEN.Tetyana, dec(1)] });
+
+console.log('8. Dec 9 view date (eve of first transfer):');
 expectOwners(dec(9), {
-  Diana: [...[4, 5, 6, 16, 17, 18, 19, 20, 21, 28, 29, 30].map(nov), ...[7, 8, 9].map(dec)],
-  Tetyana: [...[7, 8, 9, 10, 11, 12, 22, 23, 24].map(nov), ...[1, 2, 3].map(dec)],
-  Yana: [...[1, 2, 3, 13, 14, 15, 25, 26, 27].map(nov), ...[4, 5, 6].map(dec)],
+  Tetyana: [1, 2, 3].map(dec), Yana: [4, 5, 6].map(dec), Diana: [7, 8, 9].map(dec),
 });
 
-console.log('9. Dec 10 view date (transfer Tetyana→Yana→Diana→Tetyana):');
+console.log('9. Dec 10 view date (transfer Tetyana→Yana→Diana→Tetyana; November untouched):');
 expectOwners(dec(10), {
-  Tetyana: [...[4, 5, 6, 16, 17, 18, 19, 20, 21, 28, 29, 30].map(nov), ...[7, 8, 9, 10].map(dec)],
-  Yana: [...[7, 8, 9, 10, 11, 12, 22, 23, 24].map(nov), ...[1, 2, 3].map(dec)],
-  Diana: [...[1, 2, 3, 13, 14, 15, 25, 26, 27].map(nov), ...[4, 5, 6].map(dec)],
+  Tetyana: [7, 8, 9, 10].map(dec), Yana: [1, 2, 3].map(dec), Diana: [4, 5, 6].map(dec),
 });
+expectOwners(dec(10), NOV_FROZEN);
 
-console.log('10. Dec 19 view date (second 3-agent transfer):');
+console.log('10. Dec 19 view date (second transfer):');
 expectOwners(dec(19), {
-  Yana: [...[4, 5, 6, 16, 17, 18, 19, 20, 21, 28, 29, 30].map(nov), ...[7, 8, 9, 10, 11, 12].map(dec)],
-  Diana: [...[7, 8, 9, 10, 11, 12, 22, 23, 24].map(nov), ...[1, 2, 3, 13, 14, 15].map(dec)],
-  Tetyana: [...[1, 2, 3, 13, 14, 15, 25, 26, 27].map(nov), ...[4, 5, 6, 16, 17, 18, 19].map(dec)],
+  Yana: [7, 8, 9, 10, 11, 12].map(dec),
+  Diana: [1, 2, 3, 13, 14, 15].map(dec),
+  Tetyana: [4, 5, 6, 16, 17, 18, 19].map(dec),
 });
+expectOwners(dec(31), NOV_FROZEN);
 
-console.log('11. Nobody owns anything as Daria from Dec 1:');
-for (let w = 0; w <= dayIndex(dec(31)); w++) {
-  for (const v of [dec(1), dec(15), dec(31)]) {
+console.log('11. No December wave is ever Daria\'s:');
+for (let w = dayIndex(dec(1)); w <= dayIndex(dec(31)); w++) {
+  for (const v of [dec(15), dec(31)]) {
     if (w <= dayIndex(v)) check(`wave ${w} on ${v} not Daria`, String(AGENTS[waveOwnerIndex(w, dayIndex(v))] !== 'Daria'), 'true');
   }
 }
 
+console.log('12. Schedule start (reminders only list current-schedule waves):');
+check('Nov 30 schedule start', String(waveScheduleStartIdx(dayIndex(nov(30)))), '0');
+check('Dec 1 schedule start', String(waveScheduleStartIdx(dayIndex(dec(1)))), String(dayIndex(dec(1))));
+
 // ─── Transfer days & cycle numbers ───────────────────────────────────────────
-console.log('12. Transfer days:');
+console.log('13. Transfer days:');
 for (const d of [nov(10), nov(19), dec(10), dec(19), dec(28)]) check(`${d} is transfer`, String(isWaveTransferDay(dayIndex(d))), 'true');
 for (const d of [nov(1), nov(22), nov(28), dec(1), dec(4), dec(16)]) check(`${d} is not transfer`, String(isWaveTransferDay(dayIndex(d))), 'false');
-console.log('13. Cycle numbers:');
-for (const [d, n] of [[nov(1), 1], [nov(10), 2], [nov(21), 3], [nov(22), 4], [nov(30), 4], [dec(1), 5], [dec(9), 5], [dec(10), 6]] as const) {
+console.log('14. Cycle numbers (restart at 1 on Dec 1):');
+for (const [d, n] of [[nov(1), 1], [nov(10), 2], [nov(21), 3], [nov(22), 4], [nov(30), 4], [dec(1), 1], [dec(9), 1], [dec(10), 2], [dec(28), 4]] as const) {
   check(`${d} cycle`, String(waveCycleNumber(dayIndex(d))), String(n));
 }
 
