@@ -361,6 +361,7 @@ export const updatePDPGoal = (
   data: Partial<{
     goal: string;
     specificActions: string | null;
+    actionsTaken: string | null;
     progressPct: number;
     status: string;
     targetDate: string | null;

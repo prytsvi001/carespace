@@ -278,7 +278,7 @@ router.post('/:planId/goals', async (req: Request, res: Response) => {
 
 // PATCH /api/pdp/goals/:goalId — update goal
 // Owner on own goal: all content fields + progress/status
-// Owner on admin-assigned goal: progress/status only
+// Owner on admin-assigned goal: progress/status/actionsTaken only
 // Admin on another's goal: adminRating + content fields if admin-assigned
 router.patch('/goals/:goalId', async (req: Request, res: Response) => {
   try {
@@ -300,6 +300,7 @@ router.patch('/goals/:goalId', async (req: Request, res: Response) => {
     const body = req.body as {
       goal?: string;
       specificActions?: string | null;
+      actionsTaken?: string | null;
       progressPct?: number;
       status?: string;
       targetDate?: string | null;
@@ -316,10 +317,11 @@ router.patch('/goals/:goalId', async (req: Request, res: Response) => {
       if (body.targetDate !== undefined) data.targetDate = body.targetDate || null;
     }
 
-    // Progress/status: editable by owner only
+    // Progress/status/actions taken: editable by owner only (admin-assigned goals included)
     if (isOwner) {
       if (body.progressPct !== undefined) data.progressPct = body.progressPct;
       if (body.status !== undefined) data.status = body.status;
+      if (body.actionsTaken !== undefined) data.actionsTaken = body.actionsTaken?.trim().slice(0, 5000) || null;
     }
 
     // Admin rating: admin only, on someone else's plan

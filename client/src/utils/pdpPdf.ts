@@ -37,8 +37,10 @@ function buildHtml(plan: PdpPlan, agentName: string, managerName: string, export
   const goalsRows = plan.goals.map((g, i) => `
     <tr>
       <td class="num">${i + 1}</td>
-      <td><strong>${esc(g.goal)}</strong>${g.specificActions?.trim() ? `<div class="sub">${para(g.specificActions)}</div>` : ''}
+      <td><strong>${esc(g.goal)}</strong>
         ${g.assignedByName ? `<div class="tag">Assigned by ${esc(g.assignedByName)}</div>` : ''}</td>
+      <td>${para(g.specificActions)}</td>
+      <td>${para(g.actionsTaken)}</td>
       <td>${fmt(g.targetDate)}</td>
       <td>${GOAL_STATUS[g.status] ?? esc(g.status)}</td>
       <td class="c">${g.progressPct}%</td>
@@ -136,7 +138,7 @@ function buildHtml(plan: PdpPlan, agentName: string, managerName: string, export
 
   <h2>Goals</h2>
   ${plan.goals.length ? `<table>
-    <thead><tr><th></th><th>Goal &amp; specific actions</th><th>Target date</th><th>Status</th><th class="c">Progress</th><th>Rating</th></tr></thead>
+    <thead><tr><th></th><th>Goal</th><th>Expected actions</th><th>Actions taken</th><th>Target date</th><th>Status</th><th class="c">Progress</th><th>Rating</th></tr></thead>
     <tbody>${goalsRows}</tbody></table>` : '<p class="muted">No goals.</p>'}
 
   <h2>Tasks</h2>

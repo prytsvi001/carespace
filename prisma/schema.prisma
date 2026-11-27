@@ -290,7 +290,8 @@ model PdpGoal {
   planId          String
   plan            PdpPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
   goal            String
-  specificActions String?
+  specificActions String?  // shown as "Expected actions"
+  actionsTaken    String?  // "Actions taken" — written by the plan owner only, on any goal
   progressPct     Int      @default(0)
   status          String   @default("not_started") // "not_started" | "in_progress" | "done"
   adminRating     Int?     // 1-5, editable by head/lead only

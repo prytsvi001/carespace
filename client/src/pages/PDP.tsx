@@ -353,6 +353,11 @@ export default function PDP() {
   );
 
   // ── Feedback state ────────────────────────────────────────────────────────
+  // ── Actions taken modal ───────────────────────────────────────────────────
+  const [actionsTakenGoal, setActionsTakenGoal] = useState<PdpGoal | null>(null);
+  const [actionsTakenText, setActionsTakenText] = useState('');
+  const [savingActionsTaken, setSavingActionsTaken] = useState(false);
+
   // Agent self-review draft
   const [feedbackDraft, setFeedbackDraft] = useState({ achievements: '', nextFocus: '' });
   const [savingFeedback, setSavingFeedback] = useState(false);
@@ -539,6 +544,29 @@ export default function PDP() {
       console.error(e);
     } finally {
       setSavingGoal(false);
+    }
+  };
+
+  // ─── Actions taken (plan owner, any goal) ───────────────────────────────────
+  const openActionsTaken = (g: PdpGoal) => {
+    setActionsTakenText(g.actionsTaken ?? '');
+    setActionsTakenGoal(g);
+  };
+
+  const handleSaveActionsTaken = async () => {
+    if (!actionsTakenGoal) return;
+    setSavingActionsTaken(true);
+    try {
+      const updated = await updatePDPGoal(actionsTakenGoal.id, { actionsTaken: actionsTakenText.trim() || null });
+      applyPlanUpdate((p) => ({
+        ...p,
+        goals: p.goals.map((g) => (g.id === updated.id ? { ...g, ...updated } : g)),
+      }));
+      setActionsTakenGoal(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingActionsTaken(false);
     }
   };
 
@@ -1003,7 +1031,7 @@ export default function PDP() {
         ) : (
           <div className="card overflow-hidden p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[720px]">
+              <table className="w-full text-sm min-w-[900px]">
                 <thead>
                   <tr
                     className="text-xs font-medium uppercase tracking-wide"
@@ -1012,11 +1040,12 @@ export default function PDP() {
                       borderBottom: '1px solid rgba(14,14,14,0.07)',
                     }}
                   >
-                    <th className="text-left px-4 py-2.5 w-[22%]">Goal</th>
-                    <th className="text-left px-4 py-2.5 w-[20%]">Specific actions</th>
-                    <th className="text-left px-4 py-2.5 w-[9%]">Progress</th>
-                    <th className="text-left px-4 py-2.5 w-[11%]">Status</th>
-                    <th className="text-left px-4 py-2.5 w-[11%]">Admin rating</th>
+                    <th className="text-left px-4 py-2.5 w-[18%]">Goal</th>
+                    <th className="text-left px-4 py-2.5 w-[18%]">Expected actions</th>
+                    <th className="text-left px-4 py-2.5 w-[18%]">Actions taken</th>
+                    <th className="text-left px-4 py-2.5 w-[8%]">Progress</th>
+                    <th className="text-left px-4 py-2.5 w-[10%]">Status</th>
+                    <th className="text-left px-4 py-2.5 w-[10%]">Admin rating</th>
                     <th className="text-left px-4 py-2.5 w-[10%]">Target date</th>
                     {showActionsCol && <th className="px-4 py-2.5 w-[8%]" />}
                   </tr>
@@ -1045,12 +1074,32 @@ export default function PDP() {
                           )}
                         </td>
 
-                        {/* Specific actions */}
+                        {/* Expected actions (stored as specificActions) */}
                         <td className="px-4 py-3 align-top">
                           {g.specificActions ? (
                             <ExpandableText text={g.specificActions} />
                           ) : (
                             <span className="text-xs" style={{ color: 'rgba(14,14,14,0.25)' }}>—</span>
+                          )}
+                        </td>
+
+                        {/* Actions taken — plan owner only, on any goal */}
+                        <td className="px-4 py-3 align-top">
+                          {g.actionsTaken ? (
+                            <ExpandableText text={g.actionsTaken} />
+                          ) : !canEdit ? (
+                            <span className="text-xs" style={{ color: 'rgba(14,14,14,0.25)' }}>—</span>
+                          ) : null}
+                          {canEdit && (
+                            <button
+                              onClick={() => openActionsTaken(g)}
+                              className="mt-1 flex items-center gap-1 text-xs transition-colors hover:text-slate-700"
+                              style={{ color: 'rgba(14,14,14,0.40)' }}
+                            >
+                              {g.actionsTaken
+                                ? <><Pencil size={11} strokeWidth={1.6} /> Edit</>
+                                : <><Plus size={11} strokeWidth={2} /> Add</>}
+                            </button>
                           )}
                         </td>
 
@@ -1940,6 +1989,47 @@ export default function PDP() {
         </div>
       </Modal>
 
+      {/* Actions taken (plan owner) */}
+      <Modal
+        open={!!actionsTakenGoal}
+        onClose={() => setActionsTakenGoal(null)}
+        title="Actions taken"
+      >
+        <div className="space-y-4">
+          {actionsTakenGoal && (
+            <p className="text-sm font-medium text-slate-700">{actionsTakenGoal.goal}</p>
+          )}
+          {actionsTakenGoal?.specificActions && (
+            <div>
+              <p className="text-xs font-medium mb-1" style={{ color: 'rgba(14,14,14,0.45)' }}>Expected actions</p>
+              <p className="text-xs whitespace-pre-wrap" style={{ color: 'rgba(14,14,14,0.55)' }}>
+                {actionsTakenGoal.specificActions}
+              </p>
+            </div>
+          )}
+          <div>
+            <label className="label">What have you done so far?</label>
+            <textarea
+              className="input resize-none"
+              rows={6}
+              autoFocus
+              maxLength={5000}
+              placeholder="Describe the actions you've taken towards this goal…"
+              value={actionsTakenText}
+              onChange={(e) => setActionsTakenText(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button className="btn-secondary flex-1" onClick={() => setActionsTakenGoal(null)}>
+              Cancel
+            </button>
+            <button className="btn-accent flex-1" onClick={handleSaveActionsTaken} disabled={savingActionsTaken}>
+              {savingActionsTaken ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Add / Edit goal */}
       <Modal
         open={goalModal.open}
@@ -1964,7 +2054,7 @@ export default function PDP() {
             />
           </div>
           <div>
-            <label className="label">Specific actions</label>
+            <label className="label">Expected actions</label>
             <textarea
               className="input resize-none"
               rows={3}

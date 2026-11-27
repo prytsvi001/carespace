@@ -259,6 +259,7 @@ export interface PdpGoal {
   planId: string;
   goal: string;
   specificActions: string | null;
+  actionsTaken: string | null;
   progressPct: number;
   status: 'not_started' | 'in_progress' | 'done';
   adminRating: number | null;
