@@ -173,7 +173,7 @@ function SubtaskList({ subtasks, editable, onAdd, onToggle, onDelete }: {
   return (
     <div className="mt-2 space-y-1">
       {subtasks.map((s) => (
-        <div key={s.id} className="group flex items-start gap-2">
+        <div key={s.id} className="flex items-start gap-2">
           <button
             onClick={() => editable && onToggle(s)}
             disabled={!editable}
@@ -197,10 +197,11 @@ function SubtaskList({ subtasks, editable, onAdd, onToggle, onDelete }: {
           {editable && (
             <button
               onClick={() => onDelete(s)}
-              className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-300 hover:text-red-400 transition-all"
+              // Always visible (no hover on touch screens); red on hover.
+              className="shrink-0 p-0.5 -m-0.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
               title="Delete subtask"
             >
-              <X size={12} strokeWidth={1.5} />
+              <X size={13} strokeWidth={2} />
             </button>
           )}
         </div>
