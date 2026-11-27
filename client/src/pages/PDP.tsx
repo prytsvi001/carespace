@@ -858,7 +858,7 @@ export default function PDP() {
                 Export PDF
               </button>
             )}
-            {canEdit && (
+            {(canEdit || adminFieldsActive) && (
               <button
                 className="btn-secondary text-xs"
                 onClick={openPeriodModal}

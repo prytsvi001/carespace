@@ -185,15 +185,16 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/pdp/:id — update PDP period dates (plan owner only)
+// PATCH /api/pdp/:id — update PDP period dates (plan owner, or head/lead on any plan)
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
-    const { id: userId } = req.user as Express.User;
+    const { id: userId, role } = req.user as Express.User;
     const { id } = req.params;
 
     const plan = await prisma.pdpPlan.findUnique({ where: { id } });
     if (!plan) return res.status(404).json({ error: 'Not found' });
-    if (plan.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
+    const isAdmin = role === 'head' || role === 'lead';
+    if (plan.userId !== userId && !isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
     const { periodStart, periodEnd } = req.body as { periodStart?: string; periodEnd?: string };
 
