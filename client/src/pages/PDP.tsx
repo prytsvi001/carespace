@@ -13,6 +13,7 @@ import {
   createPDPTask, updatePDPTask, deletePDPTask,
   addPDPTaskComment, savePDPFeedback, submitPDPFeedback,
   addPDPSubtask, updatePDPSubtask, deletePDPSubtask,
+  savePDPManagerReview, publishPDPManagerReview,
 } from '../api';
 import type { PdpPlan, PdpGoal, PdpTask, PdpSubtask, PdpFeedback, PdpSummaryItem } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -311,15 +312,13 @@ export default function PDP() {
   );
 
   // ── Feedback state ────────────────────────────────────────────────────────
-  const [feedbackDraft, setFeedbackDraft] = useState({
-    mentorRating: null as number | null,
-    mostHelpful: '',
-    improvements: '',
-    achievements: '',
-    nextFocus: '',
-  });
+  // Agent self-review draft
+  const [feedbackDraft, setFeedbackDraft] = useState({ achievements: '', nextFocus: '' });
   const [savingFeedback, setSavingFeedback] = useState(false);
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  // Manager review draft (head/lead on an agent's plan)
+  const [managerDraft, setManagerDraft] = useState({ managerRating: null as number | null, managerComment: '' });
+  const [savingManager, setSavingManager] = useState(false);
 
   // ─── Data loading ──────────────────────────────────────────────────────────
 
@@ -382,11 +381,12 @@ export default function PDP() {
   useEffect(() => {
     const fb = plan?.feedback;
     setFeedbackDraft({
-      mentorRating: fb?.mentorRating ?? null,
-      mostHelpful: fb?.mostHelpful ?? '',
-      improvements: fb?.improvements ?? '',
       achievements: fb?.achievements ?? '',
       nextFocus: fb?.nextFocus ?? '',
+    });
+    setManagerDraft({
+      managerRating: fb?.managerRating ?? null,
+      managerComment: fb?.managerComment ?? '',
     });
   }, [plan?.id, plan?.feedback?.updatedAt]);
 
@@ -709,6 +709,19 @@ export default function PDP() {
     }
   };
 
+  const handleManagerReview = async (publish: boolean) => {
+    if (!plan) return;
+    setSavingManager(true);
+    try {
+      const updated = await (publish ? publishPDPManagerReview : savePDPManagerReview)(plan.id, managerDraft);
+      applyPlanUpdate((p) => ({ ...p, feedback: updated }));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingManager(false);
+    }
+  };
+
   // ─── Delete confirm ────────────────────────────────────────────────────────
 
   const handleConfirmDelete = async () => {
@@ -892,7 +905,7 @@ export default function PDP() {
   const renderTabBar = () => (
     <div className="flex items-center gap-1.5">
       {(['goals', 'tasks', 'feedback'] as PdpTab[]).map((tab) => {
-        const labels: Record<PdpTab, string> = { goals: 'Goals', tasks: 'Tasks', feedback: 'Mentor Feedback' };
+        const labels: Record<PdpTab, string> = { goals: 'Goals', tasks: 'Tasks', feedback: 'Feedback' };
         return (
           <button
             key={tab}
@@ -1416,234 +1429,144 @@ export default function PDP() {
   };
 
   // ─── Render: Feedback section ──────────────────────────────────────────────
+  // Two blocks: the agent's self-review (owner fills it in the 14-day window
+  // before the period ends) and the manager review (head/lead, published
+  // when ready). Each side's drafts are hidden from the other server-side.
 
-  const renderFeedbackReadOnly = (fb: PdpFeedback) => (
-    <div className="card space-y-5">
-      <div>
-        <p className="text-xs font-medium mb-2" style={{ color: 'rgba(14,14,14,0.45)' }}>
-          Overall mentor experience
-        </p>
-        <StarRating value={fb.mentorRating} disabled size={18} />
-      </div>
-      {[
-        { key: 'mostHelpful', label: 'What was most helpful' },
-        { key: 'improvements', label: 'What could be improved' },
-        { key: 'achievements', label: 'Personal reflection' },
-        { key: 'nextFocus', label: 'Next period focus' },
-      ].map(({ key, label }) => {
-        const val = fb[key as keyof PdpFeedback] as string | null;
-        return (
-          <div key={key}>
-            <p className="text-xs font-medium mb-1" style={{ color: 'rgba(14,14,14,0.45)' }}>
-              {label}
-            </p>
-            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-              {val || <span style={{ color: 'rgba(14,14,14,0.30)' }}>Not provided</span>}
-            </p>
-          </div>
-        );
-      })}
+  const statusChip = (label: string, tone: 'done' | 'draft' | 'none') => (
+    <span
+      className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
+      style={
+        tone === 'done'
+          ? { backgroundColor: 'rgba(161,249,110,0.30)', color: '#0E0E0E' }
+          : tone === 'draft'
+            ? { backgroundColor: 'rgb(255,251,235)', color: '#b45309' }
+            : { backgroundColor: 'rgba(14,14,14,0.05)', color: 'rgba(14,14,14,0.45)' }
+      }
+    >
+      {label}
+    </span>
+  );
+
+  const readOnlyText = (label: string, value: string | null) => (
+    <div>
+      <p className="text-xs font-medium mb-1" style={{ color: 'rgba(14,14,14,0.45)' }}>{label}</p>
+      <p className="text-sm text-slate-700 whitespace-pre-wrap">
+        {value?.trim() ? value : <span style={{ color: 'rgba(14,14,14,0.25)' }}>—</span>}
+      </p>
     </div>
   );
 
-  const renderFeedback = () => {
-    if (!plan) return null;
+  const emptyNote = (title: string, text?: string) => (
+    <div className="flex flex-col items-center gap-2 py-8 text-center">
+      <ClipboardList size={28} strokeWidth={1.2} style={{ color: 'rgba(14,14,14,0.25)' }} />
+      <p className="text-sm font-medium text-slate-500">{title}</p>
+      {text && <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>{text}</p>}
+    </div>
+  );
 
+  const SELF_FIELDS = [
+    {
+      key: 'achievements' as const,
+      label: 'Personal reflection — what did you achieve this period?',
+      placeholder: 'Reflect on your progress and achievements…',
+    },
+    {
+      key: 'nextFocus' as const,
+      label: 'What would you like to focus on in the next period?',
+      placeholder: 'Describe your goals and focus areas for next period…',
+    },
+  ];
+
+  const renderSelfReview = (feedback: PdpFeedback | null) => {
+    const periodEnd = plan!.periodEnd;
     const today = getTodayStr();
-    const periodEnd = plan.periodEnd;
     const windowStart = periodEnd ? getFeedbackWindowStart(periodEnd) : null;
-
     const isLocked = !!periodEnd && today > periodEnd;
     const isInWindow = !!windowStart && today >= windowStart && !isLocked;
     const beforeWindow = !!periodEnd && !isInWindow && !isLocked;
-
-    const feedback = plan.feedback ?? null;
     const isSubmitted = !!feedback?.submittedAt;
 
-    // ── Admin view ─────────────────────────────────────────────────────────
-    if (adminFieldsActive) {
-      return (
-        <div className="space-y-4">
-          <h3 className="text-base font-semibold text-slate-700">Mentor Feedback</h3>
-          {!isSubmitted ? (
-            <div
-              className="card flex flex-col items-center gap-2 py-10 text-center"
-            >
-              <ClipboardList
-                size={32}
-                strokeWidth={1.2}
-                style={{ color: 'rgba(14,14,14,0.25)' }}
-              />
-              <p className="text-sm font-medium text-slate-500">No feedback submitted yet</p>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs" style={{ color: 'rgba(14,14,14,0.45)' }}>
-                  Submitted on {fmtDate(feedback!.submittedAt)}
-                </span>
-              </div>
-              {renderFeedbackReadOnly(feedback!)}
-            </>
-          )}
+    const header = (
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-700">Self-review</h4>
+          <p className="text-xs" style={{ color: 'rgba(14,14,14,0.45)' }}>Written by the agent</p>
         </div>
-      );
+        {isSubmitted
+          ? statusChip(`Submitted ${fmtDate(feedback!.submittedAt)}`, 'done')
+          : statusChip('Not submitted', 'none')}
+      </div>
+    );
+
+    const readOnly = (
+      <div className="space-y-4">
+        {SELF_FIELDS.map((f) => (
+          <React.Fragment key={f.key}>{readOnlyText(f.label, feedback?.[f.key] ?? null)}</React.Fragment>
+        ))}
+      </div>
+    );
+
+    // Head/lead viewing an agent: content only once submitted (server enforces).
+    if (adminFieldsActive) {
+      return <div className="card">{header}{isSubmitted ? readOnly : emptyNote('Not submitted yet')}</div>;
     }
 
-    // ── Owner view ─────────────────────────────────────────────────────────
-
-    // No period end set yet
     if (!periodEnd) {
       return (
-        <div className="space-y-4">
-          <h3 className="text-base font-semibold text-slate-700">Mentor Feedback</h3>
-          <div
-            className="card flex flex-col items-center gap-2 py-10 text-center"
-          >
-            <ClipboardList
-              size={32}
-              strokeWidth={1.2}
-              style={{ color: 'rgba(14,14,14,0.25)' }}
-            />
-            <p className="text-sm font-medium text-slate-500">Period end date not set</p>
-            <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>
-              Set your PDP period end date to enable the feedback form.
-            </p>
-          </div>
+        <div className="card">
+          {header}
+          {emptyNote('Period end date not set', 'Set your PDP period end date to enable the self-review.')}
         </div>
       );
     }
 
-    // Period ended
     if (isLocked) {
       return (
-        <div className="space-y-4">
-          <h3 className="text-base font-semibold text-slate-700">Mentor Feedback</h3>
-          {isSubmitted ? (
-            <>
-              <div className="flex items-center gap-3">
-                <span
-                  className="text-xs px-2 py-0.5 rounded-full font-medium"
-                  style={{ backgroundColor: 'rgba(161,249,110,0.30)', color: '#0E0E0E' }}
-                >
-                  Submitted
-                </span>
-                <span className="text-xs" style={{ color: 'rgba(14,14,14,0.40)' }}>
-                  {fmtDate(feedback!.submittedAt)} · Period ended {fmtDate(periodEnd)}
-                </span>
-              </div>
-              {renderFeedbackReadOnly(feedback!)}
-            </>
-          ) : (
-            <div className="card flex flex-col items-center gap-2 py-10 text-center">
-              <ClipboardList
-                size={32}
-                strokeWidth={1.2}
-                style={{ color: 'rgba(14,14,14,0.25)' }}
-              />
-              <p className="text-sm font-medium text-slate-500">Feedback window closed</p>
-              <p className="text-sm" style={{ color: 'rgba(14,14,14,0.40)' }}>
-                The PDP period ended {fmtDate(periodEnd)} without a submitted feedback.
-              </p>
-            </div>
-          )}
+        <div className="card">
+          {header}
+          {isSubmitted
+            ? readOnly
+            : emptyNote('Self-review closed', `The PDP period ended ${fmtDate(periodEnd)} without a submitted self-review.`)}
         </div>
       );
     }
 
-    // Active form (before window shown disabled, in window shown enabled)
-    const formDisabled = beforeWindow;
-
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-slate-700">Mentor Feedback</h3>
-          {isSubmitted && (
-            <span
-              className="text-xs px-2 py-0.5 rounded-full font-medium"
-              style={{ backgroundColor: 'rgba(161,249,110,0.30)', color: '#0E0E0E' }}
-            >
-              Submitted {fmtDate(feedback!.submittedAt)}
-            </span>
-          )}
-        </div>
-
+      <div className="card">
+        {header}
         {beforeWindow && windowStart && (
           <div
-            className="px-4 py-3 rounded-xl text-sm"
+            className="px-3 py-2.5 mb-4 rounded-lg text-xs"
             style={{ backgroundColor: 'rgba(14,14,14,0.04)', color: 'rgba(14,14,14,0.55)' }}
           >
-            Feedback will be available to submit from{' '}
-            <strong>{fmtDate(windowStart)}</strong>{' '}
-            (14 days before the period ends).
+            Available from <strong>{fmtDate(windowStart)}</strong> (14 days before the period ends).
           </div>
         )}
-
         {isSubmitted && isInWindow && (
-          <p className="text-xs" style={{ color: 'rgba(14,14,14,0.45)' }}>
-            You can update your feedback until the period ends on {fmtDate(periodEnd)}.
+          <p className="text-xs mb-3" style={{ color: 'rgba(14,14,14,0.45)' }}>
+            You can update it until the period ends on {fmtDate(periodEnd)}.
           </p>
         )}
-
         <div
-          className="card space-y-5"
-          style={{ opacity: formDisabled ? 0.5 : 1, pointerEvents: formDisabled ? 'none' : undefined }}
+          className="space-y-4"
+          style={{ opacity: beforeWindow ? 0.5 : 1, pointerEvents: beforeWindow ? 'none' : undefined }}
         >
-          {/* Overall rating */}
-          <div>
-            <label className="label">Overall mentor experience</label>
-            <StarRating
-              value={feedbackDraft.mentorRating}
-              onChange={(v) =>
-                setFeedbackDraft((f) => ({
-                  ...f,
-                  mentorRating: v === f.mentorRating ? null : v,
-                }))
-              }
-              size={20}
-            />
-          </div>
-
-          {/* Text fields */}
-          {[
-            {
-              key: 'mostHelpful' as const,
-              label: 'What was most helpful in your mentor sessions?',
-              placeholder: 'Describe what helped you the most…',
-            },
-            {
-              key: 'improvements' as const,
-              label: 'What could be improved?',
-              placeholder: 'Describe what could have been done differently…',
-            },
-            {
-              key: 'achievements' as const,
-              label: 'Personal reflection — what did you achieve this period?',
-              placeholder: 'Reflect on your progress and achievements…',
-            },
-            {
-              key: 'nextFocus' as const,
-              label: 'What would you like to focus on in the next period?',
-              placeholder: 'Describe your goals and focus areas for next period…',
-            },
-          ].map(({ key, label, placeholder }) => (
+          {SELF_FIELDS.map(({ key, label, placeholder }) => (
             <div key={key}>
               <label className="label">{label}</label>
               <textarea
                 className="input resize-none"
-                rows={3}
+                rows={4}
                 placeholder={placeholder}
                 value={feedbackDraft[key]}
-                onChange={(e) =>
-                  setFeedbackDraft((f) => ({ ...f, [key]: e.target.value }))
-                }
+                onChange={(e) => setFeedbackDraft((f) => ({ ...f, [key]: e.target.value }))}
               />
             </div>
           ))}
         </div>
-
         {isInWindow && (
-          <div className="flex gap-3">
+          <div className="flex gap-3 mt-4">
             <button
               className="btn-secondary flex-1"
               onClick={handleSaveFeedbackDraft}
@@ -1657,7 +1580,7 @@ export default function PDP() {
                 onClick={handleUpdateFeedback}
                 disabled={savingFeedback || submittingFeedback}
               >
-                {savingFeedback ? 'Updating…' : 'Update feedback'}
+                {savingFeedback ? 'Updating…' : 'Update'}
               </button>
             ) : (
               <button
@@ -1665,10 +1588,120 @@ export default function PDP() {
                 onClick={handleSubmitFeedback}
                 disabled={savingFeedback || submittingFeedback}
               >
-                {submittingFeedback ? 'Submitting…' : 'Submit feedback'}
+                {submittingFeedback ? 'Submitting…' : 'Submit'}
               </button>
             )}
           </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderManagerReview = (feedback: PdpFeedback | null) => {
+    const isPublished = !!feedback?.managerPublishedAt;
+    const hasDraft = !isPublished && (feedback?.managerRating != null || !!feedback?.managerComment);
+
+    const header = (
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-700">Manager review</h4>
+          <p className="text-xs" style={{ color: 'rgba(14,14,14,0.45)' }}>
+            {feedback?.managerName ? `By ${feedback.managerName}` : 'Written by the manager'}
+          </p>
+        </div>
+        {isPublished
+          ? statusChip(`Published ${fmtDate(feedback!.managerPublishedAt)}`, 'done')
+          : adminFieldsActive && hasDraft
+            ? statusChip('Draft — not visible to the agent', 'draft')
+            : statusChip('Not published', 'none')}
+      </div>
+    );
+
+    if (adminFieldsActive) {
+      return (
+        <div className="card">
+          {header}
+          <div className="space-y-4">
+            <div>
+              <label className="label">Manager rating</label>
+              <StarRating
+                value={managerDraft.managerRating}
+                onChange={(v) => setManagerDraft((d) => ({ ...d, managerRating: v === d.managerRating ? null : v }))}
+                size={20}
+              />
+            </div>
+            <div>
+              <label className="label">Manager comment</label>
+              <textarea
+                className="input resize-none"
+                rows={5}
+                placeholder="Overall assessment of the period: strengths, what to work on…"
+                value={managerDraft.managerComment}
+                onChange={(e) => setManagerDraft((d) => ({ ...d, managerComment: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 mt-4">
+            <button className="btn-secondary flex-1" onClick={() => handleManagerReview(false)} disabled={savingManager}>
+              {savingManager ? 'Saving…' : 'Save draft'}
+            </button>
+            <button className="btn-accent flex-1" onClick={() => handleManagerReview(true)} disabled={savingManager}>
+              {isPublished ? 'Update' : 'Publish'}
+            </button>
+          </div>
+          <p className="text-xs mt-2" style={{ color: 'rgba(14,14,14,0.40)' }}>
+            {isPublished
+              ? 'Published — the agent sees changes as soon as you update.'
+              : 'The agent sees the review only after you publish it.'}
+          </p>
+        </div>
+      );
+    }
+
+    // Plan owner: published review only (server hides drafts).
+    return (
+      <div className="card">
+        {header}
+        {isPublished ? (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-medium mb-1" style={{ color: 'rgba(14,14,14,0.45)' }}>Manager rating</p>
+              <StarRating value={feedback!.managerRating} disabled size={18} />
+            </div>
+            {readOnlyText('Manager comment', feedback!.managerComment)}
+          </div>
+        ) : (
+          emptyNote('Not published yet', 'Your manager’s review will appear here once it’s published.')
+        )}
+      </div>
+    );
+  };
+
+  const renderFeedback = () => {
+    if (!plan) return null;
+    const feedback = plan.feedback ?? null;
+    // Answers to the retired questions (before Nov 2026) — shown, never edited.
+    const hasEarlier = !!feedback && (feedback.mentorRating != null || !!feedback.mostHelpful || !!feedback.improvements);
+
+    return (
+      <div className="space-y-4">
+        <h3 className="text-base font-semibold text-slate-700">Feedback</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+          {renderSelfReview(feedback)}
+          {renderManagerReview(feedback)}
+        </div>
+        {hasEarlier && (
+          <details className="card">
+            <summary className="text-sm font-medium text-slate-600 cursor-pointer">Earlier answers</summary>
+            <div className="space-y-4 mt-4">
+              <div>
+                <p className="text-xs font-medium mb-1" style={{ color: 'rgba(14,14,14,0.45)' }}>Overall mentor experience</p>
+                <StarRating value={feedback!.mentorRating} disabled size={18} />
+              </div>
+              {readOnlyText('What was most helpful', feedback!.mostHelpful)}
+              {readOnlyText('What could be improved', feedback!.improvements)}
+            </div>
+          </details>
         )}
       </div>
     );

@@ -402,19 +402,25 @@ export const updatePDPSubtask = (taskId: string, subtaskId: string, data: { text
 export const deletePDPSubtask = (taskId: string, subtaskId: string) =>
   api.delete(`/pdp/tasks/${taskId}/subtasks/${subtaskId}`).then((r) => r.data);
 
+// Agent self-review (the only fields the server accepts from the owner).
 export const savePDPFeedback = (
   planId: string,
-  data: {
-    mentorRating?: number | null;
-    mostHelpful?: string;
-    improvements?: string;
-    achievements?: string;
-    nextFocus?: string;
-  },
+  data: { achievements?: string; nextFocus?: string },
 ) => api.put(`/pdp/${planId}/feedback`, data).then((r) => r.data);
 
 export const submitPDPFeedback = (planId: string) =>
   api.post(`/pdp/${planId}/feedback/submit`).then((r) => r.data);
+
+// Manager review (head/lead): save as draft, or publish so the agent sees it.
+export const savePDPManagerReview = (
+  planId: string,
+  data: { managerRating: number | null; managerComment: string },
+) => api.put(`/pdp/${planId}/feedback/manager`, data).then((r) => r.data);
+
+export const publishPDPManagerReview = (
+  planId: string,
+  data: { managerRating: number | null; managerComment: string },
+) => api.post(`/pdp/${planId}/feedback/manager/publish`, data).then((r) => r.data);
 
 // ─── KPI Settings ──────────────────────────────────────────────────────────────
 export const getKpiSettings = (team: 'support' | 'peekviewer' = 'support') =>

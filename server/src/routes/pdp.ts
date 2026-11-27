@@ -76,8 +76,30 @@ function formatPlan(plan: {
   return {
     ...plan,
     tasks: plan.tasks.map(formatTask),
-    feedback: visible ? plan.feedback : null,
+    feedback: visible && plan.feedback
+      ? formatFeedback(plan.feedback as FeedbackRow, plan.userId === viewerId)
+      : null,
   };
+}
+
+type FeedbackRow = {
+  submittedAt: Date | null;
+  managerPublishedAt: Date | null;
+  [key: string]: unknown;
+};
+
+// Hides each side's drafts from the other: the plan owner sees the manager
+// review only once published; anyone else sees the owner's self-review
+// (and earlier answers) only once submitted.
+function formatFeedback(fb: FeedbackRow, viewerIsOwner: boolean) {
+  if (viewerIsOwner) {
+    return fb.managerPublishedAt
+      ? fb
+      : { ...fb, managerRating: null, managerComment: null, managerName: null };
+  }
+  return fb.submittedAt
+    ? fb
+    : { ...fb, mentorRating: null, mostHelpful: null, improvements: null, achievements: null, nextFocus: null };
 }
 
 // GET /api/pdp/summary — all agent+lead users + their PDP status (head/lead only)
@@ -639,18 +661,11 @@ router.put('/:planId/feedback', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Feedback is not yet available' });
     }
 
-    const { mentorRating, mostHelpful, improvements, achievements, nextFocus } = req.body as {
-      mentorRating?: number | null;
-      mostHelpful?: string;
-      improvements?: string;
-      achievements?: string;
-      nextFocus?: string;
-    };
+    // Self-review fields only — the retired fields (mentorRating, mostHelpful,
+    // improvements) are never written, so earlier answers stay intact.
+    const { achievements, nextFocus } = req.body as { achievements?: string; nextFocus?: string };
 
     const data: Record<string, unknown> = {};
-    if (mentorRating !== undefined) data.mentorRating = mentorRating;
-    if (mostHelpful !== undefined) data.mostHelpful = mostHelpful || null;
-    if (improvements !== undefined) data.improvements = improvements || null;
     if (achievements !== undefined) data.achievements = achievements || null;
     if (nextFocus !== undefined) data.nextFocus = nextFocus || null;
 
@@ -660,7 +675,7 @@ router.put('/:planId/feedback', async (req: Request, res: Response) => {
       update: data,
     });
 
-    return res.json(feedback);
+    return res.json(formatFeedback(feedback, true));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to save feedback' });
@@ -689,10 +704,64 @@ router.post('/:planId/feedback/submit', async (req: Request, res: Response) => {
       update: { submittedAt: new Date() },
     });
 
-    return res.json(feedback);
+    return res.json(formatFeedback(feedback, true));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to submit feedback' });
+  }
+});
+
+// ─── Manager review ──────────────────────────────────────────────────────────
+// Head/lead on someone else's plan (lead: agents' plans only, matching
+// feedbackVisible). No date window — reviews are often written after the
+// period ends. Save keeps it a draft; publish makes it visible to the agent
+// (later saves on a published review stay published).
+
+async function saveManagerReview(req: Request, res: Response, publish: boolean) {
+  const me = req.user as Express.User;
+  const plan = await prisma.pdpPlan.findUnique({
+    where: { id: req.params.planId },
+    include: { user: { select: { role: true } } },
+  });
+  if (!plan) return res.status(404).json({ error: 'Plan not found' });
+  const isAdmin = me.role === 'head' || me.role === 'lead';
+  if (!isAdmin || plan.userId === me.id || !feedbackVisible(me.role, me.id, plan.userId, plan.user.role)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { managerRating, managerComment } = req.body as { managerRating?: unknown; managerComment?: unknown };
+  const data: Record<string, unknown> = { managerName: me.name };
+  if (managerRating === null || (typeof managerRating === 'number' && managerRating >= 1 && managerRating <= 5)) {
+    data.managerRating = managerRating === null ? null : Math.round(managerRating);
+  }
+  if (typeof managerComment === 'string') data.managerComment = managerComment.trim().slice(0, 5000) || null;
+  if (publish) data.managerPublishedAt = new Date();
+
+  const feedback = await prisma.pdpFeedback.upsert({
+    where: { planId: plan.id },
+    create: { planId: plan.id, ...data },
+    update: data,
+  });
+  return res.json(formatFeedback(feedback, false));
+}
+
+// PUT /api/pdp/:planId/feedback/manager — save draft { managerRating?, managerComment? }
+router.put('/:planId/feedback/manager', async (req: Request, res: Response) => {
+  try {
+    await saveManagerReview(req, res, false);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to save manager review' });
+  }
+});
+
+// POST /api/pdp/:planId/feedback/manager/publish — save + publish
+router.post('/:planId/feedback/manager/publish', async (req: Request, res: Response) => {
+  try {
+    await saveManagerReview(req, res, true);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to publish manager review' });
   }
 });
 

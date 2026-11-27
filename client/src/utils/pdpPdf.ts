@@ -62,17 +62,32 @@ function buildHtml(plan: PdpPlan, agentName: string, managerName: string, export
     </tr>`;
   }).join('');
 
+  // Feedback: agent self-review (once submitted) + manager review (once
+  // published — drafts never go to HR) + answers to the retired questions.
   const fb = plan.feedback;
-  const feedbackHtml = fb?.submittedAt ? `
-    <h2>Mentor feedback</h2>
+  const selfHtml = fb?.submittedAt ? `
     <p class="muted">Submitted ${fmt(fb.submittedAt.slice(0, 10))}</p>
+    <table class="kv">
+      <tr><th>Personal reflection — what did you achieve this period?</th><td>${para(fb.achievements)}</td></tr>
+      <tr><th>What would you like to focus on in the next period?</th><td>${para(fb.nextFocus)}</td></tr>
+    </table>` : '<p class="muted">Not submitted.</p>';
+  const managerHtml = fb?.managerPublishedAt ? `
+    <p class="muted">${fb.managerName ? `By ${esc(fb.managerName)}, ` : ''}published ${fmt(fb.managerPublishedAt.slice(0, 10))}</p>
+    <table class="kv">
+      <tr><th>Manager rating</th><td class="stars">${stars(fb.managerRating)}</td></tr>
+      <tr><th>Manager comment</th><td>${para(fb.managerComment)}</td></tr>
+    </table>` : '<p class="muted">Not published.</p>';
+  const earlierHtml = fb && (fb.mentorRating != null || fb.mostHelpful || fb.improvements) ? `
+    <h3>Earlier answers</h3>
     <table class="kv">
       <tr><th>Overall mentor experience</th><td class="stars">${stars(fb.mentorRating)}</td></tr>
       <tr><th>What was most helpful</th><td>${para(fb.mostHelpful)}</td></tr>
       <tr><th>What could be improved</th><td>${para(fb.improvements)}</td></tr>
-      <tr><th>Personal reflection</th><td>${para(fb.achievements)}</td></tr>
-      <tr><th>Next period focus</th><td>${para(fb.nextFocus)}</td></tr>
     </table>` : '';
+  const feedbackHtml = `
+    <h2>Self-review</h2>${selfHtml}
+    <h2>Manager review</h2>${managerHtml}
+    ${earlierHtml}`;
 
   const title = `PDP — ${agentName} — ${format(new Date(), 'yyyy-MM-dd')}`;
 
@@ -84,6 +99,7 @@ function buildHtml(plan: PdpPlan, agentName: string, managerName: string, export
   body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #0E0E0E; font-size: 11px; line-height: 1.45; margin: 0; }
   h1 { font-size: 20px; margin: 0 0 2px; }
   h2 { font-size: 14px; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #A1F96E; }
+  h3 { font-size: 12px; margin: 16px 0 6px; color: #374151; }
   .muted { color: #6b7280; }
   .meta { display: flex; flex-wrap: wrap; gap: 6px 28px; margin: 12px 0 4px; }
   .meta div span { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }

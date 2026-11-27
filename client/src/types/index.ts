@@ -300,6 +300,10 @@ export interface PdpFeedback {
   achievements: string | null;
   nextFocus: string | null;
   submittedAt: string | null;
+  managerRating: number | null;
+  managerComment: string | null;
+  managerName: string | null;
+  managerPublishedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

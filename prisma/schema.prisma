@@ -336,6 +336,13 @@ model PdpFeedback {
   achievements String?
   nextFocus    String?
   submittedAt  DateTime? // null until agent submits
+  // mentorRating / mostHelpful / improvements: retired from the form (Nov 2026),
+  // kept so earlier answers still show. Agent self-review = achievements + nextFocus.
+  // Manager review — head/lead writes it; the agent sees it only once published.
+  managerRating      Int?      // 1-5 stars
+  managerComment     String?
+  managerName        String?   // who last saved the manager review
+  managerPublishedAt DateTime? // null = draft, hidden from the agent
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }
