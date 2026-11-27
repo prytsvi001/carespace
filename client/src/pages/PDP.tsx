@@ -1,5 +1,5 @@
 // client/src/pages/PDP.tsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import {
   TrendingUp, Plus, Pencil, Trash2, Star, ChevronLeft,
   MessageSquare, Check, ClipboardList, X, Download,
@@ -143,6 +143,47 @@ function ProgressBar({ total, done }: { total: number; done: number }) {
       <span className="text-xs font-medium w-8 text-right" style={{ color: 'rgba(14,14,14,0.50)' }}>
         {pct}%
       </span>
+    </div>
+  );
+}
+
+// Text clamped to 2 lines with a "Show more" / "Show less" toggle, shown only
+// when the text actually overflows (re-measured when the column resizes).
+function ExpandableText({ text }: { text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      if (!expanded) setOverflows(el.scrollHeight > el.clientHeight + 1);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, expanded]);
+
+  return (
+    <div>
+      <p
+        ref={ref}
+        className={`text-xs leading-snug whitespace-pre-wrap break-words ${expanded ? '' : 'line-clamp-2'}`}
+        style={{ color: 'rgba(14,14,14,0.55)' }}
+      >
+        {text}
+      </p>
+      {(overflows || expanded) && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-xs font-medium hover:underline"
+          style={{ color: 'rgba(14,14,14,0.70)' }}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
     </div>
   );
 }
@@ -1006,15 +1047,11 @@ export default function PDP() {
 
                         {/* Specific actions */}
                         <td className="px-4 py-3 align-top">
-                          <p
-                            className="text-xs leading-snug line-clamp-2"
-                            style={{ color: 'rgba(14,14,14,0.55)' }}
-                            title={g.specificActions ?? ''}
-                          >
-                            {g.specificActions || (
-                              <span style={{ color: 'rgba(14,14,14,0.25)' }}>—</span>
-                            )}
-                          </p>
+                          {g.specificActions ? (
+                            <ExpandableText text={g.specificActions} />
+                          ) : (
+                            <span className="text-xs" style={{ color: 'rgba(14,14,14,0.25)' }}>—</span>
+                          )}
                         </td>
 
                         {/* Progress % */}
