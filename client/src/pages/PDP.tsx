@@ -2,8 +2,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   TrendingUp, Plus, Pencil, Trash2, Star, ChevronLeft,
-  MessageSquare, Check, ClipboardList, X,
+  MessageSquare, Check, ClipboardList, X, Download,
 } from 'lucide-react';
+import { exportPdpPdf } from '../utils/pdpPdf';
 import { format } from 'date-fns';
 import {
   getMyPDP, getPDPSummary, getPDPByUser,
@@ -839,15 +840,34 @@ export default function PDP() {
             </div>
           </div>
 
-          {canEdit && (
-            <button
-              className="btn-secondary text-xs self-start sm:self-auto"
-              onClick={openPeriodModal}
-            >
-              <Pencil size={12} strokeWidth={1.6} className="inline mr-1.5" />
-              Edit period
-            </button>
-          )}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {isAdmin && (
+              // Head/lead only: print-to-PDF for sending the plan to HR.
+              <button
+                className="btn-secondary text-xs"
+                onClick={() => exportPdpPdf(
+                  plan,
+                  plan.user?.name
+                    ?? summaryItems.find((s) => s.userId === selectedUserId)?.userName
+                    ?? user!.name,
+                  managerName,
+                  user!.name,
+                )}
+              >
+                <Download size={12} strokeWidth={1.6} className="inline mr-1.5" />
+                Export PDF
+              </button>
+            )}
+            {canEdit && (
+              <button
+                className="btn-secondary text-xs"
+                onClick={openPeriodModal}
+              >
+                <Pencil size={12} strokeWidth={1.6} className="inline mr-1.5" />
+                Edit period
+              </button>
+            )}
+          </div>
         </div>
 
         {totalGoals > 0 && (
