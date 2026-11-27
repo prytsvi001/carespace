@@ -394,8 +394,11 @@ export default function PDP() {
   const doneGoals = plan?.goals.filter((g) => g.status === 'done').length ?? 0;
   const totalGoals = plan?.goals.length ?? 0;
 
-  const completedTasks = plan?.tasks.filter((t) => t.completed).length ?? 0;
-  const totalTasks = plan?.tasks.length ?? 0;
+  // "X/Y completed" counts every task and every subtask as one item each.
+  const completedTasks = plan?.tasks.reduce(
+    (n, t) => n + (t.completed ? 1 : 0) + (t.subtasks ?? []).filter((s) => s.done).length, 0,
+  ) ?? 0;
+  const totalTasks = plan?.tasks.reduce((n, t) => n + 1 + (t.subtasks ?? []).length, 0) ?? 0;
 
   const filteredTasks = taskGoalFilter
     ? (plan?.tasks.filter((t) => t.goalId === taskGoalFilter) ?? [])
