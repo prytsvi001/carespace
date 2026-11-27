@@ -316,6 +316,7 @@ model PdpTask {
   status         String   @default("not_started") // "not_started" | "in_progress" | "completed"
   adminGrade     Int?     // 1-5, editable by head/lead only
   comments       String   @default("[]") // JSON: [{authorId, authorName, text, createdAt}]
+  subtasks       String   @default("[]") // JSON: [{id, text, done}] — checklist under the task
   assignedByName String?  // set when an admin creates this task on an agent's plan
   sortOrder      Int      @default(0)
   createdAt      DateTime @default(now())

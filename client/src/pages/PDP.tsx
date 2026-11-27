@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   TrendingUp, Plus, Pencil, Trash2, Star, ChevronLeft,
-  MessageSquare, Check, ClipboardList,
+  MessageSquare, Check, ClipboardList, X,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -11,8 +11,9 @@ import {
   createPDPGoal, updatePDPGoal, deletePDPGoal,
   createPDPTask, updatePDPTask, deletePDPTask,
   addPDPTaskComment, savePDPFeedback, submitPDPFeedback,
+  addPDPSubtask, updatePDPSubtask, deletePDPSubtask,
 } from '../api';
-import type { PdpPlan, PdpGoal, PdpTask, PdpFeedback, PdpSummaryItem } from '../types';
+import type { PdpPlan, PdpGoal, PdpTask, PdpSubtask, PdpFeedback, PdpSummaryItem } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { Modal, Spinner, EmptyState, ConfirmDialog } from '../components/ui';
 
@@ -140,6 +141,104 @@ function ProgressBar({ total, done }: { total: number; done: number }) {
       <span className="text-xs font-medium w-8 text-right" style={{ color: 'rgba(14,14,14,0.50)' }}>
         {pct}%
       </span>
+    </div>
+  );
+}
+
+// Checklist under a task. editable = owner, or head/lead viewing someone's PDP.
+function SubtaskList({ subtasks, editable, onAdd, onToggle, onDelete }: {
+  subtasks: PdpSubtask[];
+  editable: boolean;
+  onAdd: (text: string) => Promise<void>;
+  onToggle: (s: PdpSubtask) => void;
+  onDelete: (s: PdpSubtask) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!text.trim() || saving) return;
+    setSaving(true);
+    try {
+      await onAdd(text.trim());
+      setText('');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!subtasks.length && !editable) return null;
+
+  return (
+    <div className="mt-2 space-y-1">
+      {subtasks.map((s) => (
+        <div key={s.id} className="group flex items-start gap-2">
+          <button
+            onClick={() => editable && onToggle(s)}
+            disabled={!editable}
+            className={`mt-0.5 w-3.5 h-3.5 shrink-0 rounded border flex items-center justify-center transition-all ${
+              editable ? 'cursor-pointer hover:border-slate-400' : 'cursor-default'
+            }`}
+            style={{
+              borderColor: s.done ? '#A1F96E' : 'rgba(14,14,14,0.20)',
+              backgroundColor: s.done ? '#A1F96E' : 'transparent',
+            }}
+            title={s.done ? 'Mark as not done' : 'Mark as done'}
+          >
+            {s.done && <Check size={9} strokeWidth={2.5} style={{ color: '#0E0E0E' }} />}
+          </button>
+          <span
+            className={`text-xs leading-snug flex-1 ${s.done ? 'line-through' : ''}`}
+            style={{ color: s.done ? 'rgba(14,14,14,0.40)' : 'rgba(14,14,14,0.75)' }}
+          >
+            {s.text}
+          </span>
+          {editable && (
+            <button
+              onClick={() => onDelete(s)}
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-300 hover:text-red-400 transition-all"
+              title="Delete subtask"
+            >
+              <X size={12} strokeWidth={1.5} />
+            </button>
+          )}
+        </div>
+      ))}
+      {editable && (adding ? (
+        <div className="flex items-center gap-1.5">
+          <input
+            autoFocus
+            className="input text-xs py-1 px-2 flex-1 min-w-0"
+            placeholder="Subtask…"
+            value={text}
+            maxLength={500}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit();
+              if (e.key === 'Escape') { setAdding(false); setText(''); }
+            }}
+          />
+          <button className="btn-accent text-xs px-2 py-1" onClick={submit} disabled={!text.trim() || saving}>
+            Add
+          </button>
+          <button
+            className="text-slate-300 hover:text-slate-500"
+            onClick={() => { setAdding(false); setText(''); }}
+            title="Cancel"
+          >
+            <X size={13} strokeWidth={1.5} />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setAdding(true)}
+          className="flex items-center gap-1 text-xs transition-colors hover:text-slate-700"
+          style={{ color: 'rgba(14,14,14,0.35)' }}
+        >
+          <Plus size={11} strokeWidth={2} /> Subtask
+        </button>
+      ))}
     </div>
   );
 }
@@ -485,6 +584,46 @@ export default function PDP() {
       console.error(e);
       if (isAdmin && selectedUserId) loadAgentPDP(selectedUserId);
       else loadMyPDP();
+    }
+  };
+
+  // ─── Subtasks ──────────────────────────────────────────────────────────────
+  // Server returns the whole task; swap it into the plan.
+  const replaceTask = (updated: PdpTask) =>
+    applyPlanUpdate((p) => ({
+      ...p,
+      tasks: p.tasks.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)),
+    }));
+
+  const handleAddSubtask = async (taskId: string, text: string) => {
+    try {
+      replaceTask(await addPDPSubtask(taskId, text));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleSubtask = async (taskId: string, s: PdpSubtask) => {
+    applyPlanUpdate((p) => ({
+      ...p,
+      tasks: p.tasks.map((t) => (t.id === taskId
+        ? { ...t, subtasks: (t.subtasks ?? []).map((x) => (x.id === s.id ? { ...x, done: !s.done } : x)) }
+        : t)),
+    }));
+    try {
+      replaceTask(await updatePDPSubtask(taskId, s.id, { done: !s.done }));
+    } catch (e) {
+      console.error(e);
+      if (isAdmin && selectedUserId) loadAgentPDP(selectedUserId);
+      else loadMyPDP();
+    }
+  };
+
+  const handleDeleteSubtask = async (taskId: string, s: PdpSubtask) => {
+    try {
+      replaceTask(await deletePDPSubtask(taskId, s.id));
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -1106,12 +1245,24 @@ export default function PDP() {
                             }}
                           >
                             {t.task}
+                            {(t.subtasks?.length ?? 0) > 0 && (
+                              <span className="ml-1.5 text-xs font-normal" style={{ color: 'rgba(14,14,14,0.40)' }}>
+                                {t.subtasks.filter((s) => s.done).length}/{t.subtasks.length}
+                              </span>
+                            )}
                           </p>
                           {t.assignedByName && (
                             <div className="mt-1">
                               <AssignedBadge name={t.assignedByName} />
                             </div>
                           )}
+                          <SubtaskList
+                            subtasks={t.subtasks ?? []}
+                            editable={canEdit || adminFieldsActive}
+                            onAdd={(text) => handleAddSubtask(t.id, text)}
+                            onToggle={(s) => handleToggleSubtask(t.id, s)}
+                            onDelete={(s) => handleDeleteSubtask(t.id, s)}
+                          />
                         </td>
 
                         {/* Related goal */}

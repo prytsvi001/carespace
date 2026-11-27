@@ -393,6 +393,15 @@ export const deletePDPTask = (taskId: string) =>
 export const addPDPTaskComment = (taskId: string, text: string) =>
   api.post(`/pdp/tasks/${taskId}/comments`, { text }).then((r) => r.data);
 
+export const addPDPSubtask = (taskId: string, text: string) =>
+  api.post(`/pdp/tasks/${taskId}/subtasks`, { text }).then((r) => r.data);
+
+export const updatePDPSubtask = (taskId: string, subtaskId: string, data: { text?: string; done?: boolean }) =>
+  api.patch(`/pdp/tasks/${taskId}/subtasks/${subtaskId}`, data).then((r) => r.data);
+
+export const deletePDPSubtask = (taskId: string, subtaskId: string) =>
+  api.delete(`/pdp/tasks/${taskId}/subtasks/${subtaskId}`).then((r) => r.data);
+
 export const savePDPFeedback = (
   planId: string,
   data: {

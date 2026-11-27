@@ -1,4 +1,5 @@
 // server/src/routes/pdp.ts
+import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth } from '../middleware/auth';
@@ -10,8 +11,15 @@ function parseComments(raw: string): { authorId: string; authorName: string; tex
   try { return JSON.parse(raw); } catch { return []; }
 }
 
-function formatTask(t: { comments: string; [key: string]: unknown }) {
-  return { ...t, comments: parseComments(t.comments) };
+type Subtask = { id: string; text: string; done: boolean };
+
+function parseSubtasks(raw: string | undefined): Subtask[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+function formatTask(t: { comments: string; subtasks?: string; [key: string]: unknown }) {
+  return { ...t, comments: parseComments(t.comments), subtasks: parseSubtasks(t.subtasks) };
 }
 
 function getTodayStr(): string {
@@ -533,6 +541,82 @@ router.post('/tasks/:taskId/comments', async (req: Request, res: Response) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// ─── Subtasks ────────────────────────────────────────────────────────────────
+// A checklist stored as JSON on the task. Plan owner or head/lead can add,
+// rename, tick and remove subtasks (on any task, admin-assigned included).
+// Each call re-reads the task and rewrites only its `subtasks` field.
+
+async function loadTaskForSubtasks(req: Request, res: Response) {
+  const { id: userId, role } = req.user as Express.User;
+  const taskRecord = await prisma.pdpTask.findUnique({
+    where: { id: req.params.taskId },
+    include: { plan: true },
+  });
+  if (!taskRecord) { res.status(404).json({ error: 'Task not found' }); return null; }
+  const isOwner = taskRecord.plan.userId === userId;
+  const isAdmin = role === 'head' || role === 'lead';
+  if (!isOwner && !isAdmin) { res.status(403).json({ error: 'Forbidden' }); return null; }
+  return taskRecord;
+}
+
+async function saveSubtasks(taskId: string, subtasks: Subtask[]) {
+  const updated = await prisma.pdpTask.update({
+    where: { id: taskId },
+    data: { subtasks: JSON.stringify(subtasks) },
+  });
+  return formatTask(updated);
+}
+
+// POST /api/pdp/tasks/:taskId/subtasks — { text }
+router.post('/tasks/:taskId/subtasks', async (req: Request, res: Response) => {
+  try {
+    const taskRecord = await loadTaskForSubtasks(req, res);
+    if (!taskRecord) return;
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim().slice(0, 500) : '';
+    if (!text) return res.status(400).json({ error: 'Subtask text is required' });
+    const subtasks = parseSubtasks(taskRecord.subtasks);
+    subtasks.push({ id: randomUUID(), text, done: false });
+    return res.status(201).json(await saveSubtasks(taskRecord.id, subtasks));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to add subtask' });
+  }
+});
+
+// PATCH /api/pdp/tasks/:taskId/subtasks/:subtaskId — { text?, done? }
+router.patch('/tasks/:taskId/subtasks/:subtaskId', async (req: Request, res: Response) => {
+  try {
+    const taskRecord = await loadTaskForSubtasks(req, res);
+    if (!taskRecord) return;
+    const subtasks = parseSubtasks(taskRecord.subtasks);
+    const sub = subtasks.find((s) => s.id === req.params.subtaskId);
+    if (!sub) return res.status(404).json({ error: 'Subtask not found' });
+    const { text, done } = req.body as { text?: unknown; done?: unknown };
+    if (typeof text === 'string') {
+      if (!text.trim()) return res.status(400).json({ error: 'Subtask text is required' });
+      sub.text = text.trim().slice(0, 500);
+    }
+    if (typeof done === 'boolean') sub.done = done;
+    return res.json(await saveSubtasks(taskRecord.id, subtasks));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to update subtask' });
+  }
+});
+
+// DELETE /api/pdp/tasks/:taskId/subtasks/:subtaskId
+router.delete('/tasks/:taskId/subtasks/:subtaskId', async (req: Request, res: Response) => {
+  try {
+    const taskRecord = await loadTaskForSubtasks(req, res);
+    if (!taskRecord) return;
+    const subtasks = parseSubtasks(taskRecord.subtasks).filter((s) => s.id !== req.params.subtaskId);
+    return res.json(await saveSubtasks(taskRecord.id, subtasks));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to delete subtask' });
   }
 });
 

@@ -269,6 +269,12 @@ export interface PdpGoal {
   updatedAt: string;
 }
 
+export interface PdpSubtask {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
 export interface PdpTask {
   id: string;
   planId: string;
@@ -278,6 +284,7 @@ export interface PdpTask {
   status: 'not_started' | 'in_progress' | 'completed';
   adminGrade: number | null;
   comments: PdpComment[];
+  subtasks: PdpSubtask[];
   assignedByName: string | null;
   sortOrder: number;
   createdAt: string;
